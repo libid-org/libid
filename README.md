@@ -13,10 +13,10 @@ needed to make the system accessible, self-hostable, and reusable by
 application developers, wallet providers, and other integrators without
 introducing a central point of failure.
 
-Beyond identity bridging, libID works toward deeper, cooperative, and mutually
-beneficial integration with online platforms. That work includes enabling
-proofs of user activity on those platforms and advancing freedom to transact as
-an essential human right.
+Beyond identity bridging, libID seeks closer collaboration with online
+platforms through integrations that benefit both platforms and their users.
+These integrations will enable users to prove their activity and transact
+freely on those platforms, exercising their essential human right to transact.
 
 ## Repositories
 
