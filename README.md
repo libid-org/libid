@@ -1,16 +1,22 @@
 # libID
 
-libID is a trust-minimized identity system that bridges identities from widely
-used platforms—including Google, X, and GitHub—to blockchains. It currently
-supports EVM-compatible chains.
+libID is a trust-minimized identity system that bridges identities from
+OAuth-enabled platforms to blockchains. Initial integrations include Google,
+X, and GitHub, but the system is designed to support any OAuth-based platform.
+It currently supports EVM-compatible chains.
 
 Identity bridging lets an existing user handle stand in for an onchain address,
 similar to an onchain naming service.
 
-The core protocol is built bottom-up using a spec-driven approach. Beyond the
-core, libID will provide the tools needed to make the system accessible,
-self-hostable, and reusable by application developers, wallet providers, and
-other integrators without introducing a central point of failure.
+The core is built bottom-up using a spec-driven approach and includes the tools
+needed to make the system accessible, self-hostable, and reusable by
+application developers, wallet providers, and other integrators without
+introducing a central point of failure.
+
+Beyond identity bridging, libID works toward deeper, cooperative, and mutually
+beneficial integration with online platforms. That work includes enabling
+proofs of user activity on those platforms and advancing freedom to transact as
+an essential human right.
 
 ## Repositories
 
