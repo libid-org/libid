@@ -1,0 +1,17 @@
+# TypeScript
+ts/node_modules/
+ts/packages/*/node_modules/
+ts/apps/*/node_modules/
+ts/packages/*/dist/
+ts/apps/*/dist/
+ts/apps/demo/.env.local
+
+# Demo static assets — staged by harness/stage-assets.sh, never committed.
+ts/apps/demo/public/
+
+# Rust
+rust/target/
+
+# Harness build/runtime output
+harness/bin/
+harness/.env

@@ -1,0 +1,241 @@
+name: CI
+
+# Four jobs: the TypeScript workspace (library + demo), the Rust OIDC
+# crates, DCO, and the compose-stack smoke test — our first automated
+# infra-level integration test (it boots the real released images against a
+# fresh anvil, re-runs the deterministic deploy, and asserts the services
+# answer).
+#
+# Every third-party action is pinned by commit SHA, with the tag in a
+# comment, so a moved tag cannot change what executes.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: "-D warnings"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # Rust stable, pinned so a toolchain release cannot break CI mid-PR.
+  RUST_VERSION: 1.97.1
+  # Nightly is for `cargo +nightly fmt` ONLY: rustfmt options like
+  # `imports_granularity` are nightly-only, and stable rustfmt does not
+  # reject them — it silently IGNORES them and reports success. Dated pin.
+  NIGHTLY: nightly-2026-08-10
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # TypeScript: build, tests (including the wallet-product isolation guard),
+  # lint, formatting.
+  # ---------------------------------------------------------------------------
+  ts:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm before setup-node: `cache: pnpm` shells out to pnpm to locate
+      # the store, so the binary has to exist first.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm -C ts install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -C ts build
+
+      - name: Tests
+        run: pnpm -C ts test
+
+      - name: Lint and formatting
+        run: pnpm -C ts lint && pnpm -C ts fmt:check
+
+  # ---------------------------------------------------------------------------
+  # Rust: the OIDC core + wasm-bindgen crates. The wasm-pack build itself is
+  # NOT run here: it needs the pinned wasm-pack 0.15.0 plus a wasm32 target
+  # and produces an artifact no CI job consumes (the harness stages it into
+  # the demo's public/ at boot time). The crates still compile for the host
+  # target under clippy, which catches everything except wasm-bindgen ABI
+  # issues — those surface in the harness.
+  # ---------------------------------------------------------------------------
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Nightly first, stable second: this action makes the LAST toolchain
+      # it installs the default, and everything except `cargo +nightly fmt`
+      # must run on the pinned stable.
+      - uses: dtolnay/rust-toolchain@7c8d7d138f5c09cef361f8214cf96882cd029cdb # nightly
+        with:
+          toolchain: ${{ env.NIGHTLY }}
+          components: rustfmt
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust
+
+      - name: Formatting (nightly rustfmt)
+        working-directory: rust
+        # +"$NIGHTLY", not +nightly: the bare channel name makes rustup
+        # fetch the LATEST nightly (without the rustfmt component) instead
+        # of the pinned one installed above.
+        run: cargo +"$NIGHTLY" fmt --all -- --check
+
+      - name: Clippy
+        working-directory: rust
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Tests
+        working-directory: rust
+        run: cargo test --all
+
+  # ---------------------------------------------------------------------------
+  # Integration smoke: boot the compose stack (fresh anvil + released
+  # libid-deploy + released notary/backend images) and assert the seams:
+  # the deterministic deploy reproduced the committed addresses, the RPC
+  # answers, the notary serves its signer identity, and the backend both
+  # health-checks and mints a well-formed GitHub challenge.
+  # ---------------------------------------------------------------------------
+  integration-smoke:
+    name: Integration smoke (compose stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The libid-org ghcr packages are not (yet) public; the workflow token
+      # can pull them once the packages grant this repository read access
+      # (or are flipped public, which is where releases should end up).
+      - name: Log in to ghcr
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Render env from the committed network file
+        run: harness/render-env.sh
+
+      - name: Boot the stack
+        working-directory: harness
+        env:
+          GH_OAUTH_CLIENT_ID: dummy
+          GH_OAUTH_CLIENT_SECRET: dummy
+        run: docker compose up -d --wait --wait-timeout 300
+
+      - name: Deploy service exited 0 (deterministic drift check passed)
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          docker compose logs deploy
+          code=$(docker inspect -f '{{.State.ExitCode}}' "$(docker compose ps -a -q deploy)")
+          [ "$code" = "0" ] || { echo "deploy service exited $code"; exit 1; }
+
+      - name: Anvil RPC answers with the harness chain id
+        run: |
+          set -euo pipefail
+          chain=$(curl -fsS -X POST -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+            http://127.0.0.1:8545 | jq -r .result)
+          [ "$chain" = "0x7a69" ] || { echo "unexpected chain id $chain"; exit 1; }
+
+      - name: Notary /info serves the expected signer pubkey
+        run: |
+          set -euo pipefail
+          info=$(curl -fsS http://127.0.0.1:7048/info)
+          echo "$info"
+          pub=$(echo "$info" | jq -r .publicKey)
+          # anvil #1, compressed SEC1 (bare hex, no 0x) — the SIGNING_KEY
+          # wired in compose.
+          expected="02ba5734d8f7091719471e7f7ed6b9df170dc70cc661ca05e688601ad984f068b0"
+          norm() { echo "${1#0x}" | tr 'A-F' 'a-f'; }
+          [ "$(norm "$pub")" = "$(norm "$expected")" ] \
+            || { echo "notary pubkey mismatch: $pub"; exit 1; }
+
+      - name: Backend /health and a well-formed GitHub challenge
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8722/health
+          # A dummy (but shape-valid) compressed pubkey + the anvil #4 wallet.
+          resp=$(curl -fsS -X POST -H 'content-type: application/json' \
+            --data '{"pubkey":"020000000000000000000000000000000000000000000000000000000000000001","link_wallet":"0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}' \
+            http://localhost:8722/auth/github/challenge)
+          echo "$resp"
+          echo "$resp" | jq -e '.challenge and (.auth_url | startswith("https://github.com/login/oauth/authorize"))' >/dev/null
+
+      - name: Stack logs on failure
+        if: failure()
+        working-directory: harness
+        run: docker compose logs
+
+  # ---------------------------------------------------------------------------
+  # DCO: every commit carries a Signed-off-by trailer. Plain git over the
+  # event's commit range — no marketplace action, so there is nothing to pin
+  # and nothing to compromise.
+  # ---------------------------------------------------------------------------
+  dco:
+    name: DCO
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the PR base and the push's `before` are reachable
+          # only in a complete clone, and the repo is small.
+          fetch-depth: 0
+
+      - name: Every commit is signed off
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          else
+            # Push to main. `before` is all zeros on a branch creation and
+            # may be unreachable after a force push; in either case there is
+            # no honest range, so fall back to the head commit alone rather
+            # than failing on plumbing.
+            zero="0000000000000000000000000000000000000000"
+            if [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "$zero" ] \
+              && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+              range="$PUSH_BEFORE..$PUSH_AFTER"
+            else
+              echo "No usable push range; checking only the head commit."
+              range="$PUSH_AFTER^!"
+            fi
+          fi
+
+          # Merge commits are exempt, as in the standard DCO probot: nobody
+          # authors a merge, and the merged commits are themselves in range.
+          missing=0
+          for sha in $(git rev-list --no-merges "$range"); do
+            if git log -1 --format=%B "$sha" | grep -qiE '^Signed-off-by: .+ <.+>'; then
+              continue
+            fi
+            echo "::error::commit $sha lacks a Signed-off-by trailer (use 'git commit -s')"
+            missing=1
+          done
+          exit "$missing"

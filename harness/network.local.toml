@@ -1,0 +1,71 @@
+# Local harness network — the docker-compose anvil chain, converged.
+#
+# COMMITTED WITH ADDRESSES PRE-FILLED, on purpose. Anvil is deterministic
+# (fixed mnemonic, deployer = account #0 starting at nonce 0) and
+# libid-deploy's deploy order is fixed, so a fresh deploy always mints
+# exactly these addresses. The compose services take them as static env,
+# and the harness's one-shot deploy service re-runs the fresh apply and
+# asserts the rewritten file is byte-identical to this one — a
+# deterministic-deploy drift check. If libid-deploy or the contract
+# bytecode changes upstream, that check fails loudly instead of the
+# addresses silently shifting.
+#
+# To regenerate (see harness/README.md): blank every value under
+# [contracts] and [identity], point rpc_url at a fresh local anvil
+# (--chain-id 31337 --code-size-limit 65536), run
+#   libid-deploy apply --network harness/network.local.toml \
+#     --signer ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+#     --yes --confirm-fresh-deploy
+# restore rpc_url to http://anvil:8545, and commit the diff.
+#
+# Keys (canonical anvil test mnemonic — public material, not secrets):
+#   #0 deployer  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+#   #1 notary    0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+#   #2 backend   0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
+#   #4 dev user  0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65 (demo fallback signer)
+
+[network]
+name = "harness-local"
+chain_id = 31337
+rpc_url = "http://anvil:8545"
+
+# Required by the schema; never consulted — the harness always passes
+# --signer with the anvil #0 key.
+[aws]
+region = "eu-central-1"
+kms_deployer = "alias/never-used-local-harness"
+
+# Addresses of KEYS, not contracts (anvil #1 and #2 — see the table above).
+[accounts]
+notary = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+backend = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+
+# OUTPUT: deployed contract addresses (pre-filled — see the header).
+[contracts]
+notary = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+bank = "0x8a791620dd6260079bf849dc5567adc3f2fdc318"
+registry = "0x0165878a594ca255338adfa4d48449f69242eb8f"
+wallet_factory = "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9"
+x_zk_verifier = "0xc6e7df5e7b4f2a278906862b61205850344d4e7d"
+google_oidc_verifier = "0x4a679253410272dd5232b3ff7cf5dbb88f295319"
+
+# OUTPUT: the identity-names stack (pre-filled — see the header). All keys
+# present = everything requested, including both circuit verifiers.
+[identity]
+identity_names = "0x84ea74d481ee0a5332c457a4d796187f6ba67feb"
+github_identity_verifier = "0xa82ff9afd8f496c3d6ac40e2a0f282e47488cfc9"
+x_identity_verifier = "0x95401dc811bb5740090279ba06cfa8fcf6113778"
+google_identity_verifier = "0x8f86403a4de0bb5791fa46b8e795c547942fe4cf"
+identity_jwks_roots = "0x70e0ba845a1a0f2da3359c97e0285013525ffc49"
+
+# INPUT: OAuth client ids baked into the on-chain verifiers at deploy time.
+# Placeholders are fine for GitHub-only testing (the GitHub verifier reads
+# no client id). A real X/Google click-through needs the real client ids
+# HERE before boot: edit, regenerate the addresses (they do not move —
+# CREATE addresses depend on deployer nonces, not constructor args), and
+# boot again.
+[platforms]
+x_client_id = "local-x-client-id"
+google_client_id = "local-google-client-id.apps.googleusercontent.com"
+github_bot_handle = ""
+x_bot_handle = ""
