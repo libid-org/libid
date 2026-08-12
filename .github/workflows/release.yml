@@ -1,9 +1,10 @@
 name: Release
 
-# Publishing a GitHub Release tagged `v<version>` publishes @libid/claim to
-# npm. The tag is a pointer, never a source: it must equal the package.json
-# version. Auth is token-first (org NPM_TOKEN secret) with OIDC trusted
-# publishing as the fallback — same model as libid-contracts.
+# Publishing a GitHub Release tagged `v<version>` publishes @libid/claim
+# and @libid/claim-full (whose version tracks claim's) to npm. The tag is a
+# pointer, never a source: it must equal both package.json versions. Auth
+# is token-first (org NPM_TOKEN secret) with OIDC trusted publishing as the
+# fallback — same model as libid-contracts.
 
 on:
   release:
@@ -25,12 +26,14 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          pkg=$(node -p "require('./ts/packages/claim/package.json').version")
-          echo "tag: $TAG  package: $pkg"
-          [ "$version" = "$pkg" ] || { echo "::error::tag $TAG != package version $pkg"; exit 1; }
+          for dir in claim claim-full; do
+            pkg=$(node -p "require('./ts/packages/$dir/package.json').version")
+            echo "tag: $TAG  $dir: $pkg"
+            [ "$version" = "$pkg" ] || { echo "::error::tag $TAG != @libid/$dir version $pkg"; exit 1; }
+          done
 
   publish-npm:
-    name: Publish @libid/claim to npm
+    name: Publish @libid/claim + @libid/claim-full to npm
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify-tag]
@@ -86,10 +89,12 @@ jobs:
           fi
           echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
 
-      # From the package directory, not `pnpm -C` (pnpm 10 mangles forwarded
-      # flags under -C). Token-first with OIDC fallback, as in libid-contracts.
+      # From the package directories, not `pnpm -C` (pnpm 10 mangles
+      # forwarded flags under -C). Token-first with OIDC fallback, as in
+      # libid-contracts. claim first: claim-full's workspace:^ dep resolves
+      # to it. claim-full's assets/ tree was staged by its build above and
+      # rides in the tarball via `files`.
       - name: pnpm publish
-        working-directory: ts/packages/claim
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -100,4 +105,7 @@ jobs:
           else
             echo "No NPM_TOKEN secret; relying on OIDC trusted publishing"
           fi
-          pnpm publish --access public --no-git-checks --tag "${{ steps.dist-tag.outputs.dist-tag }}"
+          for dir in claim claim-full; do
+            (cd "ts/packages/$dir" \
+              && pnpm publish --access public --no-git-checks --tag "${{ steps.dist-tag.outputs.dist-tag }}")
+          done

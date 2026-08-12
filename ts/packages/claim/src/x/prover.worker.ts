@@ -187,8 +187,8 @@ async function createSession(httpUrl: string): Promise<string> {
 let wasmInitialized = false
 
 async function loadWasm(): Promise<TlsnWasm> {
-  // The tlsn wasm bundle is staged at the app origin by the harness
-  // (stage-assets.sh, from the libid-org/notary release). A dynamic
+  // The tlsn wasm bundle is staged at the app origin (libid-claim-assets
+  // from @libid/claim-full, ex the libid-org/notary release). A dynamic
   // same-origin import keeps the multi-megabyte MPC bundle out of this
   // library's graph.
   const wasmUrl = `${appOrigin}/tlsn_wasm.js`

@@ -33,12 +33,13 @@ harness/boot.sh
 
 which does, in order:
 
-1. **`stage-assets.sh`** — downloads/builds the demo's static assets into
-   `ts/apps/demo/public/` (gitignored): the tlsn wasm bundle from the
-   `libid-org/notary` release, the compiled circuits from
-   `libid-org/libid-circuits` (sha256-verified against the release
-   manifest), and noir's acvm/abi wasm from `node_modules`.
-   Prereqs: `pnpm -C ts install` has run; `curl`.
+1. **asset staging** — builds `@libid/claim-full` (which fetches its
+   bundled assets: the tlsn wasm bundle from the `libid-org/notary`
+   release, the compiled circuits from `libid-org/libid-circuits`
+   sha256-verified against the release manifest, and noir's acvm/abi wasm
+   from `node_modules`) and runs its `libid-claim-assets` bin to copy the
+   tree into `ts/apps/demo/public/` (gitignored).
+   Prereq: `pnpm -C ts install` has run.
 2. **`render-env.sh`** — parses the committed `network.local.toml` into
    `harness/.env` (compose interpolation) and `ts/apps/demo/.env.local`
    (VITE_ vars, including the anvil #4 dev-fallback signer so no wallet
@@ -106,7 +107,7 @@ one-shot: `docker compose run --rm keeper --config /input/keeper.toml run`.
 
 Prereqs (once):
 
-* Docker, pnpm 10, node ≥ 20, curl.
+* Docker, pnpm 10, node ≥ 20.
 * **GitHub OAuth App** (the flow that works out of the box): create a plain
   OAuth App with callback URL exactly `http://localhost:8722/auth/github/callback`,
   then put its credentials in a git-ignored `.env` at the repo root —

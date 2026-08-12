@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "stage-assets": "libid-claim-assets public"
   },
   "dependencies": {
     "@libid/claim": "workspace:*",
+    "@libid/claim-full": "workspace:*",
     "@libid/contracts": "^0.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

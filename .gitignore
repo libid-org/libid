@@ -6,7 +6,8 @@ ts/packages/*/dist/
 ts/apps/*/dist/
 ts/apps/demo/.env.local
 
-# Demo static assets — staged by harness/stage-assets.sh, never committed.
+# Demo static assets — staged by @libid/claim-full's libid-claim-assets
+# bin (pnpm --filter @libid/claim-demo stage-assets), never committed.
 ts/apps/demo/public/
 
 # Local-development secrets (OAuth client id/secret for the harness).

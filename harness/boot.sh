@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Boot the whole manual-test stack:
 #
-#   1. stage the demo's static assets (skippable: SKIP_ASSETS=1)
+#   1. stage the demo's static assets from @libid/claim-full's bundle
+#      (skippable: SKIP_ASSETS=1)
 #   2. render env from the committed network file (keeper.toml is static —
 #      nothing to render there)
 #   3. docker compose up (anvil → declarative deploy → notary → backend,
@@ -34,7 +35,15 @@ if [ -f "$ROOT/.env" ]; then
 fi
 
 if [ "${SKIP_ASSETS:-}" != "1" ]; then
-  bash "$HARNESS/stage-assets.sh"
+  # @libid/claim-full bundles every static proving asset (tlsn wasm bundle,
+  # released circuits sha256-verified against the release manifest, noir
+  # acvm/abi wasm); its libid-claim-assets bin copies them into the demo's
+  # public/. Prereq: `pnpm -C ts install` has run.
+  (
+    cd "$ROOT/ts" \
+      && pnpm --filter @libid/claim-full build \
+      && pnpm --filter @libid/claim-demo stage-assets
+  )
 fi
 
 bash "$HARNESS/render-env.sh"

@@ -5,9 +5,10 @@
 // witness inputs are ready. Proving never blocks the spawning document's
 // main thread.
 
-/** Same-origin URLs the app must stage the acvm/abi WASM at (the harness's
- *  stage-assets.sh does this; see the worker for why an explicit absolute
- *  URL is required). Overridable per-prover for apps that stage elsewhere. */
+/** Same-origin URLs the app must stage the acvm/abi WASM at
+ *  (@libid/claim-full's libid-claim-assets bin does this; see the worker
+ *  for why an explicit absolute URL is required). Overridable per-prover
+ *  for apps that stage elsewhere. */
 export interface ProverWasmUrls {
   acvmUrl: string
   abiUrl: string
