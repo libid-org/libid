@@ -111,8 +111,11 @@ services:
         condition: service_healthy
     environment:
       # The browser opens the GitHub popup against this URL, so it must be
-      # host-reachable — hence localhost, not the service name.
-      BASE_URL: http://localhost:8722
+      # host-reachable — hence localhost, not the service name. Overridable
+      # because the GitHub OAuth app's registered callback pins a specific
+      # host port (the dyaka dev app uses 18722, so the extra port mapping
+      # below presents the same backend there too).
+      BASE_URL: ${BACKEND_PUBLIC_URL:-http://localhost:8722}
       # REQUIRED for the Google flow: the backend's /auth/gmail/callback is a
       # static fragment relay that forwards the id_token to the app.
       APP_URL: http://localhost:5173
@@ -130,4 +133,6 @@ services:
       GH_OAUTH_CLIENT_SECRET: ${GH_OAUTH_CLIENT_SECRET:-dummy}
     ports:
       - "8722:8722"
+      # Same backend on the dyaka dev app's registered OAuth callback port.
+      - "18722:8722"
     # The image carries its own /health HEALTHCHECK.

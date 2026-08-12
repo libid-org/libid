@@ -19,6 +19,12 @@ import { privateKeyToAccount } from 'viem/accounts'
 const DEV_KEY = (import.meta.env.VITE_DEV_PRIVATE_KEY ?? '') as Hex | ''
 const RPC_URL = import.meta.env.VITE_RPC_URL ?? 'http://127.0.0.1:8545'
 
+// `?dev` in the URL forces the dev-key signer even when the browser has an
+// injected wallet — for driving the harness test in a profile whose wallet
+// extension would otherwise capture the connect flow.
+const FORCE_DEV_KEY =
+  DEV_KEY !== '' && new URLSearchParams(window.location.search).has('dev')
+
 export interface Wallet {
   /** Null until connected. Everything on the page that writes needs it. */
   address: Address | null
@@ -40,7 +46,7 @@ export function useWallet(): Wallet {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const provider = injectedProvider()
+    const provider = FORCE_DEV_KEY ? null : injectedProvider()
     setAvailable(provider !== null || DEV_KEY !== '')
     if (!provider) return
 
@@ -67,7 +73,7 @@ export function useWallet(): Wallet {
     setConnecting(true)
     setError(null)
     try {
-      const provider = injectedProvider()
+      const provider = FORCE_DEV_KEY ? null : injectedProvider()
       if (provider) {
         setAddress(await requestAccount(provider))
         setKind('injected')

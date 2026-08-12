@@ -111,9 +111,11 @@ Prereqs (once):
 * Docker, pnpm 10, node ≥ 20, curl, wasm-pack 0.15.0.
 * **GitHub OAuth App** (the flow that works out of the box): create a plain
   OAuth App with callback URL exactly `http://localhost:8722/auth/github/callback`,
-  then `export GH_OAUTH_CLIENT_ID=… GH_OAUTH_CLIENT_SECRET=…` before boot.
-  Without them the stack boots with dummies and everything except the
-  GitHub consent screen works.
+  then put its credentials in a git-ignored `.env` at the repo root —
+  `GH_OAUTH_CLIENT_ID=…` and `GH_OAUTH_CLIENT_SECRET=…`, one per line.
+  `boot.sh` sources it automatically (exporting them into compose); a bare
+  `export …` before boot works too. Without them the stack boots with
+  dummies and everything except the GitHub consent screen works.
 * **X** (optional): an X OAuth2 app with redirect URI
   `http://localhost:5173/zk/x-popup`, and its client id in
   `network.local.toml` (`[platforms] x_client_id`) *before* boot — the id

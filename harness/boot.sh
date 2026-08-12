@@ -21,6 +21,18 @@ set -euo pipefail
 HARNESS="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HARNESS/.." && pwd)"
 
+# Local-development secrets: the git-ignored .env at the repo root holds the
+# OAuth client id/secret (GH_OAUTH_CLIENT_ID/SECRET, etc.). Source it if
+# present so a real click-through works with no manual `export`. Values in
+# the file take effect for this boot (they override any prior shell export).
+if [ -f "$ROOT/.env" ]; then
+  echo "==> sourcing $ROOT/.env"
+  set -a
+  # shellcheck disable=SC1090,SC1091
+  . "$ROOT/.env"
+  set +a
+fi
+
 if [ "${SKIP_ASSETS:-}" != "1" ]; then
   bash "$HARNESS/stage-assets.sh"
 fi

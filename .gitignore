@@ -12,6 +12,9 @@ ts/apps/demo/public/
 # Rust
 rust/target/
 
+# Local-development secrets (OAuth client id/secret for the harness).
+.env
+
 # Harness build/runtime output
 harness/bin/
 harness/.env
