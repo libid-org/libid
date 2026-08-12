@@ -1,37 +1,31 @@
-# Local harness network — the docker-compose anvil chain, converged.
+# Local harness network — the docker-compose anvil chain, declared.
 #
-# COMMITTED WITH ADDRESSES PRE-FILLED, on purpose — and since libid-deploy
-# 0.3.0 these are the CANONICAL cross-network addresses, not anvil-local
-# ones. Every entry contract deploys through the deterministic LibidFactory
-# (itself at a frozen CREATE2 address) via CREATE3 with salt =
-# keccak256(canonical name), so each address is a pure function of its name
-# — identical on every EVM chain, including this anvil. What you test here
-# is address-identical to production. Verify offline any time:
+# DECLARATIVE, on purpose (libid-deploy 0.4.0): every canonical address
+# below is pre-filled and the file is NEVER rewritten — chain state, not
+# the file, decides what still needs deploying. These are the CANONICAL
+# cross-network addresses, not anvil-local ones: every entry contract
+# deploys through the deterministic LibidFactory (itself at a frozen
+# CREATE2 address) via CREATE3 with salt = keccak256(canonical name), so
+# each address is a pure function of its name — identical on every EVM
+# chain, including this anvil. What you test here is address-identical to
+# production. Verify offline any time:
 #   libid-deploy plan --network <any network file> --print-addresses
 #
-# The compose services take the addresses as static env, and the harness's
-# one-shot deploy service re-runs the fresh apply and asserts the rewritten
-# file is byte-identical to this one — a deterministic-deploy drift check.
-# If libid-deploy or the contract bytecode changes upstream, that check
-# fails loudly instead of the addresses silently shifting.
-#
-# To regenerate (see harness/README.md): blank every value under
-# [contracts] and [identity] (including contracts.factory), point rpc_url
-# at a fresh local anvil (--chain-id 31337 --code-size-limit 65536; with or
-# without --disable-default-create2-deployer — both converge to the same
-# bytes), run
-#   libid-deploy apply --network harness/network.local.toml \
-#     --signer ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-#     --yes --confirm-fresh-deploy
-# restore rpc_url to http://anvil:8545, and commit the diff. libid-deploy
-# detects anvil and impersonates the factory's genesis admin itself — no
-# flags needed for factory ownership.
+# There is no regeneration recipe because there is nothing to regenerate:
+# `validate` rejects any declared canonical key that does not equal
+# `predict_address(factory, name)`, and the harness's one-shot deploy
+# service applies this file as-is on a read-only mount, then asserts via
+# `plan --json` that nothing is left to deploy. If libid-deploy or the
+# contract bytecode ever changes upstream, apply's predict-equality canary
+# aborts loudly instead of the addresses silently shifting under the
+# static env wiring.
 #
 # Keys (canonical anvil test mnemonic — public material, not secrets):
-#   #0 deployer  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+#   #0 deployer  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 (also the owner)
 #   #1 notary    0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 #   #2 backend   0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
 #   #4 dev user  0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65 (demo fallback signer)
+#   #5 keeper    0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc (gas signer, no role)
 
 [network]
 name = "harness-local"
@@ -44,12 +38,17 @@ rpc_url = "http://anvil:8545"
 region = "eu-central-1"
 kms_deployer = "alias/never-used-local-harness"
 
-# Addresses of KEYS, not contracts (anvil #1 and #2 — see the table above).
+# Addresses of KEYS, not contracts (anvil #0, #1 and #2 — see the table
+# above). `owner` is the operational owner the factory ends up with: the
+# deployer wallet itself, handed over by libid-deploy's anvil
+# auto-impersonation of the baked genesis admin.
 [accounts]
+owner = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 notary = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 backend = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
 
-# OUTPUT: deployed contract addresses (pre-filled — see the header).
+# DECLARED contract addresses (canonical — validate enforces equality with
+# the CREATE3 prediction; chain state decides what is actually deployed).
 [contracts]
 notary = "0x4bddfe9fb875d03838e5013c338e2dea9dcc2fc5"
 bank = "0x060708036a9ee89c6513346abab0929427bc9b06"
@@ -59,8 +58,8 @@ x_zk_verifier = "0xf8ddccfebfefdc5cbae308f0aac9a12e275eda5f"
 google_oidc_verifier = "0xef53a51e3a46e5f82248a39ddff0b7b901ab438c"
 factory = "0xa92244c3f4462aad08bd1a33c3940b9b936321ad"
 
-# OUTPUT: the identity-names stack (pre-filled — see the header). All keys
-# present = everything requested, including both circuit verifiers.
+# DECLARED identity-names stack (canonical, see above). All keys present =
+# everything requested, including both circuit verifiers.
 [identity]
 identity_names = "0xd467d48769c26faee36ba6b6fc9228f14aef6dd2"
 github_identity_verifier = "0x936067c1b5d77c67358210e77f664382191d2015"
@@ -71,9 +70,9 @@ identity_jwks_roots = "0x589b56f95d5df5483c79e46e7b20293135c9ebd9"
 # INPUT: OAuth client ids baked into the on-chain verifiers at deploy time.
 # Placeholders are fine for GitHub-only testing (the GitHub verifier reads
 # no client id). A real X/Google click-through needs the real client ids
-# HERE before boot: edit, regenerate the addresses (they do not move —
-# CREATE3 addresses depend only on the canonical name, not constructor
-# args), and boot again.
+# HERE before boot: edit and boot again — the addresses do not move
+# (CREATE3 addresses depend only on the canonical name, not constructor
+# args).
 [platforms]
 x_client_id = "local-x-client-id"
 google_client_id = "local-google-client-id.apps.googleusercontent.com"

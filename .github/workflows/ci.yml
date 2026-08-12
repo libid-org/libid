@@ -112,10 +112,11 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Integration smoke: boot the compose stack (fresh anvil + released
-  # libid-deploy + released notary/backend images) and assert the seams:
-  # the deterministic deploy reproduced the committed addresses, the RPC
-  # answers, the notary serves its signer identity, and the backend both
-  # health-checks and mints a well-formed GitHub challenge.
+  # libid-deploy + released notary/backend/keeper images) and assert the
+  # seams: the declarative deploy converged onto the declared canonical
+  # addresses, the RPC answers, the notary serves its signer identity, the
+  # keeper's real MPC-TLS JWKS rotation landed roots on-chain, and the
+  # backend both health-checks and mints a well-formed GitHub challenge.
   # ---------------------------------------------------------------------------
   integration-smoke:
     name: Integration smoke (compose stack)
@@ -140,13 +141,41 @@ jobs:
           GH_OAUTH_CLIENT_SECRET: dummy
         run: docker compose up -d --wait --wait-timeout 300
 
-      - name: Deploy service exited 0 (deterministic drift check passed)
+      - name: Deploy service exited 0 (declarative convergence check passed)
         working-directory: harness
         run: |
           set -euo pipefail
           docker compose logs deploy
           code=$(docker inspect -f '{{.State.ExitCode}}' "$(docker compose ps -a -q deploy)")
           [ "$code" = "0" ] || { echo "deploy service exited $code"; exit 1; }
+
+      - name: Keeper rotated the Google JWKS roots (real MPC-TLS, exit 0)
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          # `compose wait` blocks until the one-shot keeper exits and
+          # propagates its exit code — nonzero means a rotation failed.
+          code=$(docker compose wait keeper) || true
+          docker compose logs keeper
+          [ "${code:-1}" = "0" ] || { echo "keeper exited ${code:-?}"; exit 1; }
+
+      - name: JWKS contracts report roots present post-rotation
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          # needsRotation() is true from deployment until the first rotation
+          # lands, so false here proves the keeper's roots are live on-chain.
+          # Addresses are the canonical declared ones from network.local.toml;
+          # cast runs inside the anvil (foundry) container.
+          check_roots() { # name address
+            local out
+            out=$(docker compose exec -T anvil cast call "$2" 'needsRotation()(bool)' \
+              --rpc-url http://127.0.0.1:8545)
+            echo "$1 needsRotation = $out"
+            [ "$out" = "false" ] || { echo "$1 still needs rotation"; exit 1; }
+          }
+          check_roots identity_jwks_roots  0x589b56f95d5df5483c79e46e7b20293135c9ebd9
+          check_roots google_oidc_verifier 0xef53a51e3a46e5f82248a39ddff0b7b901ab438c
 
       - name: Anvil RPC answers with the harness chain id
         run: |

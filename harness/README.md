@@ -1,24 +1,29 @@
 # Integration harness
 
 Everything needed to run a real, manual, end-to-end handle claim against a
-local chain: anvil, the factory-first 0.3.0 contract stack, the released
-notary and identity-backend images, and the buttons-only demo UI on top of
-`@libid/claim`.
+local chain: anvil, the factory-first contract stack (declaratively applied
+by libid-deploy 0.4.0), the released notary, identity-backend and keeper
+images, and the buttons-only demo UI on top of `@libid/claim`.
 
-Since libid-deploy 0.3.0 the local addresses **equal the canonical
-cross-network addresses**: every entry contract deploys through the
-deterministic `LibidFactory` (`0xa92244c3f4462aad08bd1a33c3940b9b936321ad`
-on every chain) via CREATE3 with `salt = keccak256(canonical name)`, so
-e.g. `IdentityNames` is `0xd467d48769c26faee36ba6b6fc9228f14aef6dd2` here
-*and* on every production network. What you test locally is
-address-identical to production. `libid-deploy plan --print-addresses`
-prints the full table offline.
+The local addresses **equal the canonical cross-network addresses**: every
+entry contract deploys through the deterministic `LibidFactory`
+(`0xa92244c3f4462aad08bd1a33c3940b9b936321ad` on every chain) via CREATE3
+with `salt = keccak256(canonical name)`, so e.g. `IdentityNames` is
+`0xd467d48769c26faee36ba6b6fc9228f14aef6dd2` here *and* on every production
+network. What you test locally is address-identical to production.
+`libid-deploy plan --print-addresses` prints the full table offline.
+
+Since libid-deploy 0.4.0 `network.local.toml` is **declarative**: every
+canonical address is pre-declared, chain state decides what still needs
+deploying, and `apply` never rewrites the file — so the harness applies it
+straight off its read-only mount and there is no regeneration step, ever.
 
 Automation of the click-through itself (captured-credentials driving a real
 browser — dyaka has prior art with chromiumoxide) is the next phase; today
 the harness boots the stack and a human clicks. The `integration-smoke` CI
-job already automates everything up to the consent screen: stack boot,
-deterministic-deploy drift check, and API-level assertions.
+job already automates everything up to the consent screen: stack boot, the
+declarative-deploy convergence check, the keeper's real JWKS rotation, and
+API-level assertions.
 
 ## One command
 
@@ -51,8 +56,9 @@ which does, in order:
 | Service | Image | Role |
 |---|---|---|
 | `anvil` | `ghcr.io/foundry-rs/foundry:v1.5.1` | chain 31337, `--code-size-limit 65536` (the Honk verifiers exceed EIP-170); the default Arachnid CREATE2 predeploy is kept on purpose — `ensure_*` is idempotent and the canonical addresses are the same either way |
-| `deploy` | `debian:bookworm-slim` (one-shot) | downloads released `libid-deploy` 0.3.0 for the container arch, fresh-applies the contracts, **asserts determinism** (below) |
-| `notary` | `ghcr.io/libid-org/notary:0.1.0` | MPC-TLS/ProxyMode notary; TCP 7047 + HTTP/WS 7048 |
+| `deploy` | `debian:bookworm-slim` (one-shot) | downloads released `libid-deploy` 0.4.0 for the container arch, fresh-applies the declarative network file on its read-only mount, **asserts convergence** (below) |
+| `notary` | `ghcr.io/libid-org/notary:0.1.0` | MPC-TLS/ProxyMode notary; TCP 7047 + HTTP/WS 7048; also serves the JWKS notarization duty |
+| `keeper` | `ghcr.io/libid-org/keeper:0.1.0` (one-shot) | one real rotation tick: MPC-TLS reading of Google's live JWKS through the notary, then `rotate()` on `identity_jwks_roots` and `google_oidc_verifier` |
 | `identity-backend` | `ghcr.io/libid-org/identity-backend:0.1.0` | GitHub OAuth + MPC-TLS proof service on 8722; also serves the Google fragment relay |
 
 Two addresses that look confusable and are not: the notary's
@@ -65,28 +71,38 @@ Two addresses that look confusable and are not: the notary's
 
 The deployed addresses are a pure function of their canonical names
 (CREATE3 through the frozen-address factory), known before anything is
-deployed and committed in `network.local.toml`. Compose wires them as
-static env. The one-shot `deploy` service re-runs the fresh apply against
-the fresh anvil and byte-compares the rewritten file (including
-`contracts.factory`, which the blanking step also clears) with the
-committed one — if `libid-deploy` or the embedded bytecode ever changes,
-the boot fails loudly instead of the addresses silently drifting away from
-the static wiring. (Verified locally: fresh bare and default anvil runs
-all produced byte-identical files matching `plan --print-addresses`.)
+deployed and declared in `network.local.toml`. Compose wires them as
+static env. Determinism is enforced by `libid-deploy` itself:
+`validate` rejects any declared canonical key that differs from
+`predict_address(factory, name)`, and `apply` aborts via its
+predict-equality canary if a deploy would land anywhere else. The one-shot
+`deploy` service fresh-applies the file directly on its read-only mount
+(apply never writes) and then asserts via `plan --json` that no
+`"deploy"`-status item remains — if `libid-deploy` or the embedded
+bytecode ever changes upstream, the boot fails loudly instead of the
+addresses silently drifting away from the static wiring.
 
-To regenerate after an upstream change: blank every value under
-`[contracts]` (including `factory`) and `[identity]`, run a local anvil
-(`--chain-id 31337 --code-size-limit 65536`; the default CREATE2 predeploy
-or `--disable-default-create2-deployer` both converge identically), point
-`rpc_url` at it, run
+There is no regeneration procedure: the file is declarative and never
+rewritten. After an upstream contract change, a new `libid-deploy` release
+ships a new canonical address table, and this file's declared values must
+be updated to match `plan --print-addresses` (validation fails until they
+do).
 
-```sh
-harness/bin/bin/libid-deploy apply --network harness/network.local.toml \
-  --signer ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-  --yes --confirm-fresh-deploy
-```
+### The JWKS keeper: Google claims work locally
 
-restore `rpc_url = "http://anvil:8545"`, and commit the diff.
+The identity stack deploys `identity_jwks_roots` (and the login stack's
+`google_oidc_verifier`) with an **empty** trust list, so Google claims
+would revert with `UntrustedModulus` on a virgin chain. The one-shot
+`keeper` service closes that gap with the real production path, not a
+mock: one `keeper once` tick polls Google's live JWKS, obtains an MPC-TLS
+notarized reading of `https://www.googleapis.com/oauth2/v3/certs` through
+the stack's notary (whose signing key, anvil #1, is exactly the signer the
+on-chain `Notary` contract trusts), and submits `rotate()` to both JWKS
+contracts with anvil #5 as pure gas money. It exits 0 only when every
+rotation landed — after boot, Google claims verify locally. Requires
+outbound HTTPS to `www.googleapis.com`; config in `harness/keeper.toml`
+(static, committed). For a long-lived rotation loop instead of the
+one-shot: `docker compose run --rm keeper --config /input/keeper.toml run`.
 
 ## Manual test procedure
 
@@ -106,10 +122,11 @@ Prereqs (once):
   name, not constructor args).
 * **Google** (optional): an OAuth client with redirect URI
   `http://localhost:8722/auth/gmail/callback`, its client id in
-  `network.local.toml` (`[platforms] google_client_id`) before boot. Note:
-  Google claims additionally need a JWKS rotation listener feeding
-  `identity_jwks_roots` (deployed empty) — not part of this harness yet;
-  Google binds revert with `UntrustedModulus` until then.
+  `network.local.toml` (`[platforms] google_client_id`) before boot. The
+  JWKS trust roots are populated by the harness's own `keeper` service on
+  every boot (a real MPC-TLS rotation through the notary — see above), so
+  the historical `UntrustedModulus` gap is closed and Google claims work
+  locally out of the box.
 
 Then:
 
@@ -129,6 +146,6 @@ Then:
 ## Dev alternative without Docker
 
 `harness/build-bins.sh` cargo-installs the released `libid-deploy`,
-`notary` and `identity-backend` into `harness/bin/bin/` (timings in the
-script header) and its comments sketch the native run — same ports, same
-env, values from `network.local.toml`.
+`notary`, `identity-backend` and `keeper` into `harness/bin/bin/` (timings
+in the script header) and its comments sketch the native run — same ports,
+same env, values from `network.local.toml`.

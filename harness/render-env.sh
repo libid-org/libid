@@ -3,6 +3,10 @@
 # docker-compose (harness/.env) and the demo (ts/apps/demo/.env.local).
 # Single source of truth: the TOML. Everything here is regenerated on every
 # boot; neither output file is committed.
+#
+# The keeper needs no rendering: harness/keeper.toml is static (service
+# names + public anvil keys) and reads the contract addresses itself from
+# the network file mounted next to it.
 
 set -euo pipefail
 

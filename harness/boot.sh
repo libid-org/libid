@@ -2,8 +2,11 @@
 # Boot the whole manual-test stack:
 #
 #   1. stage the demo's static assets (skippable: SKIP_ASSETS=1)
-#   2. render env from the committed network file
-#   3. docker compose up (anvil → deploy+drift-check → notary → backend)
+#   2. render env from the committed network file (keeper.toml is static —
+#      nothing to render there)
+#   3. docker compose up (anvil → declarative deploy → notary → backend,
+#      plus the one-shot JWKS keeper: a real MPC-TLS rotation of Google's
+#      JWKS roots through the notary, so Google claims work locally)
 #   4. health-check everything and print a status table
 #   5. run the vite dev server in the foreground
 #
@@ -55,6 +58,12 @@ check "anvil rpc" curl -fsS -X POST -H 'content-type: application/json' \
   http://127.0.0.1:8545 || ok=1
 check "notary /info" curl -fsS http://127.0.0.1:7048/info || ok=1
 check "backend /health" curl -fsS http://localhost:8722/health || ok=1
+# The keeper is one-shot: healthy = ran once and exited 0 (JWKS roots
+# rotated on-chain; Google claims now verify). `compose wait` blocks until
+# the container exits and propagates its exit code — `up --wait` can return
+# while the MPC-TLS tick is still in flight.
+check "keeper (JWKS once)" \
+  docker compose -f "$HARNESS/docker-compose.yml" wait keeper || ok=1
 [ "$ok" = 0 ] || { echo "A health check failed — see docker compose logs."; exit 1; }
 
 echo ""
