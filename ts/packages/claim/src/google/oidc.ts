@@ -117,7 +117,7 @@ export async function proveOidc(
   // wasm. Init with an EXPLICIT `_bg.wasm` URL: the no-arg default resolves
   // relative to import.meta.url, which is fine here, but explicit keeps the
   // staging contract visible.
-  const wasm = (await import(/* @vite-ignore */ wasmJsUrl)) as OidcWasm
+  const wasm = (await import(/* webpackIgnore: true */ /* @vite-ignore */ wasmJsUrl)) as OidcWasm
   await wasm.default(wasmJsUrl.replace(/\.js$/, '_bg.wasm'))
 
   const jwksResp = await fetch(JWKS_URL)

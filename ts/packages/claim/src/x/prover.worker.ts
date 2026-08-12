@@ -192,7 +192,7 @@ async function loadWasm(): Promise<TlsnWasm> {
   // same-origin import keeps the multi-megabyte MPC bundle out of this
   // library's graph.
   const wasmUrl = `${appOrigin}/tlsn_wasm.js`
-  const wasm = (await import(/* @vite-ignore */ wasmUrl)) as TlsnWasm
+  const wasm = (await import(/* webpackIgnore: true */ /* @vite-ignore */ wasmUrl)) as TlsnWasm
   if (!wasmInitialized) {
     await wasm.default()
     try {
