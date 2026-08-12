@@ -36,9 +36,6 @@ export interface GoogleClaimConfig {
   /** Same-origin URL of the compiled jwt_email circuit JSON. Defaults to
    *  `${origin}/circuits/jwt_email.json`. */
   circuitUrl?: string
-  /** Same-origin URL of the libid-oidc-wasm JS bundle. Defaults to
-   *  `${origin}/wasm/oidc_noir_wasm.js`. */
-  wasmUrl?: string
 }
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -114,7 +111,6 @@ export async function proveGoogleClaim(
       chainId: config.chainId,
       verifyingContract: config.verifyingContract,
       circuitUrl: config.circuitUrl,
-      wasmUrl: config.wasmUrl,
     },
     signal,
   )

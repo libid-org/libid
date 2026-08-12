@@ -6,15 +6,13 @@
 #   /circuit/dyaka_noir_token.json               ← libid-org/libid-circuits (X)
 #   /circuits/jwt_email.json                     ← libid-org/libid-circuits (Google)
 #   /wasm/acvm_js_bg.wasm /wasm/noirc_abi_wasm_bg.wasm ← node_modules (noir_js)
-#   /wasm/oidc_noir_wasm.js /wasm/oidc_noir_wasm_bg.wasm ← rust/build-oidc-wasm.sh
 #
 # (Yes, /circuit/ singular for X and /circuits/ plural for Google — the two
 # flows grew up separately and both paths are overridable per-call in
 # @libid/claim; the harness keeps the defaults.)
 #
 # Prereqs: `pnpm install` has run in ts/ (noir wasm comes from
-# node_modules); curl; wasm-pack 0.15.0 for the OIDC bundle; shasum or
-# sha256sum.
+# node_modules); curl; shasum or sha256sum.
 
 set -euo pipefail
 
@@ -80,9 +78,6 @@ stage_circuit jwt_email jwt_email.json "$PUBLIC/circuits/jwt_email.json"
 
 # ── noir wasm (worker prover init) ─────────────────────────────────────────
 node "$REPO_ROOT/ts/apps/demo/scripts/stage-noir-wasm.mjs"
-
-# ── OIDC wasm (Google flow input building) ─────────────────────────────────
-bash "$REPO_ROOT/rust/build-oidc-wasm.sh"
 
 echo ""
 echo "All demo assets staged under ts/apps/demo/public/."

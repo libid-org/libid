@@ -33,9 +33,6 @@ carries the browser claim library and the integration harness:
   Framework-free (no React), wallet-product-free (a unit test enforces it).
 - [`ts/apps/demo`](ts/apps/demo) — a buttons-only vite demo consuming the
   library: connect a wallet (or a dev key), claim a handle, resolve it.
-- [`rust/`](rust) — `libid-oidc-core` + `libid-oidc-wasm`, the JWT/JWKS →
-  circuit-input math behind the Google flow, compiled to wasm for the
-  browser (`rust/build-oidc-wasm.sh`).
 - [`harness/`](harness) — the integration harness: a docker-compose stack
   (anvil + deterministic contract deploy + released notary and
   identity-backend images) plus asset staging and one `boot.sh` for a
