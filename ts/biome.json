@@ -2,7 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
   "vcs": { "enabled": false },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!apps/demo/public"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!apps/demo/public",
+      "!packages/claim-full/assets"
+    ]
   },
   "formatter": {
     "enabled": true,

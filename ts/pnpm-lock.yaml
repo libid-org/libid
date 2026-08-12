@@ -77,6 +77,25 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@22.20.1)
 
+  packages/claim-full:
+    dependencies:
+      '@libid/claim':
+        specifier: workspace:^
+        version: link:../claim
+    devDependencies:
+      '@aztec/bb.js':
+        specifier: 5.0.0-nightly.20260324
+        version: 5.0.0-nightly.20260324
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.1)
+
 packages:
 
   '@adraffy/ens-normalize@1.11.1':
