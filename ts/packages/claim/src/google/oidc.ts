@@ -1,8 +1,8 @@
 // Google OIDC proof pipeline (parent-side).
 //
 //   proveOidc() — parse the Google ID token relayed from the popup, fetch
-//   JWKS, build prover inputs in WASM, and generate the UltraHonk proof in
-//   a Web Worker.
+//   JWKS, build prover inputs (pure TS, see circuitInputs.ts), and generate
+//   the UltraHonk proof in a Web Worker.
 //
 // This runs in the PARENT; the popup is a pure relay (see relay.ts). The
 // deployment target (chain id + verifying contract) is EXPLICIT here: the
@@ -10,6 +10,7 @@
 // itself, so a proof is only spendable where it was minted for.
 
 import { type RawProof, WorkerProver } from '../prover/index.js'
+import { buildOidcProverInputs } from './circuitInputs.js'
 
 const JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 
@@ -22,21 +23,6 @@ export interface OidcProofPayload {
   nonce: string
   honkProof: `0x${string}`
   publicInputs: `0x${string}`[]
-}
-
-/** The wasm-pack `--target web` bundle for libid-oidc-wasm, loaded
- *  dynamically from the app origin (staged by the harness's
- *  stage-assets.sh / rust/build-oidc-wasm.sh). */
-interface OidcWasm {
-  default: (wasmUrl?: string) => Promise<unknown>
-  build_prover_inputs: (
-    idToken: string,
-    jwkN: string,
-    nonce: string,
-    clientId: string,
-    chainId: bigint,
-    verifyingContract: string,
-  ) => unknown
 }
 
 function b64urlToBytes(s: string): Uint8Array {
@@ -90,9 +76,6 @@ export interface OidcProveArgs {
   /** Same-origin URL of the compiled jwt_email circuit JSON. Defaults to
    *  `${origin}/circuits/jwt_email.json`. */
   circuitUrl?: string
-  /** Same-origin URL of the libid-oidc-wasm JS bundle. Defaults to
-   *  `${origin}/wasm/oidc_noir_wasm.js` (with `_bg.wasm` next to it). */
-  wasmUrl?: string
 }
 
 /** Build the Google identity proof from an id_token. */
@@ -103,7 +86,6 @@ export async function proveOidc(
   signal?.throwIfAborted()
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const circuitUrl = args.circuitUrl ?? `${origin}/circuits/jwt_email.json`
-  const wasmJsUrl = args.wasmUrl ?? `${origin}/wasm/oidc_noir_wasm.js`
 
   const [headerB64, payloadB64] = args.idToken.split('.')
   if (!headerB64 || !payloadB64) throw new Error('Google returned a malformed ID token')
@@ -111,14 +93,6 @@ export async function proveOidc(
     kid: string
   }
   const payload = readOidcIdentity(args.idToken, args.clientId)
-
-  // The bindings are a build artifact staged at the app origin, so they are
-  // dynamically imported rather than bundled — same pattern as the tlsn
-  // wasm. Init with an EXPLICIT `_bg.wasm` URL: the no-arg default resolves
-  // relative to import.meta.url, which is fine here, but explicit keeps the
-  // staging contract visible.
-  const wasm = (await import(/* webpackIgnore: true */ /* @vite-ignore */ wasmJsUrl)) as OidcWasm
-  await wasm.default(wasmJsUrl.replace(/\.js$/, '_bg.wasm'))
 
   const jwksResp = await fetch(JWKS_URL)
   if (!jwksResp.ok) throw new Error(`JWKS fetch failed: ${jwksResp.status}`)
@@ -131,7 +105,7 @@ export async function proveOidc(
   // chain_id + the verifying contract are bound into the proof and checked
   // on-chain, so it can't be replayed against another deployment sharing
   // the VK — nor against a different consumer of the same circuit.
-  const inputs = wasm.build_prover_inputs(
+  const inputs = await buildOidcProverInputs(
     args.idToken,
     jwk.n,
     args.nonce,
@@ -143,7 +117,7 @@ export async function proveOidc(
   const prover = new WorkerProver(circuitUrl)
   let raw: RawProof
   try {
-    raw = await prover.prove(inputs as Record<string, unknown>, signal)
+    raw = await prover.prove(inputs as unknown as Record<string, unknown>, signal)
   } finally {
     prover.destroy()
   }

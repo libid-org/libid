@@ -11,14 +11,14 @@
 /// (/tlsn_wasm.js, /tlsn_wasm_bg.wasm, /spawn.js), the compiled circuits
 /// (/circuit/dyaka_noir_token.json for X, /circuits/jwt_email.json for
 /// Google — the two paths differ for historical reasons; both are
-/// overridable per-call), the noir wasm (/wasm/acvm_js_bg.wasm,
-/// /wasm/noirc_abi_wasm_bg.wasm), and the OIDC wasm
-/// (/wasm/oidc_noir_wasm.js + _bg.wasm). The X and Google provers also
-/// require cross-origin isolation (COOP same-origin + COEP require-corp).
+/// overridable per-call), and the noir wasm (/wasm/acvm_js_bg.wasm,
+/// /wasm/noirc_abi_wasm_bg.wasm). The X and Google provers also require
+/// cross-origin isolation (COOP same-origin + COEP require-corp).
 
 export * from './channel.js'
 export { compressPublicKey } from './crypto.js'
 export * from './github.js'
+export * from './google/circuitInputs.js'
 export * from './google/claim.js'
 export * from './google/oidc.js'
 export * from './oauth.js'
