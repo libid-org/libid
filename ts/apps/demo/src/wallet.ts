@@ -22,8 +22,7 @@ const RPC_URL = import.meta.env.VITE_RPC_URL ?? 'http://127.0.0.1:8545'
 // `?dev` in the URL forces the dev-key signer even when the browser has an
 // injected wallet — for driving the harness test in a profile whose wallet
 // extension would otherwise capture the connect flow.
-const FORCE_DEV_KEY =
-  DEV_KEY !== '' && new URLSearchParams(window.location.search).has('dev')
+const FORCE_DEV_KEY = DEV_KEY !== '' && new URLSearchParams(window.location.search).has('dev')
 
 export interface Wallet {
   /** Null until connected. Everything on the page that writes needs it. */
