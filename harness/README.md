@@ -144,10 +144,3 @@ Then:
    `resolveId(platform, userId) == holder`).
 6. Paste your handle or the holder address into **Resolve** and confirm
    both directions.
-
-## Dev alternative without Docker
-
-`harness/build-bins.sh` cargo-installs the released `libid-deploy`,
-`notary`, `identity-backend` and `keeper` into `harness/bin/bin/` (timings
-in the script header) and its comments sketch the native run — same ports,
-same env, values from `network.local.toml`.
