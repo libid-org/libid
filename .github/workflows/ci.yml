@@ -153,11 +153,15 @@ jobs:
         working-directory: harness
         run: |
           set -euo pipefail
-          # `compose wait` blocks until the one-shot keeper exits and
-          # propagates its exit code — nonzero means a rotation failed.
-          code=$(docker compose wait keeper) || true
+          # Block until the one-shot keeper exits, then read its real exit code
+          # from the container. `docker compose wait` prints a human sentence,
+          # not a bare number, on this Compose version — so inspect the state
+          # rather than parsing its stdout.
+          docker compose wait keeper >/dev/null 2>&1 || true
           docker compose logs keeper
-          [ "${code:-1}" = "0" ] || { echo "keeper exited ${code:-?}"; exit 1; }
+          cid=$(docker compose ps -aq keeper)
+          code=$(docker inspect -f '{{.State.ExitCode}}' "$cid")
+          [ "$code" = "0" ] || { echo "keeper exited $code"; exit 1; }
 
       - name: JWKS contracts report roots present post-rotation
         working-directory: harness
