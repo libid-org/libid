@@ -25,7 +25,7 @@ set -euo pipefail
 HARNESS="$(cd "$(dirname "$0")" && pwd)"
 ROOT_FLAG=(--root "$HARNESS/bin" --locked)
 
-DEPLOY_TAG="${DEPLOY_TAG:-v0.2.0}"
+DEPLOY_TAG="${DEPLOY_TAG:-v0.3.0}"
 NOTARY_TAG="${NOTARY_TAG:-v0.1.0}"
 BACKEND_TAG="${BACKEND_TAG:-v0.1.0}"
 

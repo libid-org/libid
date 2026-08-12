@@ -26,7 +26,9 @@ tar -xzf /tmp/libid-deploy.tar.gz -C /tmp --strip-components=1
 chmod +x /tmp/libid-deploy
 
 # Blank every value under [contracts] and [identity] (section-aware: the
-# `notary` key also exists under [accounts], where it must stay).
+# `notary` key also exists under [accounts], where it must stay). This
+# includes contracts.factory (libid-deploy ≥ 0.3.0 records the LibidFactory
+# address there); a fresh apply reconverges it in place.
 awk '
   /^\[/ { section = $0 }
   section == "[contracts]" || section == "[identity]" {

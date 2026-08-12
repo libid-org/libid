@@ -3,9 +3,11 @@
 # demo UI and its static assets stay host-side (vite dev server) — see
 # boot.sh, which orchestrates the whole thing.
 #
-# Address hand-off: there is none at runtime, on purpose. Anvil is
-# deterministic and libid-deploy's order is fixed, so the deployed
-# addresses are pre-recorded in network.local.toml (committed). render-env.sh
+# Address hand-off: there is none at runtime, on purpose. Since
+# libid-deploy 0.3.0 every entry contract deploys through the deterministic
+# LibidFactory via CREATE3, so the addresses are the CANONICAL
+# cross-network ones — the same here as on every real chain — and are
+# pre-recorded in network.local.toml (committed). render-env.sh
 # parses that file into .env, compose interpolates the values below as
 # static env, and the one-shot deploy service re-runs the fresh apply and
 # asserts the result is byte-identical to the committed file — the
@@ -23,6 +25,14 @@ services:
       # The generated UltraHonk circuit verifiers exceed the EIP-170 24KB
       # limit, exactly like the real target chains that raise it.
       - --code-size-limit=65536
+      # Deliberately NOT --disable-default-create2-deployer: default anvil
+      # PREDEPLOYS the keyless Arachnid CREATE2 proxy, and libid-deploy's
+      # ensure_* steps are idempotent — they take the predeploy as-is and
+      # skip the one-time install transaction. Either way the factory (and
+      # every CREATE3 address behind it) lands on the same canonical
+      # address, so the committed network.local.toml matches regardless of
+      # how the deployer got there (verified: bare and default anvil
+      # converge byte-identically).
       - --host=0.0.0.0
     ports:
       - "8545:8545"
@@ -41,7 +51,7 @@ services:
       anvil:
         condition: service_healthy
     environment:
-      LIBID_DEPLOY_VERSION: "0.2.0"
+      LIBID_DEPLOY_VERSION: "0.3.0"
       # anvil #0 — canonical public test key, the deployer.
       DEPLOYER_KEY: ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
     volumes:

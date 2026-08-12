@@ -1,9 +1,18 @@
 # Integration harness
 
 Everything needed to run a real, manual, end-to-end handle claim against a
-local chain: anvil, the deployed 0.2.0 contract stack, the released notary
-and identity-backend images, and the buttons-only demo UI on top of
+local chain: anvil, the factory-first 0.3.0 contract stack, the released
+notary and identity-backend images, and the buttons-only demo UI on top of
 `@libid/claim`.
+
+Since libid-deploy 0.3.0 the local addresses **equal the canonical
+cross-network addresses**: every entry contract deploys through the
+deterministic `LibidFactory` (`0xa92244c3f4462aad08bd1a33c3940b9b936321ad`
+on every chain) via CREATE3 with `salt = keccak256(canonical name)`, so
+e.g. `IdentityNames` is `0xd467d48769c26faee36ba6b6fc9228f14aef6dd2` here
+*and* on every production network. What you test locally is
+address-identical to production. `libid-deploy plan --print-addresses`
+prints the full table offline.
 
 Automation of the click-through itself (captured-credentials driving a real
 browser — dyaka has prior art with chromiumoxide) is the next phase; today
@@ -41,8 +50,8 @@ which does, in order:
 
 | Service | Image | Role |
 |---|---|---|
-| `anvil` | `ghcr.io/foundry-rs/foundry:v1.5.1` | chain 31337, `--code-size-limit 65536` (the Honk verifiers exceed EIP-170) |
-| `deploy` | `debian:bookworm-slim` (one-shot) | downloads released `libid-deploy` 0.2.0 for the container arch, fresh-applies the contracts, **asserts determinism** (below) |
+| `anvil` | `ghcr.io/foundry-rs/foundry:v1.5.1` | chain 31337, `--code-size-limit 65536` (the Honk verifiers exceed EIP-170); the default Arachnid CREATE2 predeploy is kept on purpose — `ensure_*` is idempotent and the canonical addresses are the same either way |
+| `deploy` | `debian:bookworm-slim` (one-shot) | downloads released `libid-deploy` 0.3.0 for the container arch, fresh-applies the contracts, **asserts determinism** (below) |
 | `notary` | `ghcr.io/libid-org/notary:0.1.0` | MPC-TLS/ProxyMode notary; TCP 7047 + HTTP/WS 7048 |
 | `identity-backend` | `ghcr.io/libid-org/identity-backend:0.1.0` | GitHub OAuth + MPC-TLS proof service on 8722; also serves the Google fragment relay |
 
@@ -54,19 +63,22 @@ Two addresses that look confusable and are not: the notary's
 
 ### No runtime address hand-off, by construction
 
-Anvil is deterministic (fixed mnemonic, deployer = account #0 from nonce 0)
-and `libid-deploy`'s deploy order is fixed, so the deployed addresses are
-known in advance and committed in `network.local.toml`. Compose wires them
-as static env. The one-shot `deploy` service re-runs the fresh apply
-against the fresh anvil and byte-compares the rewritten file with the
+The deployed addresses are a pure function of their canonical names
+(CREATE3 through the frozen-address factory), known before anything is
+deployed and committed in `network.local.toml`. Compose wires them as
+static env. The one-shot `deploy` service re-runs the fresh apply against
+the fresh anvil and byte-compares the rewritten file (including
+`contracts.factory`, which the blanking step also clears) with the
 committed one — if `libid-deploy` or the embedded bytecode ever changes,
 the boot fails loudly instead of the addresses silently drifting away from
-the static wiring. (Verified locally: two fresh anvil runs produced
-byte-identical files.)
+the static wiring. (Verified locally: fresh bare and default anvil runs
+all produced byte-identical files matching `plan --print-addresses`.)
 
 To regenerate after an upstream change: blank every value under
-`[contracts]` and `[identity]`, run a local anvil
-(`--chain-id 31337 --code-size-limit 65536`), point `rpc_url` at it, run
+`[contracts]` (including `factory`) and `[identity]`, run a local anvil
+(`--chain-id 31337 --code-size-limit 65536`; the default CREATE2 predeploy
+or `--disable-default-create2-deployer` both converge identically), point
+`rpc_url` at it, run
 
 ```sh
 harness/bin/bin/libid-deploy apply --network harness/network.local.toml \
@@ -90,8 +102,8 @@ Prereqs (once):
   `http://localhost:5173/zk/x-popup`, and its client id in
   `network.local.toml` (`[platforms] x_client_id`) *before* boot — the id
   is baked into the on-chain verifier at deploy time. Addresses do not
-  move when inputs change (CREATE addresses depend only on deployer
-  nonces).
+  move when inputs change (CREATE3 addresses depend only on the canonical
+  name, not constructor args).
 * **Google** (optional): an OAuth client with redirect URI
   `http://localhost:8722/auth/gmail/callback`, its client id in
   `network.local.toml` (`[platforms] google_client_id`) before boot. Note:
