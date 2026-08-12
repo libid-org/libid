@@ -69,11 +69,19 @@ const claimPkg = JSON.parse(readFileSync(join(packageRoot('@libid/claim'), 'pack
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
 
-async function fetchBytes(url) {
+async function fetchBytes(url, attempts = 3) {
   console.log(`==> fetch ${url}`)
-  const resp = await fetch(url, { redirect: 'follow' })
-  if (!resp.ok) throw new Error(`GET ${url} failed: ${resp.status}`)
-  return Buffer.from(await resp.arrayBuffer())
+  for (let i = 1; ; i++) {
+    try {
+      const resp = await fetch(url, { redirect: 'follow' })
+      if (!resp.ok) throw new Error(`GET ${url} failed: ${resp.status}`)
+      return Buffer.from(await resp.arrayBuffer())
+    } catch (err) {
+      if (i >= attempts) throw err
+      console.warn(`   retrying (${i}/${attempts - 1} failed): ${err.message ?? err}`)
+      await new Promise((r) => setTimeout(r, 2000 * i))
+    }
+  }
 }
 
 function untar(tarball, dest) {
