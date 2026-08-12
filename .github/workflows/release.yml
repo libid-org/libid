@@ -1,0 +1,103 @@
+name: Release
+
+# Publishing a GitHub Release tagged `v<version>` publishes @libid/claim to
+# npm. The tag is a pointer, never a source: it must equal the package.json
+# version. Auth is token-first (org NPM_TOKEN secret) with OIDC trusted
+# publishing as the fallback — same model as libid-contracts.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tag:
+    name: Release tag matches version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag equals package version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          pkg=$(node -p "require('./ts/packages/claim/package.json').version")
+          echo "tag: $TAG  package: $pkg"
+          [ "$version" = "$pkg" ] || { echo "::error::tag $TAG != package version $pkg"; exit 1; }
+
+  publish-npm:
+    name: Publish @libid/claim to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [verify-tag]
+    environment: npm-deploy
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      # Public repo: provenance attestation is on.
+      NPM_CONFIG_PROVENANCE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+
+      - name: Update npm for OIDC trusted publishing
+        run: npm install -g npm@latest && npm --version
+
+      - name: Install dependencies
+        run: pnpm -C ts install --frozen-lockfile
+
+      - name: Build and test
+        run: |
+          pnpm -C ts build
+          pnpm -C ts test
+
+      # Derive the dist-tag: a prerelease publishes under its first
+      # prerelease identifier (1.2.0-rc.1 -> rc), a plain version -> latest.
+      - name: Derive dist-tag from version
+        id: dist-tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          base="${version%%+*}"
+          if [ "$base" != "${base#*-}" ]; then
+            pre="${base#*-}"
+            dist_tag="${pre%%.*}"
+            printf '%s' "$dist_tag" | grep -qE '^[A-Za-z][A-Za-z0-9._-]*$' || {
+              echo "::error::prerelease identifier '$dist_tag' is not a usable npm dist-tag" >&2
+              exit 1
+            }
+          else
+            dist_tag=latest
+          fi
+          echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
+
+      # From the package directory, not `pnpm -C` (pnpm 10 mangles forwarded
+      # flags under -C). Token-first with OIDC fallback, as in libid-contracts.
+      - name: pnpm publish
+        working-directory: ts/packages/claim
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> "$HOME/.npmrc"
+            echo "Authenticating with the org npm token"
+          else
+            echo "No NPM_TOKEN secret; relying on OIDC trusted publishing"
+          fi
+          pnpm publish --access public --no-git-checks --tag "${{ steps.dist-tag.outputs.dist-tag }}"
