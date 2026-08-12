@@ -6,14 +6,23 @@
 /// and resolving names are `@libid/contracts`' job; this package produces
 /// the proof bytes.
 ///
-/// Static assets the host app must stage at its origin (the repo's
-/// harness/stage-assets.sh shows how): the tlsn wasm bundle
-/// (/tlsn_wasm.js, /tlsn_wasm_bg.wasm, /spawn.js), the compiled circuits
-/// (/circuit/dyaka_noir_token.json for X, /circuits/jwt_email.json for
-/// Google — the two paths differ for historical reasons; both are
-/// overridable per-call), and the noir wasm (/wasm/acvm_js_bg.wasm,
-/// /wasm/noirc_abi_wasm_bg.wasm). The X and Google provers also require
-/// cross-origin isolation (COOP same-origin + COEP require-corp).
+/// Static assets the host app must stage at its origin (@libid/claim-full
+/// bundles them all; `libid-claim-assets <public-dir>` stages them): the
+/// tlsn wasm bundle (/tlsn_wasm.js, /tlsn_wasm_bg.wasm, /spawn.js), the
+/// compiled circuits (/circuits/dyaka_noir_token.json for X,
+/// /circuits/jwt_email.json for Google — both overridable per-call), and
+/// the noir wasm (/wasm/acvm_js_bg.wasm, /wasm/noirc_abi_wasm_bg.wasm).
+/// The X and Google provers also require cross-origin isolation
+/// (COOP same-origin + COEP require-corp).
+///
+/// Toolchain note: @aztec/bb.js and the @noir-lang packages are pinned to
+/// EXACTLY the toolchain that built the libid-org/libid-circuits release
+/// (see its manifest.json). Stable bb.js (5.0.x/5.1.x) cannot deserialize
+/// the released beta.20 ACIR, and any drift changes the derived vk — the
+/// on-chain verifiers are generated from those exact vk bytes. Bumping the
+/// pins requires recutting the circuits release and redeploying its
+/// verifiers together; @libid/claim-full's build and tests fail on any
+/// mismatch (fetch-assets toolchain tie + vk-hash derivation test).
 
 export * from './channel.js'
 export { compressPublicKey } from './crypto.js'

@@ -31,7 +31,7 @@ export interface XClaimConfig {
    *  /zk/x-popup route). */
   redirectUri: string
   /** Same-origin URL of the compiled token circuit JSON. Defaults to
-   *  `${origin}/circuit/dyaka_noir_token.json`. */
+   *  `${origin}/circuits/dyaka_noir_token.json`. */
   circuitUrl?: string
 }
 
