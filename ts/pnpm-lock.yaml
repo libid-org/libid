@@ -17,6 +17,9 @@ importers:
       '@libid/claim':
         specifier: workspace:*
         version: link:../../packages/claim
+      '@libid/claim-full':
+        specifier: workspace:*
+        version: link:../../packages/claim-full
       '@libid/contracts':
         specifier: ^0.2.0
         version: 0.2.0(viem@2.55.13(typescript@5.9.3))
