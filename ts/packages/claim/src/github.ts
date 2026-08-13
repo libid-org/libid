@@ -32,8 +32,6 @@ interface VerifyResponse {
     endpoint: string
     tls_proof: {
       notarySignature: Hex
-      backendSignature: Hex
-      userAddress: Address
       walletAddress: Address
       domainHash: Hex
       clientRandom: Hex
