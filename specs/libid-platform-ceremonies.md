@@ -123,8 +123,9 @@ authority:
 | X | exact signed `meAttest.timestamp` |
 | GitHub | exact signed `userAttest.timestamp` |
 
-X and GitHub use the shared
-[proof-bound PKCE construction](libid-ceremony-common.md#shared-pkce-construction).
+Every platform uses the shared [ceremony binding and
+nullifier](libid-ceremony-common.md#shared-ceremony-binding-and-pkce-construction).
+X and GitHub additionally use its proof-bound PKCE challenge.
 For metadata ordering, “timestamp” above always means the signed TLSNotary
 attestation creation time, not an HTTP `Date` header, response field, browser
 receipt time, or backend clock.
@@ -173,7 +174,7 @@ exact ordered tuple under the
 | 4 | `redirect_uri` | immutable `PlatformFlightV1.callbackUri` |
 | 5 | `scope` | `openid email` |
 | 6 | `state` | immutable one-use OAuth state |
-| 7 | `nonce` | `BASE64URL_NOPAD(bytes32(claimDigest))` |
+| 7 | `nonce` | `BASE64URL_NOPAD(ceremonyBinding)` |
 
 No prompt, login hint, hosted domain, incremental authorization, access-token
 response type, or additional scope is present in the launch profile.
@@ -184,14 +185,14 @@ exactly one `state`, and exactly one `id_token` XOR `error`. It ignores and
 scrubs diagnostic fields, including unsigned `iss`; only the issuer inside the
 signed token is authoritative.
 
-The `nonce` is
-`BASE64URL_NOPAD(bytes32(claimDigest))`: the 32 digest bytes, not hexadecimal
-text. The result is exactly 43 ASCII characters. The circuit and verifier prove
-or enforce all of the following:
+The `nonce` is `BASE64URL_NOPAD(ceremonyBinding)`: the 32 binding bytes, not
+hexadecimal text. The result is exactly 43 ASCII characters. The circuit and
+verifier prove or enforce all of the following:
 
 - Google's signature and exact signed issuer `https://accounts.google.com`;
 - token expiry and the platform proof-validity ceiling;
-- `nonce` equal to the immutable action's `claimDigest`;
+- `nonce`, `claimDigest`, and `rawCeremonyNullifier` derived from the same
+  private `ceremonyNonce` under the common construction;
 - immutable `sub` as `userId`;
 - normalized email as `handle`;
 - the exact Boolean `email_verified: true`;
@@ -204,14 +205,18 @@ type for `iss`, `sub`, `aud`, `iat`, `exp`, `nonce`, `email`, and
 second accepted occurrence fail. The canonical user-ID and handle rules above
 apply before proof construction.
 
-For the common RegisterSession and Bootstrap claim vectors, respectively:
+For the common RegisterSession and Bootstrap claim vectors with test-only
+`ceremonyNonce = 0x4444444444444444444444444444444444444444444444444444444444444444`,
+respectively:
 
 ```text
 claimDigest             = 0x2c66fac6f79187cf540f2b16b54bfbbaca093ed6b2a5f88be16444615a88ff78
-Google nonce            = LGb6xveRh89UDysWtUv7usoJPtaypfiL4WREYVqI_3g
+ceremonyBinding         = 0x4b570947a252a393a94616ef41e0ea3334b258d5baec041aa6f2dc89501500f8
+Google nonce            = S1cJR6JSo5OpRhbvQeDqMzSyWNW67AQapvLciVAVAPg
 
 Bootstrap claimDigest   = 0xb3e63675eece3203732883593df6ce43e36367c652d16127a56b4e286f02e41f
-Bootstrap Google nonce  = s-Y2de7OMgNzKINZPfbOQ-NjZ8ZS0WEnpWtOKG8C5B8
+Bootstrap binding       = 0xb4fa6a636863bb566ac4d65a36640e15ed249e9ddb1766d5e830e3079f0db27d
+Bootstrap Google nonce  = tPpqY2hju1ZqxNZaNmQOFe0knp3bF2bV6DDjB58Nsn0
 ```
 
 ASCII-hex, padding, a legacy address-valued nonce, or any altered claim field
@@ -337,9 +342,10 @@ fields fail before exchange or proving.
 2. The `/2/users/me` session sends that exact bearer to `api.x.com`, commits the
    same bearer in the request, and authenticates the response's immutable `id`
    and mutable `username`.
-3. The final proof binds the exact ordered token request, PKCE derivation,
-   `claimDigest`, both attestations, one bearer across both transcripts,
-   immutable identity, normalized handle, metadata timestamp, and nullifier.
+3. The final proof binds the exact ordered token request, common ceremony/PKCE
+   derivation, `claimDigest`, `rawCeremonyNullifier`, both attestations, one
+   bearer across both transcripts, immutable identity, normalized handle, and
+   metadata timestamp.
 
 The configured X notary key is the proof trust root. Notary compromise can mint
 fresh X evidence until that key is actually removed or the platform is retired;
@@ -471,10 +477,10 @@ requires fresh OAuth.
 Only after those checks does the popup atomically encrypt the bearer and
 exchange attestation into `CeremonyResumeV1`. It then notarizes GitHub's exact
 `/user` request above in the browser and builds the final proof. The proof
-re-enforces the confidential exchange, PKCE derivation, exact `read:user`
-scope, and one bearer across both transcripts. It derives immutable `/user.id`,
-normalized `/user.login`, and the notarized response timestamp from verified
-public inputs.
+re-enforces the confidential exchange, common ceremony/PKCE derivation,
+`rawCeremonyNullifier`, exact `read:user` scope, and one bearer across both
+transcripts. It derives immutable `/user.id`, normalized `/user.login`, and the
+notarized response timestamp from verified public inputs.
 
 The exchange handler retains request material only for the synchronous call. It
 persists no code, verifier, bearer, attestation, action, result, progress, or
@@ -527,7 +533,8 @@ A new platform profile must define, at minimum:
 - client portability or an explicitly bounded client family;
 - exact authorization and callback transport;
 - every authenticated request/response field and its provenance;
-- binding of the common `claimDigest`, target, session, and nullifier;
+- binding of the common `claimDigest`, target, session, `ceremonyNonce`, and
+  `rawCeremonyNullifier`;
 - a fresh authenticated proof-validity ceiling;
 - the trust root and its Registry lifecycle;
 - browser/callback-deployment data exposure, retry, resume, and withholding behavior; and

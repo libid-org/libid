@@ -10,11 +10,11 @@ this document owns only ceremony behavior.
 
 This document owns only behavior reused without variation by two or more launch
 platforms: ceremony transition/output semantics, OAuth request serialization,
-the X/GitHub PKCE construction, and common evidence-time rules. Each platform
-profile still owns its exact endpoints, ordered fields, authenticated response
-locations, canonical user-ID encoding, metadata clock, and proof-validity
-ceiling. The browser protocol owns callback transport, persistence,
-continuation, and runtime composition.
+the common ceremony binding and nullifier, X/GitHub PKCE, and common
+evidence-time rules. Each platform profile still owns its exact endpoints,
+ordered fields, authenticated response locations, canonical user-ID encoding,
+metadata clock, and proof-validity ceiling. The browser protocol owns callback
+transport, persistence, continuation, and runtime composition.
 
 ## Ceremony transition and terminal output
 
@@ -68,32 +68,65 @@ serialized:
 label=A+B&redirect_uri=https%3A%2F%2Fcallback.example%2Foauth%2Fcallback&state=_-%7E
 ```
 
-## Shared PKCE construction
+## Shared ceremony binding and PKCE construction
 
-X and GitHub use the same proof-bound S256 construction:
+Every platform ceremony starts with one fresh private 32-byte browser value and
+derives the same binding and raw nullifier:
 
 ```text
-PKCE_V1        = keccak256("webwallet.identity.pkce.v1")
-pkceBinding    = abi.encode(PKCE_V1, claimDigest, pkceNonce)
-verifierHash   = SHA256(pkceBinding)
-code_verifier  = BASE64URL_NOPAD(verifierHash)
+CEREMONY_V1            = keccak256("libid.identity.ceremony.v1")
+CEREMONY_NULLIFIER_V1  = keccak256("libid.identity.ceremony-nullifier.v1")
+ceremonyNonce          = fresh private random bytes32
+ceremonyBinding        = keccak256(abi.encode(
+  CEREMONY_V1, claimDigest, ceremonyNonce
+))
+rawCeremonyNullifier   = keccak256(abi.encode(
+  CEREMONY_NULLIFIER_V1, ceremonyNonce
+))
+```
+
+`ceremonyNonce` is stored with the platform flight and is a private proof
+witness. It is never a platform parameter, public proof output, callback value,
+or log field. Every platform circuit recomputes both outputs from the same
+witness and exposes `rawCeremonyNullifier` as a public proof input. This makes a
+replay of the same platform credential collide while a fresh ceremony remains
+usable.
+
+The configured platform verifier wrapper supplies the canonical `platformId`
+and applies the core identity specification's final domain exactly once:
+
+```text
+claimNullifier = keccak256(abi.encode(
+  CLAIM_NULLIFIER_V1, platformId, rawCeremonyNullifier
+))
+```
+
+`platformId` is not a circuit input and is never prover-selected. Its wrapper
+adds namespace separation at negligible cost; `ceremonyNonce` independently
+provides freshness.
+
+Google sends `BASE64URL_NOPAD(ceremonyBinding)` as its signed OIDC `nonce`. X
+and GitHub use those same 32 bytes as their proof-bound S256 verifier:
+
+```text
+code_verifier  = BASE64URL_NOPAD(ceremonyBinding)
 code_challenge = BASE64URL_NOPAD(SHA256(ASCII(code_verifier)))
 ```
 
-`pkceNonce` is fresh private 32-byte browser randomness and a private proof
-witness. It is never a platform parameter, public proof output, callback value,
-or log field. Both verifier and challenge are exactly 43 unpadded-base64url
-characters. The protocol-domain string remains `webwallet.identity.pkce.v1`
-for compatibility even though libID now owns the construction.
+The Google nonce and PKCE verifier are exactly 43 unpadded-base64url characters.
+Only X and GitHub add the PKCE challenge step; the underlying ceremony binding
+and nullifier are identical across all launch platforms.
 
-For the common claim vector and nonce
+For the common claim vector and test-only `ceremonyNonce`
 `0x4444444444444444444444444444444444444444444444444444444444444444`:
 
 ```text
-PKCE_V1        = 0x656626ac386489f9e8be8d54de2d3fbdc8f925c8e6f907994914a26ef4f74f9c
-verifierHash   = 0x516e4b1f33dd678cd2e1f23de454eabd516606c472a6710e5169f14d3c841eb8
-code_verifier  = UW5LHzPdZ4zS4fI95FTqvVFmBsRypnEOUWnxTTyEHrg
-code_challenge = 1Btn1hoQHVEstJljVDvMXPEMzKA9oRfbBYeuazzsVW8
+CEREMONY_V1           = 0x22652ec356722341e1939aad0ec04a6a966a31f150c0ca5b28eee90a4a6e5967
+CEREMONY_NULLIFIER_V1 = 0xc9efbeb1e2d360925f53197e623348f554f8bdd12e51341de96983912d1a45cb
+ceremonyBinding       = 0x4b570947a252a393a94616ef41e0ea3334b258d5baec041aa6f2dc89501500f8
+rawCeremonyNullifier  = 0xb4b91e0da75aba0fd73b5303326dd44ab515f421622ad3c07388c859829d9d4e
+Google nonce / verifier = S1cJR6JSo5OpRhbvQeDqMzSyWNW67AQapvLciVAVAPg
+code_challenge        = kCeWtpB1xuO6-VAnRjlFNjodS3hJGtvreOvOWwwHPsI
 ```
 
 ## Common evidence-time rules
