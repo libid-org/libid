@@ -56,3 +56,8 @@ carries the browser claim library and the integration harness:
   GitHub claim backend (OAuth + MPC-TLS proof service).
 - [`chain-configurations`](https://github.com/libid-org/chain-configurations)
   — desired-state deployment files and the `libid-deploy` binary.
+- [`keeper`](https://github.com/libid-org/keeper) — permissionlessly keeps
+  authoritative off-chain data, initially Google OIDC signing keys, current
+  across configured on-chain deployments.
+- [`repository-template`](https://github.com/libid-org/repository-template) —
+  shared licensing, contribution, and AI-agent defaults for new repositories.
