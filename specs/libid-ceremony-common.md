@@ -32,6 +32,9 @@ Call Data: Opaque bytes carried in the Claim Digest and decoded by the
 
 Claim Random: Fresh 32-byte randomness that makes each Claim Digest unique.
 
+Protocol Version: The libID protocol revision a ceremony ran under, fixing its
+   digest layout, binding construction, and evidence rules.
+
 Platform Ceremony: The complete operation that turns one platform
    authorization into a locally verified claim.
 
@@ -136,15 +139,17 @@ claimDigest = keccak256(abi.encode(DOMAIN, version, chainId, claimRandom, callDa
   The Consuming Contract MUST reject a Claim Digest it has already recorded.
 - REQ-COMMON-06 (upholds SP-BIND-01):
   The Consuming Contract MUST reject a submission whose `version` differs from
-  the version that contract implements.
+  the protocol version that contract implements.
 
 `DOMAIN` is simultaneously the protocol separator and the operation
 identifier. A further libID operation takes a new domain string, not a new
 digest field.
 
-`version` is carried in the submission call data so a registry can dispatch
-to the verifier generation that implements it, and is bound into the digest
-so a proof presented to another generation fails.
+`version` is the libID protocol version the ceremony ran under: it fixes the
+digest layout, the binding construction, and the evidence rules the ceremony
+followed. It is bound into the digest so evidence produced under one protocol
+version cannot be presented under another, and it is carried in the submission
+call data so a registry can route to the deployment implementing it.
 
 `callData` carries the operation's arguments as opaque bytes. A name claim
 encodes the holder address; an operation that installs a session key encodes
@@ -383,7 +388,7 @@ SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §4.
 
 Replay across ceremonies is prevented by `claimRandom` and REQ-COMMON-05.
 Replay across chains is prevented by `chainId` in the digest. Replay across
-verifier generations is prevented by `version`. The digest binds no registry
+protocol versions is prevented by `version`. The digest binds no registry
 address: a proof carrying the same call data cannot be redirected, because
 every binding entrypoint requires the proof-bound target to equal the
 authenticated caller, so a copied proof creates no authority for its copier.

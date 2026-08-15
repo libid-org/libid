@@ -141,7 +141,8 @@ Conformance vector, for the Claim Digest of
 [common §6](libid-ceremony-common.md#6-claim-digest):
 
 ```text
-claimDigest  = 0x0f2c7b78eb48061ef5ee980dbab5d7d80326c6e343e29ad6c8803b7fb46cf8ef
+claimDigest  =
+0x0f2c7b78eb48061ef5ee980dbab5d7d80326c6e343e29ad6c8803b7fb46cf8ef
 Google nonce = Dyx7eOtIBh717pgNurXX2AMmxuND4prWyIA7f7Rs-O8
 ```
 
@@ -475,7 +476,8 @@ runtime configuration. The granted scope is not a proof input: `/user.id` and
 
 ## 8. Adding an identity platform
 
-The Platform Profile for a new platform MUST define a stable platform identifier and immutable
+The Platform Profile for a new platform MUST define a stable platform
+identifier and immutable
 user-ID namespace; canonical handle normalization and authenticated
 observation ordering; client portability or a bounded client family; exact
 authorization and callback transport; every authenticated request and
@@ -493,7 +495,8 @@ contract.
 - TEST-PLAT-01 (exercises REQ-PLAT-10, REQ-PLAT-18):
   The §4.1 nonce vector reproduces exactly, and a token carrying another nonce
   is rejected.
-- TEST-PLAT-02 (exercises REQ-PLAT-04, REQ-PLAT-05, REQ-PLAT-06, REQ-PLAT-07, REQ-PLAT-08):
+- TEST-PLAT-02 (exercises REQ-PLAT-04, REQ-PLAT-05, REQ-PLAT-06, REQ-PLAT-07,
+REQ-PLAT-08):
   The §3.1 identifier vectors reproduce, and each listed malformed identifier
   is rejected.
 - TEST-PLAT-03 (exercises REQ-PLAT-11, REQ-PLAT-12):
@@ -505,7 +508,8 @@ contract.
 - TEST-PLAT-05 (exercises REQ-PLAT-15):
   No artifact or log retains a Google access token. Verification: inspection of
   the emitted artifacts.
-- TEST-PLAT-06 (exercises REQ-PLAT-16, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
+- TEST-PLAT-06 (exercises REQ-PLAT-16, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20,
+REQ-PLAT-21, REQ-PLAT-23):
   A token with a foreign issuer, foreign audience, `email_verified: false`, a
   duplicated top-level claim, or an untrusted signing modulus is rejected in
   each case.
@@ -518,7 +522,8 @@ contract.
 - TEST-PLAT-09 (exercises REQ-PLAT-29, REQ-PLAT-46):
   A transcript whose disclosed `code` differs from the code consumed at
   callback ingress is rejected on X and on GitHub.
-- TEST-PLAT-10 (exercises REQ-PLAT-30, REQ-PLAT-31, REQ-PLAT-32, REQ-PLAT-36, REQ-PLAT-51, REQ-PLAT-52):
+- TEST-PLAT-10 (exercises REQ-PLAT-30, REQ-PLAT-31, REQ-PLAT-32, REQ-PLAT-36,
+REQ-PLAT-51, REQ-PLAT-52):
   A response missing the required field, carrying a duplicate, or carrying a
   differently typed value is rejected, and a proof whose two transcripts commit
   different bearers is rejected.
@@ -531,10 +536,12 @@ contract.
 - TEST-PLAT-13 (exercises REQ-PLAT-37, REQ-PLAT-38, REQ-PLAT-39, REQ-PLAT-40):
   Each over-limit, malformed, duplicate, and missing field on both exchange
   interfaces is rejected.
-- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43A, REQ-PLAT-43B, REQ-PLAT-43C):
+- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43A,
+REQ-PLAT-43B, REQ-PLAT-43C):
   A request selecting an endpoint, client, or return URL is rejected; no state
   survives the call; a foreign origin is refused.
-- TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-49, REQ-PLAT-50):
+- TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48,
+REQ-PLAT-49, REQ-PLAT-50):
   An attestation with a bad notary signature, a foreign endpoint, a foreign
   client, a foreign verifier, or a bearer that does not open the commitment is
   discarded in each case, and no resume record is written.
