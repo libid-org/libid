@@ -275,7 +275,8 @@ consuming contract compares it against the client it was configured with.
 
 - REQ-COMMON-16 (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the authenticated client identifier as a
-  public proof input.
+  public proof input, so that the Consuming Contract can both check it and use
+  it in its own logic.
 - REQ-COMMON-17 (upholds SP-CLIENT-01):
   The Consuming Contract MUST reject a proof whose client identifier differs
   from its configured client.
@@ -304,8 +305,11 @@ rules apply wherever a party that composes a request also proves over it.
   The Proving Circuit MUST assert the endpoint authority, method, path, media
   type, and `redirect_uri` byte for byte against compiled constants.
 - REQ-COMMON-22 (upholds SP-EXCHANGE-01):
-  The Platform Profile MUST order any undisclosed credential last in the
-  request body.
+  The Platform Profile MUST order any redacted credential last in the request
+  body.
+- REQ-COMMON-22A (upholds SP-CLIENT-01):
+  The Proving Circuit MUST NOT expose a client secret, or any value derived
+  from one, as a public proof input.
 
 An undisclosed range still reaches the platform. Ordering it last, and
 constraining its charset so it cannot contain a field delimiter, prevents a
@@ -360,7 +364,7 @@ the constructions that role implements.
 - TEST-COMMON-08 (exercises REQ-COMMON-14):
   No ceremony artifact, log, or public input contains `pkceNonce`.
   Verification: inspection of the emitted artifacts.
-- TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-17):
+- TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-17, REQ-COMMON-22A):
   A proof carrying a client identifier other than the configured one is
   rejected.
 - TEST-COMMON-10 (exercises REQ-COMMON-18, REQ-COMMON-19, REQ-COMMON-20, REQ-COMMON-22):

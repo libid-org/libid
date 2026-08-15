@@ -141,8 +141,7 @@ Conformance vector, for the Claim Digest of
 [common §6](libid-ceremony-common.md#6-claim-digest):
 
 ```text
-claimDigest  =
-0x0f2c7b78eb48061ef5ee980dbab5d7d80326c6e343e29ad6c8803b7fb46cf8ef
+claimDigest  = 0x0f2c7b78eb48061ef5ee980dbab5d7d80326c6e343e29ad6c8803b7fb46cf8ef
 Google nonce = Dyx7eOtIBh717pgNurXX2AMmxuND4prWyIA7f7Rs-O8
 ```
 
@@ -157,7 +156,7 @@ Google nonce = Dyx7eOtIBh717pgNurXX2AMmxuND4prWyIA7f7Rs-O8
 | 2 | `client_id` | configured client identifier |
 | 3 | `code` | consumed callback code |
 | 4 | `redirect_uri` | immutable callback URI |
-| 5 | `client_secret` | compiled deployment secret |
+| 5 | `client_secret` | compiled deployment secret; this exchange is not notarized |
 
 - REQ-PLAT-13 (upholds SP-EXCHANGE-01):
   The Exchange Service MUST send the `code` consumed at callback ingress for
@@ -346,14 +345,27 @@ that transcript.
 | 3 | `code` | consumed callback code |
 | 4 | `redirect_uri` | immutable callback URI |
 | 5 | `code_verifier` | PKCE verifier per common §8 |
-| 6 | `client_secret` | compiled deployment secret, committed and undisclosed |
+| 6 | `client_secret` | compiled deployment secret; redacted, never revealed |
 
 Fields 1 through 5 are identical in order and meaning to §6.2.
-`client_secret` is ordered last per REQ-COMMON-22.
+`client_secret` is ordered last per REQ-COMMON-22. It stays in the body
+rather than an `Authorization: Basic` header because Basic encodes the client
+identifier and the secret into one redacted value, which would make the
+revealed `client_id` something other than the credential GitHub authenticated.
 
 - REQ-PLAT-35 (upholds SP-CLIENT-01):
-  The Proving Circuit MUST constrain the undisclosed `client_secret` to a
-  charset containing neither `&` nor `=`.
+  The Proving Circuit MUST constrain the redacted `client_secret` to a charset
+  containing neither `&` nor `=`, proving the charset without revealing the
+  value.
+- REQ-PLAT-35A (upholds SP-CLIENT-01):
+  The Proving Circuit MUST NOT expose `client_secret`, or any value derived
+  from it, as a public proof input.
+- REQ-PLAT-35B (upholds SP-CLIENT-01):
+  The Proving Circuit MUST reveal the `client_id` range of the exchange
+  request.
+- REQ-PLAT-35C (upholds SP-CLIENT-01):
+  The Proving Circuit MUST expose that revealed `client_id` as a public proof
+  input.
 - REQ-PLAT-36 (upholds SP-BIND-01):
   The Proving Circuit MUST require exactly one nonempty printable-ASCII
   top-level `access_token` string of at most 4096 bytes in the exchange
@@ -527,7 +539,7 @@ contract.
   different bearers is rejected.
 - TEST-PLAT-11 (exercises REQ-PLAT-33):
   A token request issued after the 30-second deadline is abandoned.
-- TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35):
+- TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C):
   An authorization request carrying a scope other than `read:user` is rejected,
   and a transcript whose undisclosed secret range contains `&` or `=` is
   rejected.
