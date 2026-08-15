@@ -1,4 +1,4 @@
-// Minimal secp256k1 point compression. The identity backend keys its GitHub
+// Minimal secp256k1 point compression. The libID server keys its GitHub
 // challenge on a compressed session public key; viem hands us the
 // uncompressed SEC1 form (0x04 || X || Y), and compression is pure byte
 // arithmetic — the parity of Y picks the prefix.
