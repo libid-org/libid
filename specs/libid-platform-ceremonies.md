@@ -297,8 +297,8 @@ X and GitHub share this field order and this template.
   transcript and the identity transcript.
 
 Public proof inputs are the Claim Digest, the client identifier, both
-attestation timestamps, and the identity fields. The bearer is committed and
-never disclosed. The `code_verifier` is recomputed in circuit per
+attestation timestamps, and the identity fields. The bearer is never a public
+proof input. The `code_verifier` is recomputed in circuit per
 REQ-COMMON-15.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
@@ -432,9 +432,30 @@ interface GitHubExchangeResponseV1 {
 
 ### 7.4 Disclosure and verification
 
-The exchange transcript discloses exactly three request ranges — `client_id`,
-`code`, and `code_verifier` — plus the response status and the token
-commitment.
+The exchange attestation reveals exactly four ranges and nothing else:
+`client_id`, `code`, and `code_verifier` from the request, and `access_token`
+from the response.
+
+| Range | Revealed | Why |
+|---|---|---|
+| `client_id` | yes | the Consuming Contract checks it and may use it |
+| `code` | yes | the Canonical Runtime compares it to the code it consumed |
+| `code_verifier` | yes | the Canonical Runtime compares it to the verifier it derived |
+| `access_token` | yes | the Canonical Runtime needs the bearer, and links it to `/user` |
+| `client_secret` | no | never revealed, per REQ-PLAT-35A |
+| everything else | no | `grant_type`, `redirect_uri`, headers, status line, other response fields |
+
+Redacted is not unverified. REQ-COMMON-18 requires the complete request as a
+private witness asserted against the template, so every redacted byte is still
+proven to be the constant the profile fixes. Revealing more would not add a
+check; it would only widen exposure.
+
+- REQ-PLAT-43D (upholds SP-EXCHANGE-01):
+  The Exchange Service MUST redact every byte of the notarized exchange outside
+  those four ranges.
+- REQ-PLAT-43E (upholds SP-CLIENT-01):
+  The Proving Circuit MUST NOT expose the bearer, or any value derived from it,
+  as a public proof input.
 
 - REQ-PLAT-44 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST verify the exchange attestation under the
@@ -452,8 +473,8 @@ commitment.
   The Canonical Runtime MUST require the disclosed `code_verifier` to equal the
   verifier it derived.
 - REQ-PLAT-49 (upholds SP-EXCHANGE-01):
-  The Canonical Runtime MUST require the returned bearer to open the attested
-  token-response commitment.
+  The Canonical Runtime MUST require the returned bearer to equal the revealed
+  `access_token` range, byte for byte.
 - REQ-PLAT-50 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST discard the response and start neither `/user` nor
   a resume record when any check in REQ-PLAT-44 through REQ-PLAT-49 fails.
@@ -546,7 +567,7 @@ contract.
 - TEST-PLAT-13 (exercises REQ-PLAT-37, REQ-PLAT-38, REQ-PLAT-39, REQ-PLAT-40):
   Each over-limit, malformed, duplicate, and missing field on both exchange
   interfaces is rejected.
-- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43A, REQ-PLAT-43B, REQ-PLAT-43C):
+- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43A, REQ-PLAT-43B, REQ-PLAT-43C, REQ-PLAT-43D, REQ-PLAT-43E):
   A request selecting an endpoint, client, or return URL is rejected; no state
   survives the call; a foreign origin is refused.
 - TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-49, REQ-PLAT-50):

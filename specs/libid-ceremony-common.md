@@ -289,6 +289,16 @@ browser-local and produce no on-chain effect.
 A proof over a TLSNotary transcript authenticates bytes, not fields. These
 rules apply wherever a party that composes a request also proves over it.
 
+Disclosure and verification are two separate layers. The Platform Profile
+fixes a minimal set of revealed ranges; every other byte is redacted, yet
+still proven against the template as a private witness. Separately, the proof
+exposes a minimal set of public inputs, which never includes a credential.
+
+- REQ-COMMON-17A (upholds SP-CLIENT-01):
+  The Platform Profile MUST list the exact ranges a notarized session reveals.
+- REQ-COMMON-17B (upholds SP-CLIENT-01):
+  The Implementation MUST redact every byte outside the ranges its profile
+  lists.
 - REQ-COMMON-18 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST take the complete notarized request as a private
   witness. The Proving Circuit MUST assert equality with the profile's
@@ -367,7 +377,7 @@ the constructions that role implements.
 - TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-17, REQ-COMMON-22A):
   A proof carrying a client identifier other than the configured one is
   rejected.
-- TEST-COMMON-10 (exercises REQ-COMMON-18, REQ-COMMON-19, REQ-COMMON-20, REQ-COMMON-22):
+- TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-19, REQ-COMMON-20, REQ-COMMON-22):
   A transcript carrying a second copy of a templated field, placed inside or
   after an undisclosed range, is rejected.
 - TEST-COMMON-11 (exercises REQ-COMMON-21):
