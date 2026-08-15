@@ -1,6 +1,6 @@
 {
   "name": "@libid/claim-full",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "@libid/claim plus every static proving asset it loads at runtime, bundled in the npm tarball: the tlsn wasm bundle, the released compiled circuits (sha256-verified), and noir's acvm/abi wasm. One install, no staging scripts, no curl.",
   "license": "(MIT OR Apache-2.0)",
   "repository": {

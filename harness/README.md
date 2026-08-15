@@ -2,7 +2,7 @@
 
 Everything needed to run a real, manual, end-to-end handle claim against a
 local chain: anvil, the factory-first contract stack (declaratively applied
-by libid-deploy 0.4.0), the released notary, identity-backend and keeper
+by libid-deploy 0.4.0), the released notary, libid-server-rs and keeper
 images, and the buttons-only demo UI on top of `@libid/claim`.
 
 The local addresses **equal the canonical cross-network addresses**: every
@@ -58,7 +58,7 @@ which does, in order:
 | `deploy` | `debian:bookworm-slim` (one-shot) | downloads released `libid-deploy` 0.4.0 for the container arch, fresh-applies the declarative network file on its read-only mount, **asserts convergence** (below) |
 | `notary` | `ghcr.io/libid-org/notary:0.1.0` | MPC-TLS/ProxyMode notary; TCP 7047 + HTTP/WS 7048; also serves the JWKS notarization duty |
 | `keeper` | `ghcr.io/libid-org/keeper:0.1.0` (one-shot) | one real rotation tick: MPC-TLS reading of Google's live JWKS through the notary, then `rotate()` on `identity_jwks_roots` and `google_oidc_verifier` |
-| `identity-backend` | `ghcr.io/libid-org/identity-backend:0.1.0` | GitHub OAuth + MPC-TLS proof service on 8722; also serves the Google fragment relay |
+| `libid-server-rs` | `ghcr.io/libid-org/libid-server-rs:0.2.1` | GitHub OAuth + MPC-TLS proof service on 8722; also serves the Google fragment relay |
 
 Two addresses that look confusable and are not: the notary's
 `VERIFYING_CONTRACT_ADDRESS` (and the backend's, same value) is

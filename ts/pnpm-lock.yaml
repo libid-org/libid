@@ -55,8 +55,8 @@ importers:
         specifier: 5.0.0-nightly.20260324
         version: 5.0.0-nightly.20260324
       '@libid/contracts':
-        specifier: ^0.2.0
-        version: 0.2.0(viem@2.55.13(typescript@5.9.3))
+        specifier: ^0.5.0
+        version: 0.5.0(viem@2.55.13(typescript@5.9.3))
       '@noir-lang/acvm_js':
         specifier: 1.0.0-beta.20
         version: 1.0.0-beta.20
@@ -422,6 +422,11 @@ packages:
 
   '@libid/contracts@0.2.0':
     resolution: {integrity: sha512-Z+qSdBRtNxRY/qn+xIYcZtT4ZTrzooGMJoDNXdCYS66NxcsrGrPq4FKV1AiksO48D8F7J6VBp4e9I1LZwB7hKA==}
+    peerDependencies:
+      viem: ^2.48.11
+
+  '@libid/contracts@0.5.0':
+    resolution: {integrity: sha512-r8jTgeFPXuttcu/XKiZeKRd6I87p/5ieKyFaTyBlRw2UQhBQPeO7VtkT88aSWxuR6EJjdxojde4xAO2mXdhJwg==}
     peerDependencies:
       viem: ^2.48.11
 
@@ -1340,6 +1345,10 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@libid/contracts@0.2.0(viem@2.55.13(typescript@5.9.3))':
+    dependencies:
+      viem: 2.55.13(typescript@5.9.3)
+
+  '@libid/contracts@0.5.0(viem@2.55.13(typescript@5.9.3))':
     dependencies:
       viem: 2.55.13(typescript@5.9.3)
 

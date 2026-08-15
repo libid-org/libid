@@ -21,7 +21,7 @@ serves exactly the layout `@libid/claim`'s default same-origin URLs expect:
 | `/wasm/acvm_js_bg.wasm`, `/wasm/noirc_abi_wasm_bg.wasm` | noir witness generation (@noir-lang pins) |
 
 The GitHub flow needs none of these — its proof comes from the
-identity-backend.
+libid-server-rs.
 
 Programmatic staging (build scripts, postinstall hooks):
 
