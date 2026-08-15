@@ -71,7 +71,8 @@ Canonical Runtime: The immutable browser release that constructs claim
 - ASM-PROV-05:
   Google signs ID Tokens with a key published at its JWKS endpoint, and
   includes the requested `nonce` verbatim.
-- ASM-NOTARY-01: The configured notary key signs only transcripts it observed.
+- ASM-NOTARY-01:
+  The configured notary key signs only transcripts it observed.
 - ASM-BROWSER-01:
   The Canonical Runtime executes unmodified, and the user agent enforces the
   same-origin policy over authorization responses.
