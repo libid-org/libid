@@ -64,6 +64,15 @@ Canonical Runtime: The immutable browser release that constructs claim
 - ASM-PROV-06:
   An Identity Platform emits a well-formed authenticated response in which
   each authoritative field appears exactly once at the top level.
+- ASM-PROV-07:
+  At the exact token endpoint and method fixed by a Platform Profile, the
+  Identity Platform accepts token redemption only under the profile's media
+  type and rejects a form body containing more than one decoded occurrence of
+  any profile-listed field. Necessity: launch circuits deliberately avoid
+  proving the complete form grammar; without this parser property a prover
+  could witness one `code` or `code_verifier` while the platform consumes
+  another. Evidence: recurring integration probes against each production
+  endpoint.
 - ASM-NOTARY-01:
   The configured notary key signs only transcripts it observed.
 - ASM-BROWSER-01:
@@ -75,13 +84,14 @@ Canonical Runtime: The immutable browser release that constructs claim
 - SP-BIND-01:
   Evidence produced by a ceremony discharges only for the Call Data committed
   in its Claim Digest. Depends on ASM-PROV-02, ASM-PROV-05, ASM-PROV-06,
-  ASM-CHAIN-01. Evidence: conformance tests (supporting, not proving) plus the
-  collision resistance of SHA-256 and keccak256.
+  ASM-PROV-07, ASM-CHAIN-01. Evidence: conformance tests (supporting, not
+  proving) plus the collision resistance of SHA-256 and keccak256.
 - SP-CLIENT-01:
   The Canonical Runtime rejects evidence issued to an OAuth client other than
   the one fixed by its immutable ceremony profile. Depends on ASM-PROV-04,
-  ASM-PROV-05, ASM-NOTARY-01, and ASM-BROWSER-01. Evidence: checked invariant
-  in the Canonical Runtime, plus conformance tests (supporting).
+  ASM-PROV-05, ASM-PROV-07, ASM-NOTARY-01, and ASM-BROWSER-01. Evidence:
+  checked invariant in the Canonical Runtime, plus conformance tests
+  (supporting).
 - SP-DELIVERY-01:
   An authorization response for one OAuth client reaches only an origin
   registered to that client, so a site borrowing another deployment's client
@@ -90,8 +100,8 @@ Canonical Runtime: The immutable browser release that constructs claim
   conformance tests (supporting).
 - SP-EXCHANGE-01:
   An attested token exchange redeems the authorization code produced by this
-  ceremony and no other. Depends on ASM-PROV-03, ASM-NOTARY-01, ASM-BROWSER-01.
-  Evidence: conformance tests (supporting, not proving).
+  ceremony and no other. Depends on ASM-PROV-03, ASM-PROV-07, ASM-NOTARY-01,
+  ASM-BROWSER-01. Evidence: conformance tests (supporting, not proving).
 - SP-FRESH-01:
   Evidence older than its authenticated ceiling is rejected. Depends on
   ASM-CHAIN-01, ASM-NOTARY-01, ASM-PROV-05. Evidence: checked invariant in the
@@ -220,6 +230,11 @@ Google as the OIDC `nonce`, X and GitHub through the PKCE construction in §7.
 - REQ-COMMON-31 (upholds SP-DELIVERY-01):
   The Canonical Runtime MUST ignore a forwarding target supplied in the
   redirect request.
+- REQ-COMMON-32 (upholds SP-BIND-01, SP-EXCHANGE-01):
+  The Deployment MUST run recurring integration probes establishing
+  ASM-PROV-07 for every production form-encoded token endpoint. The Deployment
+  MUST make the affected Platform Profile ineligible for new ceremonies when
+  a probe fails.
 
 The HTTPS authority, method, path, parameter tuple, and authenticated
 request and response values carry proof semantics. Header casing and order do
@@ -312,13 +327,15 @@ browser-local and produce no on-chain effect.
 
 A proof authenticates bytes, not fields. The Proving Circuit is responsible
 for checking the fields the profile needs — and only those fields, never the
-whole template. A field check is a JSON pattern match at a witnessed offset:
+whole template. A JSON field check is a pattern match at a witnessed offset:
 the full `"field":"` delimiter, the value, and the closing structural byte.
-Because an authenticated JSON document carries each authoritative field once
-(ASM-PROV-06), per-field pattern checks give the same guarantee that
-whole-template equality would, at a fraction of the constraints. Hidden
-ranges stay behind blinded hash commitments the circuit opens; the circuit
-links transcripts through those commitments and binds the Claim Digest.
+A form-field check likewise asserts a field boundary, the exact ASCII name and
+`=`, the value, and the next `&` or body end. Because the authenticated parser
+outputs satisfy ASM-PROV-06 and ASM-PROV-07, these local checks provide the
+required field meaning without the impractical proving cost of a complete JSON
+or form parser. Hidden ranges stay behind blinded hash commitments the circuit
+opens; the circuit links transcripts through those commitments and binds the
+Claim Digest.
 
 Disclosure and verification are two separate layers. The Platform Profile
 fixes a minimal set of revealed ranges; every other byte stays behind a
@@ -352,6 +369,13 @@ public inputs, which never includes a credential.
   Necessity: without the charset bound a longer witnessed value extends the
   match into the neighboring field; without the bounds check a pattern can be
   planted in zero-padding.
+- REQ-COMMON-19C (upholds SP-BIND-01, SP-EXCHANGE-01):
+  The Proving Circuit extracting a field from an
+  `application/x-www-form-urlencoded` request MUST assert that the match begins
+  at byte zero or immediately after `&`, followed by the exact ASCII field
+  name, `=`, the charset-constrained value, and then `&` or the authenticated
+  body end. The circuit does not scan the rest of the body for duplicates;
+  that property is ASM-PROV-07.
 - REQ-COMMON-19A (upholds SP-EXCHANGE-01):
   The Consuming Contract extracting a field from revealed attestation bytes
   MUST reject a transcript in which the field's full delimiter matches at
@@ -400,10 +424,11 @@ platform endpoint constants into each circuit without weakening the binding.
   The Proving Circuit MUST NOT expose a client secret, or any value derived
   from one, as a public proof input.
 
-An undisclosed range still reaches the platform. Ordering it last,
-constraining its charset so it cannot contain a field delimiter, and tiling
-the layout with revealed anchors prevents a prover hiding a second copy of a
-field behind it.
+An undisclosed range still reaches the platform. Ordering a credential last
+and constraining its charset prevents that credential from injecting a form
+delimiter. Range tiling proves that no transcript bytes are omitted, but does
+not prove the complete grammar of hidden bytes or exclude a second form field;
+request soundness additionally depends on ASM-PROV-07.
 
 ## 10. Evidence time
 
@@ -464,13 +489,15 @@ the constructions that role implements.
   The Canonical Runtime rejects a proof carrying a client identifier other
   than its immutable profile's client, while a proof carrying a client
   identifier registered nowhere remains acceptable to the Verifier.
-- TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-18A, REQ-COMMON-19, REQ-COMMON-19A, REQ-COMMON-19B, REQ-COMMON-20, REQ-COMMON-22):
-  A transcript carrying a second copy of a templated field, placed inside or
-  after an undisclosed range, is rejected; a transcript whose extraction
-  delimiter matches at two positions in the revealed bytes is rejected; a
-  witnessed value containing the closing delimiter, or a pattern placed in
-  padding past the payload length, fails to prove; and a transcript whose
-  ranges do not tile the profile layout is rejected.
+- TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-18A, REQ-COMMON-19, REQ-COMMON-19A, REQ-COMMON-19B, REQ-COMMON-19C, REQ-COMMON-20, REQ-COMMON-22):
+  An authenticated JSON response carrying a second copy of a templated field,
+  placed inside or after an undisclosed range, is rejected; a transcript whose
+  extraction delimiter matches at two positions in the revealed bytes is
+  rejected; a witnessed value containing the closing delimiter, or a pattern
+  placed in padding past the payload length, fails to prove; a form-field match
+  not bounded by the body start or `&` and the next `&` or body end fails to
+  prove; and a transcript whose ranges do not tile the profile layout is
+  rejected.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
   The Consuming Contract rejects an authenticated foreign authority, method,
   or path. The request constructor refuses a media type or `redirect_uri`

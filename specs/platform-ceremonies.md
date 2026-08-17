@@ -540,14 +540,14 @@ check and would widen exposure.
   The Canonical Runtime MUST discard the response and start neither `/user` nor
   a resume record when any check in REQ-PLAT-44 through REQ-PLAT-49 fails.
 
-Verifying only an arbitrary selection of ranges is insufficient: a prover
-that composes the request could otherwise hide a second `code` or
-`code_verifier` in an unaccounted range and let GitHub honor that copy. The
-layout tiling of common REQ-COMMON-18A closes this: every transcript byte is
-either revealed or inside a charset-constrained committed range, so no
-unaccounted range exists. The server-produced token proof is the concrete
-artifact that carries these commitments while keeping the client secret from
-the browser.
+Verifying only arbitrary byte substrings is insufficient: a prover that
+composes the request could otherwise witness one `code` or `code_verifier`
+while GitHub consumes a duplicate. The local form-field matcher and layout
+tiling prove where the checked values occur and that no transcript bytes are
+omitted. Deliberately, they do not pay the impractical circuit cost of proving
+the complete form grammar; uniqueness of decoded request fields is the
+endpoint-parser assumption ASM-PROV-07. The server-produced token proof carries
+the commitments while keeping the client secret from the browser.
 
 ### 6.5 Identity request
 
@@ -667,6 +667,12 @@ contract.
   Launch uses Proxy mode, rejects application or request selection of Browser
   MPC, uses no application-controlled platform egress, and carries no partial
   transcript state into a retry.
+- TEST-PLAT-19 (exercises REQ-COMMON-32; supports ASM-PROV-07):
+  Recurring integration probes send each profile-listed X and GitHub token
+  request field twice, in both orders and using both literal and percent-encoded
+  equivalent field names, and send the otherwise valid request under alternate
+  media types. The production endpoint rejects every probe and issues no
+  bearer.
 
 ## 9. Security Considerations
 
@@ -693,6 +699,13 @@ into a signed token (ASM-PROV-05). ASM-PROV-02 is a live dependency on
 platform behavior rather than a proven property. The Implementation claiming
 conformance MUST run a recurring check that each platform still rejects a
 mismatched `code_verifier`.
+
+X and GitHub request-field uniqueness likewise rests on their fixed token
+endpoints' decoded-form behavior (ASM-PROV-07), rather than a complete grammar
+proof. The authenticated authority, method, and path plus the endpoint's
+refusal of other media types scope that assumption to the behavior exercised
+by TEST-PLAT-19. If an endpoint begins accepting any duplicate profile field,
+its profile is ineligible until a new proof construction closes the ambiguity.
 
 A malicious Token-Proof Service cannot rebind a ceremony to other call data,
 because the Claim Digest fixes it before the platform is contacted. It can
