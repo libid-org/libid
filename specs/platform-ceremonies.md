@@ -84,16 +84,16 @@ replace the immutable `userId`.
 
 | Identity platform | `metadataObservedAt` | `proofValidUntil` — first invalid timestamp |
 |---|---|---|
-| Google | signed ID-Token `iat` | `min(signed exp + CLOCK_SKEW_GRACE, trustedUntil)` |
-| X | signed `meAttest.timestamp` | `min(tokenAttest.timestamp, meAttest.timestamp) + 10 minutes` |
-| GitHub | signed `userAttest.timestamp` | `min(tokenAttest.timestamp, userAttest.timestamp) + 10 minutes` |
+| Google | signed ID-Token `iat` | `min(signed exp + googleClockSkewGrace, trustedUntil)` |
+| X | signed `meAttest.timestamp` | `min(tokenAttest.timestamp, meAttest.timestamp) + proofLifetime[x]` |
+| GitHub | signed `userAttest.timestamp` | `min(tokenAttest.timestamp, userAttest.timestamp) + proofLifetime[github]` |
 
 For X and GitHub, "timestamp" is the signed TLSNotary attestation creation
-time.
+time. The named values are current [protocol parameters](libid.md#protocol-parameters).
 
 - REQ-PLAT-09 (upholds SP-FRESH-01):
   The Consuming Contract MUST reject an X or GitHub attestation timestamp more
-  than five minutes ahead of `block.timestamp`.
+  than `maxFutureAttestationSkew` ahead of `block.timestamp`.
 
 ## 3. Google OIDC ceremony
 
@@ -279,9 +279,10 @@ sessions.
   transcript and the identity transcript.
 
 Public proof inputs are the Claim Digest, the client identifier, both
-attestation timestamps, and the identity fields. The bearer is never a public
-proof input. The `code_verifier` is recomputed in circuit per
-REQ-COMMON-15.
+attestation timestamps, the identity fields, and the authenticated authority,
+method, and path of both notarized sessions. The bearer is never a public proof
+input. The `code_verifier` is recomputed in circuit per REQ-COMMON-15. The
+Consuming Contract compares the endpoint inputs with the `x/v1` profile.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
   The Canonical Runtime MUST complete the token request within X's
@@ -417,7 +418,7 @@ interface TokenProofResponseV1 {
 
 The Token-Proof Service, which knows the client secret and complete exchange
 transcript, produces `tokenProof`. Its circuit verifies the TLSNotary
-attestation and applies REQ-COMMON-18 to the complete request and response.
+attestation and applies REQ-COMMON-18 to the complete form body and response.
 The browser never receives the client secret or an unverifiable selectively
 disclosed transcript.
 
@@ -433,15 +434,19 @@ local ceremony and the later `/user` transcript. The separately returned
 | `code_verifier` | yes | the Canonical Runtime compares it to the verifier it derived |
 | `SHA256(ASCII(access_token))` | yes | opens the returned bearer and links it to `/user` |
 | attestation timestamp | yes | derives the authenticated validity ceiling |
+| token endpoint authority | yes | the Consuming Contract checks the profile endpoint |
+| token request method | yes | the Consuming Contract checks the profile method |
+| token request path | yes | the Consuming Contract checks the profile path |
 | `client_secret` | no | never revealed, per REQ-PLAT-35A |
 | everything else | no | headers, status line, `scope`, `token_type`, other response fields |
 
-The circuit proves every unexposed byte against the profile template. It also
-proves the exact response grammar, `token_type`, and scope rule from
-REQ-PLAT-36. Revealing those bytes would add no check and would widen exposure.
+The circuit proves every unexposed form-body and response byte against the
+profile template. It also proves the exact response grammar, `token_type`, and
+scope rule from REQ-PLAT-36. Revealing those bytes would add no check and would
+widen exposure.
 
 - REQ-PLAT-43D (upholds SP-EXCHANGE-01):
-  The Token Proof MUST expose no public output outside the six rows marked `yes`
+  The Token Proof MUST expose no public output outside the nine rows marked `yes`
   above.
 - REQ-PLAT-43E (upholds SP-CLIENT-01):
   The Final Identity Circuit MUST NOT expose the bearer or bearer
@@ -451,8 +456,10 @@ REQ-PLAT-36. Revealing those bytes would add no check and would widen exposure.
   The Canonical Runtime MUST verify `tokenProof` under the immutable
   `github/v1` token-proof verifier before using the bearer.
 - REQ-PLAT-45 (upholds SP-EXCHANGE-01):
-  The Token-Proof Circuit MUST require the configured notary signature and the
-  exact GitHub token-endpoint TLS server, method, and path.
+  The Token-Proof Circuit MUST require the configured notary signature and
+  expose the authenticated token-endpoint authority, method, and path. The
+  Final Identity Circuit MUST carry those public inputs unchanged to the
+  Consuming Contract.
 - REQ-PLAT-46 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST require the disclosed `code` to equal the code it
   consumed at redirect ingress, byte for byte.
@@ -487,7 +494,10 @@ the client secret from the browser.
   nested-lookalike, differently typed, and noncanonical values.
 - REQ-PLAT-52 (upholds SP-EXCHANGE-01):
   The Final Identity Circuit MUST verify the `github/v1` token proof and assert
-  the same bearer commitment across that proof and the identity transcript.
+  the same bearer commitment across that proof and the identity transcript. The
+  Final Identity Circuit MUST also expose the authenticated authority, method,
+  and path of the `/user` request. The Consuming Contract MUST compare both
+  endpoint triples with the `github/v1` profile.
 
 Changing the pinned API version is a profile and verifier revision, not
 runtime configuration. The granted scope is enforced inside the token proof
@@ -542,7 +552,7 @@ contract.
   each case.
 - TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09):
   A proof at or after `proofValidUntil`, and an attestation timestamp more than
-  five minutes ahead of `block.timestamp`, are rejected.
+  `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected.
 - TEST-PLAT-08 (exercises REQ-PLAT-24):
   The trusted modulus set contains every modulus currently published at
   Google's JWKS endpoint.
