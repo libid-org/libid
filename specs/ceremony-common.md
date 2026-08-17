@@ -527,11 +527,10 @@ platform endpoint constants into each circuit without weakening the binding.
 An undisclosed range still reaches the platform. Ordering a credential last
 and constraining its charset prevents that credential from injecting a form
 delimiter. Range tiling proves that no transcript bytes are omitted, but does
-not by itself exclude a second form field inside a hidden, unopened range.
-ASM-PROV-07 is load-bearing only for a profile that leaves such a range in a
-request body; a profile whose body ranges are all revealed or opened and
-charset-constrained needs it only as defense-in-depth. The launch profiles
-close every body range this way.
+not by itself exclude a second form field inside a revealed or hidden range.
+Disclosure makes such bytes auditable but does not constrain their decoded
+form semantics. Launch therefore retains ASM-PROV-07 as a soundness dependency
+for every form-encoded token request.
 
 ## 10. Evidence time
 

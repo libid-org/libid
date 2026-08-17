@@ -393,7 +393,7 @@ Attestation Verifier:
 | Range | Revealed | Why |
 |---|---|---|
 | endpoint authority, method, path | yes | exposed as public proof inputs per common REQ-COMMON-21 |
-| `grant_type` | yes | constant `authorization_code`; revealed so no delimiter can hide beside it |
+| `grant_type` | yes | constant `authorization_code`; revealed for runtime/profile inspection |
 | `client_id` | yes | exposed as a public proof input |
 | `code` | yes | compared to the code consumed at redirect ingress |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile; no chain or circuit value |
@@ -401,10 +401,10 @@ Attestation Verifier:
 | attestation timestamp | yes | derives the authenticated validity ceiling |
 | everything else | no | headers, `code_verifier`, `scope`, `token_type`, other response fields |
 
-With those reveals and the in-circuit `code_verifier` opening of REQ-COMMON-15,
-every token-request body byte is either revealed or opened and
-charset-constrained. ASM-PROV-07 is defense-in-depth for `x/v1`, not a
-soundness dependency.
+Those reveals and the in-circuit `code_verifier` opening of REQ-COMMON-15
+reduce the hidden request surface, but revealing a range does not reject a form
+delimiter inside it. `x/v1` therefore retains ASM-PROV-07 as a soundness
+dependency.
 
 - REQ-PLAT-29A (upholds SP-CLIENT-01):
   The Proving Circuit MUST reveal the `client_id` range of the token request.
@@ -534,10 +534,9 @@ revealed `client_id` something other than the credential GitHub authenticated.
 - REQ-PLAT-35 (upholds SP-EXCHANGE-01):
   The Token-Proof Circuit MUST open the redacted `client_secret` range as a
   private witness and constrain its charset to contain neither `&` nor `=`,
-  proving the charset without revealing the value. Necessity: with every
-  other exchange-body range revealed and the secret delimiter-free, no body
-  byte stays both hidden and unopened, so no second form field can hide in
-  the transcript.
+  proving the charset without revealing the value. Necessity: the confidential
+  deployment credential cannot inject a form delimiter, reducing the request
+  surface whose decoded uniqueness depends on ASM-PROV-07.
 - REQ-PLAT-35A (upholds SP-CLIENT-01):
   The Proving Circuit MUST NOT expose `client_secret`, or any value derived
   from it, as a public proof input.
@@ -683,11 +682,11 @@ Verifying only arbitrary byte substrings is insufficient: a prover that
 composes the request could otherwise witness one `code` or `code_verifier`
 while GitHub consumes a duplicate. The layout tiling accounts for every
 transcript byte, every body range other than the secret is revealed, and the
-opened secret is delimiter-free per REQ-PLAT-35 — so no second form field can
-exist anywhere in the body. No complete form-grammar proof is needed, and
-ASM-PROV-07 is defense-in-depth for `github/v1`, not a soundness dependency.
-The server-produced token proof carries the commitments while keeping the
-client secret from the browser.
+opened secret is delimiter-free per REQ-PLAT-35. These checks reduce hidden
+surface but do not prove the decoded form grammar or reject duplicates inside
+revealed values. `github/v1` therefore retains ASM-PROV-07 as a soundness
+dependency. The server-produced token proof carries the commitments while
+keeping the client secret from the browser.
 
 ### 6.5 Identity request
 
@@ -894,12 +893,11 @@ platform behavior rather than a proven property. The Implementation claiming
 conformance MUST run a recurring check that each platform still rejects a
 mismatched `code_verifier`.
 
-X and GitHub request-field uniqueness is structural: every token-request
-body byte is either revealed or opened with a delimiter-free charset
-(REQ-PLAT-29C, REQ-PLAT-35, common REQ-COMMON-15), so no duplicate field can
-hide in the transcript. ASM-PROV-07 remains as defense-in-depth over the
-endpoints' decoded-form behavior, exercised by TEST-PLAT-19; a probe failure
-signals platform drift to investigate, not a broken soundness argument.
+X and GitHub request-field uniqueness depends on their fixed token endpoints'
+decoded-form behavior under ASM-PROV-07. Disclosure and delimiter constraints
+reduce hidden request surface but do not replace that parser assumption.
+TEST-PLAT-19 exercises it continuously; a failed probe makes the affected
+profile ineligible for new ceremonies.
 
 A malicious Token-Proof Service cannot rebind a ceremony to other Authorized
 Transaction Data,
