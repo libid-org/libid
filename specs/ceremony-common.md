@@ -1,6 +1,6 @@
 # Common ceremony rules
 
-Part of the [libID ceremony specification](libid.md).
+Part of the [libID protocol specification](libid.md).
 
 ## 1. Scope
 

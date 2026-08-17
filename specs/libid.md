@@ -1,10 +1,12 @@
-# libID ceremony specification
+# libID protocol specification
 
-Status: proposed normative identity-platform ceremony specification.
+Status: proposed normative libID protocol specification.
 
-This is the required entrypoint for the libID ceremony specification. The
-linked chapters form one normative specification and are not independent
-documents:
+This is the required entrypoint for the libID protocol specification. The
+linked documents form one normative specification and are not independent
+specifications.
+
+## Identity ceremonies
 
 - [Common ceremony rules](ceremony-common.md) define the constructions and
   invariants shared by every identity platform.
@@ -15,7 +17,7 @@ documents:
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
-"OPTIONAL" in this specification are to be interpreted as described in
+"OPTIONAL" throughout this specification are to be interpreted as described in
 BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all capitals,
 as shown here.
 
