@@ -15,11 +15,11 @@ specifications.
 
 ## System model and specification ownership
 
-libID turns an identity-platform authorization into a proof that a consuming
-contract applies to one proof-bound operation:
+libID turns an identity-platform authorization into a proof that a Consumer
+applies to one proof-bound transaction:
 
 ```text
-User -> Identity Platform -> Canonical Runtime -> Proving Circuit -> Consuming Contract
+User -> Identity Platform -> Canonical Runtime -> Proving Circuit -> Consumer
                                   |
                                   +-> Token-Proof Service (GitHub only)
 ```
@@ -29,20 +29,21 @@ clients, and any Token-Proof Service, but is not trusted to choose identity
 fields, change the proof-bound operation, or widen proof validity. The identity
 platform controls the authenticated account response. The notary authenticates
 X/GitHub transcripts and their creation times. Registry governance selects
-accepted verifier artifacts, trust roots, and protocol parameters. The chain
-authenticates the caller, deployment, chain identifier, and block time.
+accepted verifier artifacts, trust roots, and protocol parameters. The
+Consumer Chain authenticates the Transaction Author and supplies its Chain ID
+and Block Time.
 
 | Principal | Knows and can | Trusted for | Not trusted for |
 |---|---|---|---|
 | User | chooses an account and authorizes an operation | human intent | parsing or cryptographic verification |
 | Application operator | configures clients and deployment assets; starts or withholds work | deployment availability and declared configuration | identity fields, proof target, or proof validity |
-| Identity-platform operator | authenticates accounts and issues signed or TLS-authenticated responses | the `ASM-PROV-*` behavior the selected profile cites | the on-chain operation or caller |
-| Notary operator | operates the X/GitHub attestation key and observes sessions | `ASM-NOTARY-01` | user intent or contract authorization |
+| Identity-platform operator | authenticates accounts and issues signed or TLS-authenticated responses | the `ASM-PROV-*` behavior the selected profile cites | the proof-bound transaction or Transaction Author |
+| Notary operator | operates the X/GitHub attestation key and observes sessions | `ASM-NOTARY-01` | user intent or transaction authorization |
 | Registry governance administrator | activates verifier artifacts, trust roots, and parameters | correct authority lifecycle | user consent |
 
 The principal trust roots are Google's active signing moduli, the active
 X/GitHub notary keys, the selected proof-verifier artifacts, Registry
-governance, and chain consensus. Replacing or retiring a root stops future
+governance, and Consumer Chain consensus. Replacing or retiring a root stops future
 acceptance after the change takes effect; it does not undo bindings or sessions
 already committed. Loss of an application deployment is a liveness failure.
 Compromise of the browser release or its supply chain defeats local client and
@@ -53,19 +54,20 @@ Compromise of Registry governance can change every accepted root and verifier.
 | Subject | Single normative owner |
 |---|---|
 | Claim digest, PKCE, extraction, client binding, evidence time | [Common ceremony rules](ceremony-common.md) |
+| Chain ID, Transaction Author, Block Time, and transaction-data encoding | consumer protocol Chain Profile |
 | Platform endpoints, fields, trust roots, and proof projections | [Identity-platform ceremonies](platform-ceremonies.md) |
 | Redirect transport, persistence, resume, and UI control flow | browser protocol |
-| Entrypoint dispatch, caller authorization, replay storage, and trust-root governance | contract protocol |
+| Transaction dispatch, author authentication, replay storage, and trust-root governance | consumer protocol |
 
 The linked ceremony chapters specify the ceremony layer. The browser and
-contract protocol specifications do not redefine its proof fields or security
+consumer protocol specifications do not redefine its proof fields or security
 assumptions. A profile is implementable only when its exact proving
-and attestation verifier artifacts are published and selected by the contract
+and attestation verifier artifacts are published and selected by the consumer
 protocol.
 
 ## Enforceable guarantees and accepted boundaries
 
-Circuits and consuming contracts enforce proof-field provenance, the
+Circuits and Consumers enforce proof-field provenance, the
 proof-bound operation, per-deployment replay rejection, and authenticated
 freshness. The Canonical Runtime locally enforces the selected OAuth client and
 redirect profile. The protocol assumes the named identity-platform parser,
@@ -81,7 +83,7 @@ platform but not Claim-Digest binding; any pair containing compromised Registry
 governance, a selected verifier, or the applicable platform/notary trust root
 inherits that single-root compromise. This does not model adaptive or
 three-party compromise, shared key custody, browser supply-chain compromise, or
-chain failure.
+Consumer Chain failure.
 
 ## Conventions
 
@@ -93,9 +95,10 @@ as shown here.
 
 ## Protocol parameters
 
-Protocol parameters are Registry-owned `uint64` values expressed in seconds.
+Protocol parameters are Registry-owned unsigned 64-bit values expressed in
+seconds.
 The Registry Governance Process may update a supported parameter and emits its
-key, previous value, and new value. The Consuming Contract reads the current
+key, previous value, and new value. The Consumer reads the current
 value when it verifies a proof; browser reads are advisory only. Lowering a
 parameter may reject an outstanding proof, while raising one may extend an
 outstanding X/GitHub proof. Current trust-root membership remains required.
@@ -108,14 +111,14 @@ outstanding X/GitHub proof. Current trust-root membership remains required.
 
 - REQ-PARAM-01:
   The Registry Governance Process MUST reject an unknown parameter key and a
-  parameter value which is not a canonical `uint64`. The Registry Governance
-  Process MUST emit the parameter key, previous value, and new value after a
-  successful update. Necessity: independent implementations must read and
-  observe one closed parameter set.
+  parameter value which is not a canonical unsigned 64-bit integer. The
+  Registry Governance Process MUST emit the parameter key, previous value, and
+  new value after a successful update. Necessity: independent implementations
+  must read and observe one closed parameter set.
 - REQ-PARAM-02:
-  The Consuming Contract MUST use the current Registry value and checked
-  arithmetic whenever a ceremony rule names one of these parameters. The
-  Consuming Contract MUST NOT accept a caller-supplied substitute. Necessity:
+  The Consumer MUST use the current Registry value and checked arithmetic
+  whenever a ceremony rule names one of these parameters. The Consumer MUST
+  NOT accept a caller-supplied substitute. Necessity:
   callers must not widen proof freshness.
 - TEST-PARAM-01 (exercises REQ-PARAM-01, REQ-PARAM-02):
   The launch values reproduce the platform validity vectors; an unknown key,
