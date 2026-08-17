@@ -192,13 +192,16 @@ The Proving Circuit and consuming contract enforce all of the following:
 
 - REQ-PLAT-16 (upholds SP-CLIENT-01):
   The Proving Circuit MUST prove Google's signature over the ID Token under a
-  key whose modulus the registry lists as trusted.
+  signing modulus and bind that exact modulus to the public input of
+  REQ-PLAT-16A.
 - REQ-PLAT-16A (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the signing modulus, or a
   collision-resistant digest of it, as a public proof input. Necessity: the
   signature is proven in circuit because verifying it on chain would publish
-  the signed token and disclose its claims; the Consuming Contract checks
-  only the exposed modulus against the trusted set of REQ-PLAT-23.
+  the signed token and disclose its claims. The Proving Circuit MUST NOT decide
+  Registry membership or take the active trusted set as an input. The Consuming
+  Contract alone checks the exposed modulus against the current trusted set of
+  REQ-PLAT-23.
 - REQ-PLAT-17 (upholds SP-BIND-01):
   The Proving Circuit MUST prove the signed `iss` equals
   `https://accounts.google.com`.
@@ -214,10 +217,11 @@ The Proving Circuit and consuming contract enforce all of the following:
   address as its handle.
 - REQ-PLAT-21 (upholds SP-BIND-01):
   The prover supplies the offset of each checked claim as a private input.
-  The Proving Circuit MUST assert the JSON pattern of `iss`, `sub`, `aud`,
-  `exp`, `nonce`, `email`, and `email_verified` at the supplied offsets per
-  common REQ-COMMON-19 and REQ-COMMON-19B. The Proving Circuit MUST
-  constrain each extracted value to its required type and charset.
+  The Proving Circuit MUST check the string claims `iss`, `sub`, `aud`,
+  `nonce`, and `email` under common REQ-COMMON-19 and REQ-COMMON-19B. The
+  Proving Circuit MUST check `exp` as a canonical unsigned JSON integer bounded
+  by `uint64`, and `email_verified` as the exact unquoted JSON boolean `true`,
+  under common REQ-COMMON-19D.
   Duplicate-free top-level structure is the issuer's behavior under
   ASM-PROV-06; the circuit performs no search and no duplicate scan.
 - REQ-PLAT-22 (upholds SP-FRESH-01):
@@ -635,10 +639,13 @@ contract.
   A Google response carrying an authorization code or access token is rejected,
   and the deployment contains no Google exchange route or client secret.
   Verification: inspection of emitted artifacts.
-- TEST-PLAT-06 (exercises REQ-PLAT-16, REQ-PLAT-16A, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
+- TEST-PLAT-06 (exercises REQ-COMMON-19D, REQ-PLAT-16, REQ-PLAT-16A, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
   A token with a foreign issuer, foreign audience, `email_verified: false`, a
-  duplicated top-level claim, or an untrusted signing modulus is rejected in
-  each case.
+  quoted or non-boolean `email_verified`, a quoted, negative, fractional,
+  exponent, leading-zero, or overflowing `exp`, a duplicated top-level claim,
+  or an untrusted signing modulus is rejected in each case. A cryptographically
+  valid proof under an inactive modulus passes circuit verification but is
+  rejected by the Consuming Contract.
 - TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09, REQ-PLAT-09A):
   A proof at or after `proofValidUntil`, and an attestation timestamp more than
   `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected. A later

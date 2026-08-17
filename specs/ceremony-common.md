@@ -327,15 +327,15 @@ browser-local and produce no on-chain effect.
 
 A proof authenticates bytes, not fields. The Proving Circuit is responsible
 for checking the fields the profile needs — and only those fields, never the
-whole template. A JSON field check is a pattern match at a witnessed offset:
-the full `"field":"` delimiter, the value, and the closing structural byte.
-A form-field check likewise asserts a field boundary, the exact ASCII name and
-`=`, the value, and the next `&` or body end. Because the authenticated parser
-outputs satisfy ASM-PROV-06 and ASM-PROV-07, these local checks provide the
-required field meaning without the impractical proving cost of a complete JSON
-or form parser. Hidden ranges stay behind blinded hash commitments the circuit
-opens; the circuit links transcripts through those commitments and binds the
-Claim Digest.
+whole template. A JSON string check matches the full `"field":"` delimiter,
+the value, and its closing quote. JSON unsigned integers and booleans use the
+typed local matches of REQ-COMMON-19D. A form-field check asserts a field
+boundary, the exact ASCII name and `=`, the value, and the next `&` or body end.
+Because the authenticated parser outputs satisfy ASM-PROV-06 and ASM-PROV-07,
+these local checks provide the required field meaning without the impractical
+proving cost of a complete JSON or form parser. Hidden ranges stay behind
+blinded hash commitments the circuit opens; the circuit links transcripts
+through those commitments and binds the Claim Digest.
 
 Disclosure and verification are two separate layers. The Platform Profile
 fixes a minimal set of revealed ranges; every other byte stays behind a
@@ -356,12 +356,11 @@ public inputs, which never includes a credential.
   tile the transcript in the exact layout the profile fixes, with each hidden
   range bounded by revealed anchor bytes.
 - REQ-COMMON-19 (upholds SP-EXCHANGE-01):
-  The Proving Circuit extracting a field MUST receive the field's offset as a
-  private input supplied by the prover; the circuit performs no search. The
-  Proving Circuit MUST assert the full `"field":"` delimiter at that offset,
-  the value bytes, and the closing delimiter. The Proving Circuit MUST
-  assert that the byte after the match is a structural byte the profile
-  fixes.
+  The Proving Circuit extracting a JSON string field MUST receive the field's
+  offset as a private input supplied by the prover; the circuit performs no
+  search. The Proving Circuit MUST assert the full `"field":"` delimiter at
+  that offset, the value bytes, the closing quote, and the following structural
+  byte fixed by the profile.
 - REQ-COMMON-19B (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST constrain the extracted value's charset to exclude
   the closing delimiter. The Proving Circuit MUST assert the whole match lies
@@ -369,6 +368,15 @@ public inputs, which never includes a credential.
   Necessity: without the charset bound a longer witnessed value extends the
   match into the neighboring field; without the bounds check a pattern can be
   planted in zero-padding.
+- REQ-COMMON-19D (upholds SP-BIND-01, SP-FRESH-01):
+  The Proving Circuit extracting an unsigned JSON integer MUST assert the exact
+  `"field":` delimiter, a canonical `0|[1-9][0-9]*` decimal value bounded by
+  the profile's integer type, and the following structural byte fixed by the
+  profile. The Proving Circuit checking a JSON boolean MUST assert the exact
+  `"field":true` or `"field":false` literal required by the profile and its
+  following structural byte. The Proving Circuit MUST keep both matches inside
+  the authenticated payload length and reject quoted, signed, fractional,
+  exponent, leading-zero, padded, or wrong-type alternatives.
 - REQ-COMMON-19C (upholds SP-BIND-01, SP-EXCHANGE-01):
   The Proving Circuit extracting a field from an
   `application/x-www-form-urlencoded` request MUST assert that the match begins
