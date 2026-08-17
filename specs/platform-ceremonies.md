@@ -422,10 +422,18 @@ soundness dependency.
 
   The Final Identity Circuit MUST keep the bearer, bearer commitment,
   `pkceNonce`, and all hidden-range commitments private. The Final Identity
-  Circuit MUST NOT expose a detached `userId`, handle, or timestamp.
+  Circuit MUST NOT add its own `userId`, handle, or timestamp public input.
 
-The `code_verifier` is recomputed in circuit per REQ-COMMON-15. The Consuming
-Contract compares the endpoint inputs with the `x/v1` profile.
+The circuit proves only two links: the same bearer opens both notarized
+transcripts, and the token request's `code_verifier` derives from the Claim
+Digest (recomputed in circuit per REQ-COMMON-15). Identity, time, and client
+values live in the notary-signed attestations, and the Consuming Contract
+reads them from the revealed bytes. The circuit carries no copy of them,
+because a public input that no constraint ties to the transcript is just
+prover-typed calldata: a reader trusting such a copy instead of the revealed
+bytes would accept a forged value while the proof still verifies. Every fact
+has exactly one representation. The Consuming Contract compares the endpoint
+inputs with the `x/v1` profile.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
   The Canonical Runtime MUST complete the token request within X's
@@ -678,8 +686,11 @@ the commitments while keeping the client secret from the browser.
   The Final Identity Circuit MUST carry every token-proof value in this table
   unchanged from the verified nested proof. The Final Identity Circuit MUST
   keep the code, redirect URI, verifier, bearer, bearer commitment, and all
-  hidden-range commitments private. The Final Identity Circuit MUST NOT expose
-  a detached `userId`, handle, or timestamp.
+  hidden-range commitments private. The Final Identity Circuit MUST NOT add
+  its own `userId`, handle, or timestamp public input. Necessity: identity
+  and time live in the notary-signed attestations the contract reads; an
+  extra unconstrained copy would let a reader accept a prover-typed value
+  while the proof still verifies.
 
 Changing the pinned API version is a profile and verifier revision, not
 runtime configuration. The granted scope is enforced inside the token proof
@@ -785,12 +796,12 @@ contract.
   endpoint triple, or the revealed identity-response ranges between the token
   proof, identity attestation, and final proof is rejected. The final proof
   contains no bearer, bearer commitment, code, verifier, redirect URI, hidden
-  range commitment, or detached identity field.
+  range commitment, or added identity or time input.
 - TEST-PLAT-15B (exercises REQ-PLAT-32B):
   Substituting any REQ-PLAT-32B public input between the X token attestation,
   identity attestation, and final proof is rejected. The final X proof
   contains no bearer, bearer commitment, `pkceNonce`, hidden-range
-  commitment, or detached identity field.
+  commitment, or added identity or time input.
 - TEST-PLAT-16 (exercises REQ-PLAT-53):
   A ceremony whose exchange response was lost restarts from authorization.
 - TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-02, REQ-PLAT-03):
