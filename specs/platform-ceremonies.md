@@ -101,14 +101,16 @@ Proof validity and mutable-metadata ordering use the authenticated times below.
 | Identity platform | `metadataObservedAt` | `proofValidUntil` |
 |---|---|---|
 | Google | signed ID-Token `exp` | signed ID-Token `exp` |
-| X | signed `meAttest.timestamp` | `tokenAttest.timestamp + proofLifetime[x]` |
-| GitHub | signed `userAttest.timestamp` | `tokenAttest.timestamp + proofLifetime[github]` |
+| X | signed `tokenAttest.timestamp` | `metadataObservedAt + proofLifetime[x]` |
+| GitHub | signed `tokenAttest.timestamp` | `metadataObservedAt + proofLifetime[github]` |
 
 For X and GitHub, "timestamp" is the signed TLSNotary attestation creation
 time. The token attestation is the one-time PKCE and Claim-Digest binding, so
-it alone anchors proof validity. The identity attestation opens the same bearer
-and its timestamp orders the mutable handle it observed; it does not refresh
-the authorization. The named lifetimes are current
+it alone supplies evidence time: one signed timestamp anchors both metadata
+ordering and proof validity, exactly as Google's single signed `exp` does.
+The identity attestation opens the same bearer and carries the identity
+fields; its own creation time is not an evidence-time input and does not
+refresh the authorization. The named lifetimes are current
 [protocol parameters](libid.md#protocol-parameters).
 
 Google's signed `exp` already supplies the accepted one-hour ordering and
@@ -123,9 +125,9 @@ block an otherwise valid authority operation.
   than `maxFutureAttestationSkew` ahead of `block.timestamp`.
 - REQ-PLAT-09A (upholds SP-FRESH-01):
   The Consuming Contract MUST derive `metadataObservedAt` and
-  `proofValidUntil` from the exact sources in the table above. An X or GitHub
-  identity attestation does not authorize an extension: the Consuming Contract
-  MUST NOT use it to extend `proofValidUntil`.
+  `proofValidUntil` from the exact sources in the table above. The Consuming
+  Contract MUST NOT read an X or GitHub identity-attestation timestamp as an
+  evidence-time input or use it to extend `proofValidUntil`.
 
 ## 3. Google OIDC ceremony
 
@@ -413,8 +415,7 @@ soundness dependency.
   |---|---|
   | Claim Digest | bound to the token request's `code_verifier` under common REQ-COMMON-15 |
   | client identifier | revealed token-request `client_id` |
-  | token-attestation timestamp | notarized token session |
-  | identity-attestation timestamp | notarized `/users/me` session |
+  | evidence timestamp | signed `tokenAttest.timestamp`; used for both `metadataObservedAt` and `proofValidUntil` |
   | revealed identity-response ranges | notarized `/users/me` response containing `id` and `username` |
   | token endpoint authority, method, and path | notarized token session |
   | identity endpoint authority, method, and path | notarized `/users/me` session |
@@ -669,8 +670,7 @@ the commitments while keeping the client secret from the browser.
   |---|---|
   | Claim Digest | public input bound to the nested `code_verifier` under common REQ-COMMON-15 |
   | client identifier | token proof `client_id` |
-  | token-attestation timestamp | token proof |
-  | identity-attestation timestamp | notarized `/user` session |
+  | evidence timestamp | token proof `tokenAttest.timestamp`; used for both `metadataObservedAt` and `proofValidUntil` |
   | revealed identity-response ranges | notarized `/user` response containing `id` and `login` |
   | token endpoint authority, method, and path | token proof |
   | identity endpoint authority, method, and path | notarized `/user` session |
@@ -738,11 +738,11 @@ contract.
   cryptographically valid proof under an inactive signing modulus passes
   circuit verification but is rejected by the Consuming Contract.
 - TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09, REQ-PLAT-09A):
-  A proof at or after `proofValidUntil`, and an attestation timestamp more than
-  `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected. A later
-  X or GitHub identity attestation advances `metadataObservedAt` without
-  extending the token-attestation-derived `proofValidUntil`; Google uses its
-  signed `exp` for both values.
+  A proof at or after `proofValidUntil`, and a token-attestation timestamp
+  more than `maxFutureAttestationSkew` ahead of `block.timestamp`, are
+  rejected. An X or GitHub identity-attestation timestamp changes neither
+  `metadataObservedAt` nor `proofValidUntil`; Google uses its signed `exp`
+  for both values.
 - TEST-PLAT-08 (exercises REQ-PLAT-24):
   The trusted modulus set contains every modulus currently published at
   Google's JWKS endpoint, and every corresponding exponent is 65537.
@@ -781,7 +781,7 @@ contract.
   foreign client, a foreign verifier, or a bearer that does not open the
   commitment is discarded in each case, and no resume record is written.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A):
-  Substituting the Claim Digest, client identifier, either timestamp, either
+  Substituting the Claim Digest, client identifier, evidence timestamp, either
   endpoint triple, or the revealed identity-response ranges between the token
   proof, identity attestation, and final proof is rejected. The final proof
   contains no bearer, bearer commitment, code, verifier, redirect URI, hidden
