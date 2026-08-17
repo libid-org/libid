@@ -308,9 +308,10 @@ A proof over a TLSNotary transcript authenticates bytes, not fields. These
 rules apply wherever a party that composes a request also proves over it.
 
 Disclosure and verification are two separate layers. The Platform Profile
-fixes a minimal set of revealed ranges; every other byte is redacted, yet
-still proven against the template as a private witness. Separately, the proof
-exposes a minimal set of public inputs, which never includes a credential.
+fixes a minimal set of revealed ranges; every other byte in a profile-listed
+structured region is redacted, yet still proven against that region's template
+as a private witness. Separately, the proof exposes a minimal set of public
+inputs, which never includes a credential.
 
 - REQ-COMMON-17A (upholds SP-CLIENT-01):
   The Platform Profile MUST list the exact ranges a notarized session reveals.
@@ -318,10 +319,11 @@ exposes a minimal set of public inputs, which never includes a credential.
   The Implementation MUST redact every byte outside the ranges its profile
   lists.
 - REQ-COMMON-18 (upholds SP-EXCHANGE-01):
-  The Proving Circuit MUST take the complete notarized request as a private
-  witness. The Proving Circuit MUST assert equality with the profile's
-  template, allowing a bounded hole only where the profile lists a variable
-  value.
+  The Proving Circuit MUST take each complete profile-listed structured request
+  region as a private witness. For a launch token request, that region is the
+  complete form body. The Proving Circuit MUST assert equality with the
+  region's template, allowing a bounded hole only where the profile lists a
+  variable value.
 - REQ-COMMON-19 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST locate a field by its full delimiter in the
   template. The Proving Circuit MUST NOT locate a field by searching for a bare
@@ -329,9 +331,32 @@ exposes a minimal set of public inputs, which never includes a credential.
 - REQ-COMMON-20 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST constrain every variable value to the charset the
   profile states, including values that are never disclosed.
+
+Endpoint proof inputs use these canonical byte strings: authority is the
+lowercase ASCII TLS server DNS name with no trailing dot, method is the exact
+uppercase HTTP method, and path is the origin-form path beginning with `/`
+and containing no query. Launch profiles use TCP port 443.
+
+Authority prevents a transcript from an attacker-controlled server from
+substituting for the platform; path separates operations on the same server;
+method separates operations with different HTTP semantics. Exposing these
+authenticated values and comparing them in the contract avoids compiling
+platform endpoint constants into each circuit without weakening the binding.
+
 - REQ-COMMON-21 (upholds SP-BIND-01):
-  The Proving Circuit MUST assert the endpoint authority, method, path, media
-  type, and `redirect_uri` byte for byte against compiled constants.
+  The Proving Circuit MUST expose the authenticated TLS server authority,
+  request method, and request path as public proof inputs. The Proving Circuit
+  MUST bind those values to the notarized session and request. The Proving
+  Circuit MUST NOT require them to equal profile constants.
+- REQ-COMMON-21A (upholds SP-BIND-01):
+  The Consuming Contract MUST compare every authenticated authority, method,
+  and path byte for byte with the selected platform profile.
+- REQ-COMMON-21B (upholds SP-EXCHANGE-01):
+  The Implementation MUST construct every notarized request with the media type
+  and `redirect_uri` from its immutable deployment profile. Neither value is a
+  contract input. Necessity: media type selects the platform's request parser,
+  while redirect URI is application delivery configuration rather than
+  on-chain identity authority.
 - REQ-COMMON-22 (upholds SP-EXCHANGE-01):
   The Platform Profile MUST order any redacted credential last in the request
   body.
@@ -358,8 +383,9 @@ prover hiding a second copy of a field behind it.
   local clock.
 - REQ-COMMON-26 (upholds SP-FRESH-01):
   The Consuming Contract MUST derive `proofValidUntil` from the profile's
-  authenticated platform time. The Consuming Contract MUST reject a submission
-  where `block.timestamp >= proofValidUntil`.
+  authenticated platform time and the current protocol parameters. The
+  Consuming Contract MUST reject a submission where
+  `block.timestamp >= proofValidUntil`.
 - REQ-COMMON-27 (upholds SP-FRESH-01):
   The Consuming Contract MUST NOT accept a caller-supplied validity bound.
 - REQ-COMMON-28 (upholds SP-FRESH-01):
@@ -400,9 +426,10 @@ the constructions that role implements.
 - TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-19, REQ-COMMON-20, REQ-COMMON-22):
   A transcript carrying a second copy of a templated field, placed inside or
   after an undisclosed range, is rejected.
-- TEST-COMMON-11 (exercises REQ-COMMON-21):
-  A transcript whose `redirect_uri` carries an appended path segment or query
-  string is rejected.
+- TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B):
+  The Consuming Contract rejects an authenticated foreign authority, method, or
+  path. The request constructor refuses a media type or `redirect_uri`
+  differing from its immutable deployment profile.
 - TEST-COMMON-12 (exercises REQ-COMMON-23, REQ-COMMON-24, REQ-COMMON-25):
   A fractional, negative, overflowing, or textual timestamp is rejected.
 - TEST-COMMON-13 (exercises REQ-COMMON-26, REQ-COMMON-27, REQ-COMMON-28):
