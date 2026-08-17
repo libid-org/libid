@@ -295,6 +295,13 @@ Launch fixes X's `/2/oauth2/token` and `/2/users/me` sessions and GitHub's
   The Canonical Runtime MUST NOT let an application, user, request, browser
   probe, failure, or retry select Browser MPC or switch transport within a
   launch ceremony.
+- REQ-PLAT-28 (upholds SP-DELIVERY-01):
+  The Redirect Runtime MUST require the X or GitHub authorization redirect to
+  carry exactly one `code` and exactly one `state`, or exactly one `error`.
+  The Redirect Runtime MUST reject duplicate, mixed, additional
+  authoritative, and malformed fields. The single accepted `code` is the code
+  consumed at redirect ingress that REQ-PLAT-29 and REQ-PLAT-46 compare
+  against.
 
 Browser MPC is a deferred protocol alternative. It may remove the
 notary-to-platform path assumption and notary egress exposure, but it requires
@@ -813,10 +820,12 @@ contract.
   detached `userId`, handle, or metadata value for account A. The runtime
   rejects the extra representation; without it, the runtime and Consuming
   Contract both derive account B byte for byte.
-- TEST-PLAT-18 (exercises REQ-PLAT-25, REQ-PLAT-26, REQ-PLAT-27):
+- TEST-PLAT-18 (exercises REQ-PLAT-25, REQ-PLAT-26, REQ-PLAT-27, REQ-PLAT-28):
   Launch uses Proxy mode, rejects application or request selection of Browser
   MPC, uses no application-controlled platform egress, and carries no partial
-  transcript state into a retry.
+  transcript state into a retry. A redirect carrying two `code` fields, two
+  `state` fields, both `code` and `error`, or a malformed field is rejected
+  before any token request starts.
 - TEST-PLAT-19 (exercises REQ-COMMON-32; supports ASM-PROV-07):
   Recurring integration probes send each profile-listed X and GitHub token
   request field twice, in both orders and using both literal and percent-encoded
