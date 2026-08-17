@@ -100,9 +100,10 @@ Proof layers work with raw bytes; normalization is a consumption-time
 derivation, layered strictly:
 
 - REQ-PLAT-08A (upholds SP-BIND-01):
-  Every proof layer MUST verify and carry the handle as the raw authenticated
-  bytes of its platform source. A Proving Circuit or Attestation Verifier
-  MUST NOT case-fold, trim, or otherwise transform identity bytes.
+  The Proving Circuit and the Attestation Verifier MUST verify and carry the
+  handle as the raw authenticated bytes of its platform source. The Proving
+  Circuit and the Attestation Verifier MUST NOT case-fold, trim, or otherwise
+  transform identity bytes.
 - REQ-PLAT-08B (upholds SP-BIND-01):
   The Consuming Contract MUST derive the normalized handle from the
   proof-verified raw bytes on its own write path. The Consuming Contract MUST
