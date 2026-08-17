@@ -14,5 +14,6 @@ without any additional terms or conditions.
 Every commit must be signed off (`git commit -s`), certifying the Developer
 Certificate of Origin, Version 1.1 (https://developercertificate.org): that you
 wrote the contribution or otherwise have the right to submit it under these
-licenses. Pull requests with unsigned commits fail the automated DCO check and
-cannot be merged.
+licenses. The `Signed-off-by:` name and email must match the commit author.
+Pull requests with unsigned or mismatched commits fail the automated DCO check
+and cannot be merged.

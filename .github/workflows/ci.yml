@@ -209,10 +209,12 @@ jobs:
           # authors a merge, and the merged commits are themselves in range.
           missing=0
           for sha in $(git rev-list --no-merges "$range"); do
-            if git log -1 --format=%B "$sha" | grep -qiE '^Signed-off-by: .+ <.+>'; then
+            author=$(git log -1 --format='%an <%ae>' "$sha")
+            if git log -1 --format=%B "$sha" \
+              | grep -Fxiq "Signed-off-by: $author"; then
               continue
             fi
-            echo "::error::commit $sha lacks a Signed-off-by trailer (use 'git commit -s')"
+            echo "::error::commit $sha lacks Signed-off-by matching its author: $author"
             missing=1
           done
           exit "$missing"
