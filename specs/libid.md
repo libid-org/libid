@@ -28,14 +28,12 @@ The Registry Governance Process may update a supported parameter and emits its
 key, previous value, and new value. The Consuming Contract reads the current
 value when it verifies a proof; browser reads are advisory only. Lowering a
 parameter may reject an outstanding proof, while raising one may extend an
-outstanding proof only within its authenticated platform and trust-root
-ceilings.
+outstanding X/GitHub proof. Current trust-root membership remains required.
 
 | Parameter | Launch value | Use |
 |---|---:|---|
-| `proofLifetime[x]` | 3600 | maximum age of the earlier X token/identity attestation |
-| `proofLifetime[github]` | 3600 | maximum age of the earlier GitHub token/identity attestation |
-| `googleClockSkewGrace` | 300 | grace added to the signed Google ID-Token expiry |
+| `proofLifetime[x]` | 3600 | maximum age of the X token-exchange attestation |
+| `proofLifetime[github]` | 3600 | maximum age of the GitHub token-exchange attestation |
 | `maxFutureAttestationSkew` | 300 | maximum X/GitHub attestation lead over chain time |
 
 - REQ-PARAM-01:
@@ -56,10 +54,11 @@ ceilings.
 
 ## Security Considerations
 
-Registry governance can shorten or widen the acceptance window within the
-authenticated provider and trust-root ceilings. The linked chapters define the
-remaining assumptions, security properties, requirements, and
-platform-specific security considerations.
+Registry governance can shorten or widen the X/GitHub acceptance window. Every
+proof still requires a currently active trust root, and Google remains bounded
+by its signed expiry. The linked chapters define the remaining assumptions,
+security properties, requirements, and platform-specific security
+considerations.
 
 ## References
 

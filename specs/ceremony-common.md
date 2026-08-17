@@ -74,9 +74,9 @@ Canonical Runtime: The immutable browser release that constructs claim
 
 - SP-BIND-01:
   Evidence produced by a ceremony discharges only for the Call Data committed
-  in its Claim Digest. Depends on ASM-PROV-02, ASM-PROV-05, ASM-CHAIN-01.
-  Evidence: conformance tests (supporting, not proving) plus the collision
-  resistance of SHA-256 and keccak256.
+  in its Claim Digest. Depends on ASM-PROV-02, ASM-PROV-05, ASM-PROV-06,
+  ASM-CHAIN-01. Evidence: conformance tests (supporting, not proving) plus the
+  collision resistance of SHA-256 and keccak256.
 - SP-CLIENT-01:
   The Canonical Runtime rejects evidence issued to an OAuth client other than
   the one fixed by its immutable ceremony profile. Depends on ASM-PROV-04,
@@ -300,7 +300,7 @@ on-chain registration of clients exists.
   profile.
 - REQ-COMMON-17C (upholds SP-CLIENT-01):
   The Verifier MUST NOT require the exposed client identifier to belong to a
-  registered set. A Consuming Contract MAY read the exposed client identifier
+  registered set. The Consuming Contract MAY read the exposed client identifier
   for its own semantics. Necessity: client selection is permissionless
   application policy; the on-chain authorization is that the claim's target
   sends the transaction.
@@ -331,15 +331,15 @@ public inputs, which never includes a credential.
   The Implementation MUST redact every byte outside the ranges its profile
   lists.
 - REQ-COMMON-18 (upholds SP-EXCHANGE-01):
-  The attestation MUST commit every hidden range with a blinded hash
-  commitment. The Proving Circuit MUST open the commitment of each hidden
+  The Implementation MUST commit every hidden attestation range with a blinded
+  hash commitment. The Proving Circuit MUST open the commitment of each hidden
   range whose value the profile checks.
 - REQ-COMMON-18A (upholds SP-EXCHANGE-01):
-  The verifier of an attestation MUST check that the revealed ranges and
-  hidden-range commitments tile the transcript in the exact layout the
-  profile fixes, with each hidden range bounded by revealed anchor bytes.
+  The Verifier MUST check that the revealed ranges and hidden-range commitments
+  tile the transcript in the exact layout the profile fixes, with each hidden
+  range bounded by revealed anchor bytes.
 - REQ-COMMON-19 (upholds SP-EXCHANGE-01):
-  A Proving Circuit extracting a field MUST receive the field's offset as a
+  The Proving Circuit extracting a field MUST receive the field's offset as a
   private input supplied by the prover; the circuit performs no search. The
   Proving Circuit MUST assert the full `"field":"` delimiter at that offset,
   the value bytes, and the closing delimiter. The Proving Circuit MUST
@@ -353,7 +353,7 @@ public inputs, which never includes a credential.
   match into the neighboring field; without the bounds check a pattern can be
   planted in zero-padding.
 - REQ-COMMON-19A (upholds SP-EXCHANGE-01):
-  A Consuming Contract extracting a field from revealed attestation bytes
+  The Consuming Contract extracting a field from revealed attestation bytes
   MUST reject a transcript in which the field's full delimiter matches at
   more than one position. Necessity: an authenticated response value the
   account holder influences, such as a display name, can embed a lookalike
@@ -423,11 +423,10 @@ field behind it.
   precedes the watermark stored for the binding it updates. Necessity: an
   older proof replayed after a handle change would roll the binding back.
 - REQ-COMMON-26 (upholds SP-FRESH-01):
-  The Consuming Contract MUST derive `proofValidUntil` as
-  `metadataObservedAt` plus the profile's current protocol parameter. The
-  Consuming Contract MUST reject a submission where
-  `block.timestamp >= proofValidUntil`. The parameter is Registry
-  configuration; a transaction caller cannot supply it.
+  The Consuming Contract MUST derive `proofValidUntil` from the platform
+  profile's authenticated validity input and any current protocol parameter
+  that profile names. The Consuming Contract MUST reject a submission where
+  `block.timestamp >= proofValidUntil`.
 - REQ-COMMON-27 (upholds SP-FRESH-01):
   The Consuming Contract MUST NOT accept a caller-supplied validity bound.
 - REQ-COMMON-28 (upholds SP-FRESH-01):

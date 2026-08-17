@@ -82,30 +82,36 @@ replace the immutable `userId`.
 
 ### 2.2 Metadata ordering and validity ceilings
 
-One rule bounds every proof's validity: `proofValidUntil =
-metadataObservedAt` plus a per-platform protocol parameter, where
-`metadataObservedAt` is the platform-signed time below and the parameter is
-Registry-configurable state, never a caller parameter.
+Proof validity and mutable-metadata ordering use the authenticated times below.
 
-| Identity platform | `metadataObservedAt` | Validity parameter |
+| Identity platform | `metadataObservedAt` | `proofValidUntil` |
 |---|---|---|
-| Google | signed ID-Token `exp` | `googleClockSkewGrace` |
-| X | `min(tokenAttest.timestamp, meAttest.timestamp)` | `proofLifetime[x]` |
-| GitHub | `min(tokenAttest.timestamp, userAttest.timestamp)` | `proofLifetime[github]` |
+| Google | signed ID-Token `exp` | signed ID-Token `exp` |
+| X | signed `meAttest.timestamp` | `tokenAttest.timestamp + proofLifetime[x]` |
+| GitHub | signed `userAttest.timestamp` | `tokenAttest.timestamp + proofLifetime[github]` |
 
 For X and GitHub, "timestamp" is the signed TLSNotary attestation creation
-time. The named values are current
-[protocol parameters](libid.md#protocol-parameters). Google's `exp` already
-encodes issuance plus Google's own token lifetime, so its parameter is only
-clock-skew grace. The Claim Digest carries no expiration; validity derives
-only from authenticated platform time plus the current parameter.
-`metadataObservedAt` is also the monotone replay watermark of common
-REQ-COMMON-25A: a binding never regresses to evidence observed earlier than
-what it already holds.
+time. The token attestation is the one-time PKCE and Claim-Digest binding, so
+it alone anchors proof validity. The identity attestation opens the same bearer
+and its timestamp orders the mutable handle it observed; it does not refresh
+the authorization. The named lifetimes are current
+[protocol parameters](libid.md#protocol-parameters).
+
+Google's signed `exp` already supplies the accepted one-hour ordering and
+validity value. A Google proof also requires its signing modulus to remain in
+the Registry's active set. The Claim Digest carries no expiration.
+`metadataObservedAt` is the monotone replay watermark of common
+REQ-COMMON-25A. A binding never regresses to evidence ordered earlier than what
+it already holds.
 
 - REQ-PLAT-09 (upholds SP-FRESH-01):
   The Consuming Contract MUST reject an X or GitHub attestation timestamp more
   than `maxFutureAttestationSkew` ahead of `block.timestamp`.
+- REQ-PLAT-09A (upholds SP-FRESH-01):
+  The Consuming Contract MUST derive `metadataObservedAt` and
+  `proofValidUntil` from the exact sources in the table above. An X or GitHub
+  identity attestation does not authorize an extension: the Consuming Contract
+  MUST NOT use it to extend `proofValidUntil`.
 
 ## 3. Google OIDC ceremony
 
@@ -191,7 +197,7 @@ The Proving Circuit and consuming contract enforce all of the following:
   The Proving Circuit MUST prove `nonce` equals the Claim Digest.
 - REQ-PLAT-19 (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the signed `aud` as the client-binding public
-  input. Admission stays permissionless per common REQ-COMMON-17C; a Consuming
+  input. Admission stays permissionless per common REQ-COMMON-17C; the Consuming
   Contract MAY read the exposed `aud`.
 - REQ-PLAT-20:
   The Proving Circuit MUST prove `email_verified` is the boolean `true`.
@@ -310,9 +316,9 @@ byte stays behind a blinded, charset-constrained hash commitment:
   The Proving Circuit MUST expose that revealed `client_id` as a public proof
   input.
 - REQ-PLAT-30A (upholds SP-EXCHANGE-01):
-  The notarized token session MUST reveal the returned `access_token` only as
-  its `SHA256(ASCII(access_token))` hash commitment. The plaintext token bytes
-  MUST stay redacted.
+  The Implementation MUST reveal the returned `access_token` from the notarized
+  token session only as its `SHA256(ASCII(access_token))` hash commitment. The
+  Implementation MUST keep the plaintext token bytes redacted.
 
 ### 5.3 Identity request
 
@@ -329,9 +335,10 @@ byte stays behind a blinded, charset-constrained hash commitment:
   The Proving Circuit MUST assert the same bearer commitment across the token
   transcript and the identity transcript.
 - REQ-PLAT-32A (upholds SP-EXCHANGE-01):
-  The notarized identity session MUST reveal the `Authorization` bearer value
-  only as the same `SHA256(ASCII(access_token))` hash commitment. The
-  plaintext token bytes MUST stay redacted.
+  The Implementation MUST reveal the `Authorization` bearer value from the
+  notarized identity session only as the same
+  `SHA256(ASCII(access_token))` hash commitment. The Implementation MUST keep
+  the plaintext token bytes redacted.
 
 Public proof inputs are the Claim Digest, the client identifier, both
 attestation timestamps, the identity fields, and the authenticated authority,
@@ -612,9 +619,12 @@ contract.
   A token with a foreign issuer, foreign audience, `email_verified: false`, a
   duplicated top-level claim, or an untrusted signing modulus is rejected in
   each case.
-- TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09):
+- TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09, REQ-PLAT-09A):
   A proof at or after `proofValidUntil`, and an attestation timestamp more than
-  `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected.
+  `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected. A later
+  X or GitHub identity attestation advances `metadataObservedAt` without
+  extending the token-attestation-derived `proofValidUntil`; Google uses its
+  signed `exp` for both values.
 - TEST-PLAT-08 (exercises REQ-PLAT-24):
   The trusted modulus set contains every modulus currently published at
   Google's JWKS endpoint.
