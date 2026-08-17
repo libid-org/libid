@@ -12,7 +12,7 @@ PKCE construction, notarized-transcript extraction, client binding, and
 evidence-time rules. Each platform profile owns its endpoints, ordered
 fields, authenticated response locations, canonical user-ID encoding, and
 proof-validity ceiling. The browser protocol owns redirect transport,
-persistence, continuation, and runtime composition.
+persistence, continuation, and caller control flow and code composition.
 
 ## 2. Conventions
 
