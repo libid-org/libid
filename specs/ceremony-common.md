@@ -112,8 +112,10 @@ Attestation Verifier: The exact TLSNotary attestation format and verifier
   endpoint.
 - ASM-NOTARY-01:
   The configured notary key is unforgeable, signs only transcripts it
-  observed, and signs their creation time no more than
-  `maxFutureAttestationSkew` ahead of real time.
+  observed, and stamps their creation time from a clock within ordinary skew
+  of real time. The enforced numeric bound on future skew is REQ-PLAT-09's
+  comparison against the current `maxFutureAttestationSkew` parameter, not
+  part of this assumption.
 - ASM-PROOF-01:
   A proof accepted under a profile's selected verifier artifact satisfies
   that profile's complete proof statement. Registry governance does not
@@ -529,8 +531,10 @@ platform endpoint constants into each circuit without weakening the binding.
 An undisclosed range still reaches the platform. Ordering a credential last
 and constraining its charset prevents that credential from injecting a form
 delimiter. Range tiling proves that no transcript bytes are omitted, but does
-not prove the complete grammar of hidden bytes or exclude a second form field;
-request soundness additionally depends on ASM-PROV-07.
+not by itself exclude a second form field inside a revealed or hidden range.
+Disclosure makes such bytes auditable but does not constrain their decoded
+form semantics. Launch therefore retains ASM-PROV-07 as a soundness dependency
+for every form-encoded token request.
 
 ## 10. Evidence time
 
