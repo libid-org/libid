@@ -23,8 +23,12 @@ Authorized Transaction Data: Opaque canonical bytes carried in the Claim
 
 Claim Random: Fresh 32-byte randomness that makes each Claim Digest unique.
 
-Protocol Version: The libID protocol revision a ceremony ran under, fixing its
-   digest layout, binding construction, and evidence rules.
+Platform Verifier: The on-chain contract selected for one identity platform
+   that verifies a Platform Verifier Version.
+
+Platform Verifier Version: The unsigned 16-bit version of the proof statement
+   accepted by the selected Platform Verifier. It is not a version of the
+   ceremony process or a mutable verifier-authority revision.
 
 Consumer Chain: The chain whose canonical state transition consumes a libID
    proof.
@@ -172,7 +176,7 @@ CLAIM_DIGEST_V1 = keccak256(UTF8("libid.claim-digest.v1"))
 
 claimPreimage =
     CLAIM_DIGEST_V1
-    || U16BE(version)
+    || U16BE(platformVerifierVersion)
     || U16BE(BYTE_LENGTH(UTF8(chainId)))
     || UTF8(chainId)
     || operationDomain
@@ -186,10 +190,10 @@ claimDigest = keccak256(claimPreimage)
 - REQ-COMMON-01 (upholds SP-BIND-01):
   The Canonical Runtime MUST construct every Claim Digest as the keccak256 of
   exactly the byte concatenation above. The Canonical Runtime MUST encode
-  `version` in exactly two bytes, the Chain ID byte length in exactly two
-  bytes, and the Authorized Transaction Data byte length in exactly four
-  bytes. The Canonical Runtime MUST reject a value which does not fit its
-  fixed-width field.
+  `platformVerifierVersion` in exactly two bytes, the Chain ID byte length in
+  exactly two bytes, and the Authorized Transaction Data byte length in
+  exactly four bytes. The Canonical Runtime MUST reject a value which does not
+  fit its fixed-width field.
 - REQ-COMMON-01A (upholds SP-BIND-01):
   The Consumer MUST fix one ASCII operation-domain string for each transaction
   kind and derive `operationDomain = keccak256(UTF8(domainString))`. The
@@ -211,9 +215,9 @@ claimDigest = keccak256(claimPreimage)
   caller, clock, or transaction encoding.
 - REQ-COMMON-02 (upholds SP-BIND-01):
   The Consumer MUST recompute the Claim Digest from the immutable operation
-  domain and Protocol Version of the transaction kind being invoked, its
-  observed Chain ID, and the `claimRandom` and Authorized Transaction Data
-  supplied in the submission.
+  domain, the Platform Verifier Version accepted by the selected Platform
+  Verifier, its observed Chain ID, and the `claimRandom` and Authorized
+  Transaction Data supplied in the submission.
 - REQ-COMMON-02A (upholds SP-BIND-01):
   The Consumer MUST reject a proof whose Claim Digest public input differs from
   the digest it recomputed.
@@ -230,8 +234,8 @@ claimDigest = keccak256(claimPreimage)
 - REQ-COMMON-05A (upholds SP-REPLAY-01):
   The Consumer MUST reject a Claim Digest it has already recorded.
 - REQ-COMMON-06 (upholds SP-BIND-01):
-  The Consumer MUST reject a submission whose `version` differs from the
-  Protocol Version it implements.
+  The Consumer MUST reject a submission whose `platformVerifierVersion`
+  differs from the version accepted by the selected Platform Verifier.
 - REQ-COMMON-06A (upholds SP-BIND-01):
   The Consumer MUST authenticate the Transaction Author under its Chain Profile
   and enforce the invoked transaction kind's authorization predicate before
@@ -246,11 +250,11 @@ takes a new domain string, not a new digest field. The Platform Ceremony remains
 reusable because it proves the resulting Claim Digest rather than interpreting
 the operation domain or Authorized Transaction Data.
 
-`version` is the libID protocol version the ceremony ran under: it fixes the
-digest layout, the binding construction, and the evidence rules the ceremony
-followed. It is bound into the digest so evidence produced under one protocol
-version cannot be presented under another, and it is carried in the submission
-so a Registry can route to the Consumer implementing it.
+`platformVerifierVersion` identifies the proof statement accepted by the
+selected Platform Verifier. It is bound into the digest so evidence produced
+for one version cannot be presented under another, and it is carried in the
+submission so the Consumer can require the exact version selected for that
+identity platform. `CLAIM_DIGEST_V1` separately versions this digest layout.
 
 `transactionData` carries one transaction's arguments as opaque bytes. The
 consumer protocol fixes their exact canonical encoding and validation. A name
@@ -268,7 +272,7 @@ itself to serve as the replay nullifier. No platform identifier and no user
 identifier appear in the digest or in the nullifier derived from it.
 
 Conformance vector, for `operationDomain =
-keccak256(UTF8("libid.claim-identity"))`, `version = 1`, `chainId =
+keccak256(UTF8("libid.claim-identity"))`, `platformVerifierVersion = 1`, `chainId =
 "example:1"`, `claimRandom = 0x5555…5555`, and `transactionData =
 0x00010203`:
 
@@ -579,7 +583,8 @@ the constructions that role implements.
   Resubmitting a recorded Claim Digest is rejected.
 - TEST-COMMON-04 (exercises REQ-COMMON-04, REQ-COMMON-06):
   Two ceremonies over identical Authorized Transaction Data yield distinct
-  digests, and a digest carrying a foreign `version` is rejected.
+  digests, and a digest carrying a foreign `platformVerifierVersion` is
+  rejected.
 - TEST-COMMON-05 (exercises REQ-COMMON-07, REQ-COMMON-08, REQ-COMMON-10):
   The §6 serializer vector reproduces byte for byte.
 - TEST-COMMON-06 (exercises REQ-COMMON-09, REQ-COMMON-11):
@@ -631,12 +636,12 @@ SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §3.
 
 Replay within one Consumer deployment is prevented by `claimRandom` and
 REQ-COMMON-05. Replay across Consumer Chains is prevented by the Chain ID in
-the digest. Replay across Protocol Versions is prevented by `version`. The
-digest does not prevent cross-deployment replay because it binds no Consumer or
-Registry identifier. Every Consumer transaction kind therefore defines an
-authorization predicate over the authenticated Transaction Author and the
-proof-bound Authorized Transaction Data. A copied proof creates no authority
-for a submitter that cannot satisfy that predicate.
+the digest. Replay across Platform Verifier Versions is prevented by
+`platformVerifierVersion`. The digest does not prevent cross-deployment replay
+because it binds no Consumer or Registry identifier. Every Consumer transaction
+kind therefore defines an authorization predicate over the authenticated
+Transaction Author and the proof-bound Authorized Transaction Data. A copied
+proof creates no authority for a submitter that cannot satisfy that predicate.
 
 Client binding rejects evidence issued to a client other than the one whose
 ceremony the Canonical Runtime opened. The check is local because independent

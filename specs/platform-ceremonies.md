@@ -23,7 +23,9 @@ Terms are imported from
 ## 2. Ceremony profiles
 
 Each platform ceremony has an independently versioned immutable profile:
-`google/v1`, `x/v1`, `github/v1`.
+`google/v1`, `x/v1`, `github/v1`. Every profile fixes the exact Platform
+Verifier Version carried in its Claim Digest and submission; launch profiles
+use `platformVerifierVersion = 1`.
 
 - REQ-PLAT-01:
   The Canonical Runtime MUST record in the ceremony state the exact profile it
