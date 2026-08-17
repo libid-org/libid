@@ -348,17 +348,33 @@ Attestation Verifier:
 | Range | Revealed | Why |
 |---|---|---|
 | endpoint authority, method, path | yes | exposed as public proof inputs per common REQ-COMMON-21 |
+| `grant_type` | yes | constant `authorization_code`; revealed so no delimiter can hide beside it |
 | `client_id` | yes | exposed as a public proof input |
 | `code` | yes | compared to the code consumed at redirect ingress |
+| `redirect_uri` | yes | the Canonical Runtime compares its immutable profile; no chain or circuit value |
 | `SHA256(ASCII(access_token))` | yes | hash commitment linking the token and identity transcripts |
 | attestation timestamp | yes | derives the authenticated validity ceiling |
 | everything else | no | headers, `code_verifier`, `scope`, `token_type`, other response fields |
+
+With those reveals and the in-circuit `code_verifier` opening of REQ-COMMON-15,
+every token-request body byte is either revealed or opened and
+charset-constrained. ASM-PROV-07 is defense-in-depth for `x/v1`, not a
+soundness dependency.
 
 - REQ-PLAT-29A (upholds SP-CLIENT-01):
   The Proving Circuit MUST reveal the `client_id` range of the token request.
 - REQ-PLAT-29B (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose that revealed `client_id` as a public proof
   input.
+- REQ-PLAT-29C (upholds SP-EXCHANGE-01):
+  The Implementation MUST reveal the token request's `grant_type` and
+  `redirect_uri` ranges in the notarized session, including in the
+  presentation the Consuming Contract verifies. The Canonical Runtime MUST
+  reject a transcript whose revealed `grant_type` or `redirect_uri` differs
+  from its immutable deployment profile. Neither value is a circuit
+  constraint, a public proof input, or a value the Consuming Contract reads;
+  the reveal exists so no token-request body byte stays both hidden and
+  unopened in the evidence the chain verifies.
 - REQ-PLAT-30A (upholds SP-EXCHANGE-01):
   The Implementation MUST reveal the returned `access_token` from the notarized
   token session only as its `SHA256(ASCII(access_token))` hash commitment. The
@@ -473,6 +489,13 @@ revealed `client_id` something other than the credential GitHub authenticated.
 - REQ-PLAT-35C (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose that revealed `client_id` as a public proof
   input.
+- REQ-PLAT-35D (upholds SP-EXCHANGE-01):
+  The Token-Proof Circuit MUST open the `client_secret` range as a private
+  witness and constrain its charset to exclude `&` and `=`. Necessity: with
+  every other exchange-body range revealed and the secret opened and
+  delimiter-free, no body byte stays both hidden and unopened, making
+  ASM-PROV-07 defense-in-depth for `github/v1` rather than a soundness
+  dependency.
 - REQ-PLAT-36 (upholds SP-BIND-01):
   The Proving Circuit MUST require exactly one nonempty printable-ASCII
   top-level `access_token` string of at most 4096 bytes in the exchange
@@ -732,6 +755,10 @@ contract.
 - TEST-PLAT-09B (exercises REQ-PLAT-30A, REQ-PLAT-32A):
   An X transcript that reveals plaintext `access_token` bytes in either
   session, or omits the bearer hash commitment, is rejected.
+- TEST-PLAT-09C (exercises REQ-PLAT-29C):
+  An X presentation that hides the `grant_type` or `redirect_uri` range is
+  rejected, and the Canonical Runtime rejects a revealed value differing from
+  its deployment profile.
 - TEST-PLAT-10 (exercises REQ-PLAT-30, REQ-PLAT-31, REQ-PLAT-32, REQ-PLAT-36, REQ-PLAT-51, REQ-PLAT-52):
   A response missing the required field, carrying a duplicate, or carrying a
   differently typed value is rejected; GitHub rejects a response whose
@@ -739,10 +766,10 @@ contract.
   different bearers is rejected.
 - TEST-PLAT-11 (exercises REQ-PLAT-33):
   A token request issued after the 30-second deadline is abandoned.
-- TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C):
+- TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C, REQ-PLAT-35D):
   An authorization request carrying a scope other than `read:user` is rejected,
-  and a transcript whose undisclosed secret range contains `&` or `=` is
-  rejected.
+  and a transcript whose opened secret range contains `&` or `=` fails to
+  prove.
 - TEST-PLAT-13 (exercises REQ-PLAT-37, REQ-PLAT-38, REQ-PLAT-39, REQ-PLAT-40):
   Each over-limit, malformed, duplicate, and missing field on both token-proof
   interfaces is rejected.
