@@ -161,9 +161,8 @@ block an otherwise valid authority operation.
   `maxFutureAttestationSkew` ahead of Block Time.
 - REQ-PLAT-09A (upholds SP-FRESH-01):
   The Consumer MUST derive `metadataObservedAt` and
-  `proofValidUntil` from the exact sources in the table above. The Consumer
-  MUST NOT read an X or GitHub identity-attestation timestamp as an
-  evidence-time input or use it to extend `proofValidUntil`.
+  `proofValidUntil` from the exact sources in the table above and from
+  nothing else.
 
 ## 3. Google OIDC ceremony
 
