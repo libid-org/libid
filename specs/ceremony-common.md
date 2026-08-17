@@ -80,8 +80,10 @@ Attestation Verifier: The exact TLSNotary attestation format and verifier
   endpoint.
 - ASM-NOTARY-01:
   The configured notary key is unforgeable, signs only transcripts it
-  observed, and signs their creation time no more than
-  `maxFutureAttestationSkew` ahead of real time.
+  observed, and stamps their creation time from a clock within ordinary skew
+  of real time. The enforced numeric bound on future skew is REQ-PLAT-09's
+  comparison against the current `maxFutureAttestationSkew` parameter, not
+  part of this assumption.
 - ASM-PROOF-01:
   A proof accepted under a profile's selected verifier artifact satisfies
   that profile's complete proof statement. Registry governance does not
