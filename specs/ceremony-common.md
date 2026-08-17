@@ -1,8 +1,6 @@
-# libID common ceremony rules
+# Common ceremony rules
 
-Status: proposed normative rules shared by every libID identity-platform
-ceremony. Companion to the
-[platform profiles](libid-platform-ceremonies.md).
+Part of the [libID ceremony specification](libid.md).
 
 ## 1. Scope
 
@@ -14,18 +12,10 @@ fields, authenticated response locations, canonical user-ID encoding, and
 proof-validity ceiling. The browser protocol owns redirect transport,
 persistence, continuation, and caller control flow and code composition.
 
-## 2. Conventions
-
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-"SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
-"OPTIONAL" in this document are to be interpreted as described in
-BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
-capitals, as shown here.
-
-## 3. Terminology
+## 2. Terminology
 
 Claim Digest: The 32-byte value binding one authorization to the call data
-   that will consume it, constructed as specified in §6.
+   that will consume it, constructed as specified in §5.
 
 Call Data: Opaque bytes carried in the Claim Digest and decoded by the
    consuming contract into that operation's expected arguments.
@@ -48,7 +38,7 @@ Token-Proof Service: The confidential-client component that performs and
 Canonical Runtime: The immutable browser release that constructs claim
    digests, verifies attestations, and builds proofs.
 
-## 4. Assumptions
+## 3. Assumptions
 
 - ASM-CHAIN-01:
   The Consuming Contract observes an authentic `msg.sender` and a block
@@ -77,7 +67,7 @@ Canonical Runtime: The immutable browser release that constructs claim
   The Canonical Runtime executes unmodified, and the user agent enforces the
   same-origin policy over authorization responses.
 
-## 5. Security properties
+## 4. Security properties
 
 - SP-BIND-01:
   Evidence produced by a ceremony discharges only for the Call Data committed
@@ -108,7 +98,7 @@ Canonical Runtime: The immutable browser release that constructs claim
   ASM-CHAIN-01, ASM-CHAIN-02. Evidence: checked invariant in the consuming
   contract.
 
-## 6. Claim digest
+## 5. Claim digest
 
 The Claim Digest is the single value binding one authorization to the
 operation that will consume it.
@@ -192,9 +182,9 @@ claimDigest = 0xbbc7bfcce62d070cc25d7ba04ce8820da8f4e5c92f5e63a2bd403940c84ab625
 ```
 
 Each platform carries the Claim Digest in the form its authorization allows:
-Google as the OIDC `nonce`, X and GitHub through the PKCE construction in §8.
+Google as the OIDC `nonce`, X and GitHub through the PKCE construction in §7.
 
-## 7. Canonical OAuth serialization
+## 6. Canonical OAuth serialization
 
 - REQ-COMMON-07:
   The Implementation MUST serialize each listed parameter tuple with the WHATWG
@@ -243,7 +233,7 @@ serialized:
 label=A+B&redirect_uri=https%3A%2F%2Fredirect.example%2Foauth%2Fredirect&state=_-%7E
 ```
 
-## 8. PKCE construction
+## 7. PKCE construction
 
 X and GitHub bind the Claim Digest through S256 PKCE.
 
@@ -273,7 +263,7 @@ A fresh `pkceNonce` per attempt gives a retry of the same Claim Digest a
 distinct verifier. Both verifier and challenge are exactly 43 unpadded
 base64url characters.
 
-Conformance vector, for the Claim Digest of §6 and
+Conformance vector, for the Claim Digest of §5 and
 `pkceNonce = 0x4444444444444444444444444444444444444444444444444444444444444444`:
 
 ```text
@@ -283,7 +273,7 @@ code_verifier  = hzKDf9tGZPDFEDxtXLG5FjSdQyFlJ4EajEUV4hMvPZQ
 code_challenge = YdTXrtdSCJvd5UpsW2wS13-XwSe7kJ5OE7Ex6J_AWks
 ```
 
-## 9. Client binding
+## 8. Client binding
 
 The OAuth client that issued the evidence is a public proof input, and the
 Canonical Runtime compares it against the exact client fixed by the immutable
@@ -312,7 +302,7 @@ verifier admission.
 Redirect origin, frontend origin, and application authorization remain
 browser-local and produce no on-chain effect.
 
-## 10. Notarized-transcript extraction
+## 9. Notarized-transcript extraction
 
 A proof over a TLSNotary transcript authenticates bytes, not fields. These
 rules apply wherever a party that composes a request also proves over it.
@@ -353,7 +343,7 @@ An undisclosed range still reaches the platform. Ordering it last, and
 constraining its charset so it cannot contain a field delimiter, prevents a
 prover hiding a second copy of a field behind it.
 
-## 11. Evidence time
+## 10. Evidence time
 
 - REQ-COMMON-23:
   The Implementation MUST decode every verified timestamp as an integer Unix
@@ -376,14 +366,14 @@ prover hiding a second copy of a field behind it.
   The Implementation MUST perform every timestamp addition and comparison with
   checked arithmetic before narrowing to `uint64`.
 
-## 12. Conformance
+## 11. Conformance
 
 Roles: Canonical Runtime, Token-Proof Service, Proving Circuit, Consuming
 Contract. The Implementation claiming a role MUST pass the vectors covering
 the constructions that role implements.
 
 - TEST-COMMON-01 (exercises REQ-COMMON-01, REQ-COMMON-01A, REQ-COMMON-02, REQ-COMMON-02A):
-  The §6 digest vector reproduces `claimDigest` exactly.
+  The §5 digest vector reproduces `claimDigest` exactly.
 - TEST-COMMON-02 (exercises REQ-COMMON-03):
   A submission carrying a foreign operation domain, or call data with trailing
   bytes, a noncanonical encoding, or an argument shape other than the
@@ -394,12 +384,12 @@ the constructions that role implements.
   Two ceremonies over identical call data yield distinct digests, and a digest
   carrying a foreign `version` is rejected.
 - TEST-COMMON-05 (exercises REQ-COMMON-07, REQ-COMMON-08, REQ-COMMON-10):
-  The §7 serializer vector reproduces byte for byte.
+  The §6 serializer vector reproduces byte for byte.
 - TEST-COMMON-06 (exercises REQ-COMMON-09, REQ-COMMON-11):
   A request carrying an appended caller parameter is rejected, and a redirected
   notarized request is abandoned.
 - TEST-COMMON-07 (exercises REQ-COMMON-12, REQ-COMMON-13, REQ-COMMON-15):
-  The §8 PKCE vector reproduces `code_verifier` and `code_challenge` exactly.
+  The §7 PKCE vector reproduces `code_verifier` and `code_challenge` exactly.
 - TEST-COMMON-08 (exercises REQ-COMMON-14):
   No ceremony artifact, log, or public input contains `pkceNonce`.
   Verification: inspection of the emitted artifacts.
@@ -426,10 +416,10 @@ the constructions that role implements.
   origin the deployment controls. Verification: audit of the platform client
   configuration.
 
-## 13. Security Considerations
+## 12. Security Considerations
 
 This document enforces SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01,
-SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §4.
+SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §3.
 
 Replay across ceremonies is prevented by `claimRandom` and REQ-COMMON-05.
 Replay across chains is prevented by `chainId` in the digest. Replay across
@@ -458,10 +448,10 @@ trust-bearing configuration.
 Input validation, denial of service, trust-anchor lifecycle, and browser
 origin, storage, and credential boundaries are owned by the browser
 specification. Per-platform failure behavior, transports, and trust roots are
-owned by the [platform profiles](libid-platform-ceremonies.md).
+owned by the [platform profiles](platform-ceremonies.md).
 
-## 14. References
+## 13. References
 
-Normative: [RFC2119], [RFC8174], [RFC6749], [RFC7636], [RFC7519], [OIDC].
+Normative: [RFC6749], [RFC7636], [RFC7519], [OIDC].
 
 Informative: [RFC9700].
