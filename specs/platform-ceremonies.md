@@ -492,10 +492,13 @@ rather than an `Authorization: Basic` header because Basic encodes the client
 identifier and the secret into one redacted value, which would make the
 revealed `client_id` something other than the credential GitHub authenticated.
 
-- REQ-PLAT-35 (upholds SP-CLIENT-01):
-  The Proving Circuit MUST constrain the redacted `client_secret` to a charset
-  containing neither `&` nor `=`, proving the charset without revealing the
-  value.
+- REQ-PLAT-35 (upholds SP-EXCHANGE-01):
+  The Token-Proof Circuit MUST open the redacted `client_secret` range as a
+  private witness and constrain its charset to contain neither `&` nor `=`,
+  proving the charset without revealing the value. Necessity: with every
+  other exchange-body range revealed and the secret delimiter-free, no body
+  byte stays both hidden and unopened, so no second form field can hide in
+  the transcript.
 - REQ-PLAT-35A (upholds SP-CLIENT-01):
   The Proving Circuit MUST NOT expose `client_secret`, or any value derived
   from it, as a public proof input.
@@ -505,13 +508,6 @@ revealed `client_id` something other than the credential GitHub authenticated.
 - REQ-PLAT-35C (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose that revealed `client_id` as a public proof
   input.
-- REQ-PLAT-35D (upholds SP-EXCHANGE-01):
-  The Token-Proof Circuit MUST open the `client_secret` range as a private
-  witness and constrain its charset to exclude `&` and `=`. Necessity: with
-  every other exchange-body range revealed and the secret opened and
-  delimiter-free, no body byte stays both hidden and unopened, making
-  ASM-PROV-07 defense-in-depth for `github/v1` rather than a soundness
-  dependency.
 - REQ-PLAT-36 (upholds SP-BIND-01):
   The Proving Circuit MUST require exactly one nonempty printable-ASCII
   top-level `access_token` string of at most 4096 bytes in the exchange
@@ -646,12 +642,13 @@ check and would widen exposure.
 
 Verifying only arbitrary byte substrings is insufficient: a prover that
 composes the request could otherwise witness one `code` or `code_verifier`
-while GitHub consumes a duplicate. The local form-field matcher and layout
-tiling prove where the checked values occur and that no transcript bytes are
-omitted. Deliberately, they do not pay the impractical circuit cost of proving
-the complete form grammar; uniqueness of decoded request fields is the
-endpoint-parser assumption ASM-PROV-07. The server-produced token proof carries
-the commitments while keeping the client secret from the browser.
+while GitHub consumes a duplicate. The layout tiling accounts for every
+transcript byte, every body range other than the secret is revealed, and the
+opened secret is delimiter-free per REQ-PLAT-35 — so no second form field can
+exist anywhere in the body. No complete form-grammar proof is needed, and
+ASM-PROV-07 is defense-in-depth for `github/v1`, not a soundness dependency.
+The server-produced token proof carries the commitments while keeping the
+client secret from the browser.
 
 ### 6.5 Identity request
 
@@ -784,7 +781,7 @@ contract.
   different bearers is rejected.
 - TEST-PLAT-11 (exercises REQ-PLAT-33):
   A token request issued after the 30-second deadline is abandoned.
-- TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C, REQ-PLAT-35D):
+- TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C):
   An authorization request carrying a scope other than `read:user` is rejected,
   and a transcript whose opened secret range contains `&` or `=` fails to
   prove.
@@ -859,12 +856,12 @@ platform behavior rather than a proven property. The Implementation claiming
 conformance MUST run a recurring check that each platform still rejects a
 mismatched `code_verifier`.
 
-X and GitHub request-field uniqueness likewise rests on their fixed token
-endpoints' decoded-form behavior (ASM-PROV-07), rather than a complete grammar
-proof. The authenticated authority, method, and path plus the endpoint's
-refusal of other media types scope that assumption to the behavior exercised
-by TEST-PLAT-19. If an endpoint begins accepting any duplicate profile field,
-its profile is ineligible until a new proof construction closes the ambiguity.
+X and GitHub request-field uniqueness is structural: every token-request
+body byte is either revealed or opened with a delimiter-free charset
+(REQ-PLAT-29C, REQ-PLAT-35, common REQ-COMMON-15), so no duplicate field can
+hide in the transcript. ASM-PROV-07 remains as defense-in-depth over the
+endpoints' decoded-form behavior, exercised by TEST-PLAT-19; a probe failure
+signals platform drift to investigate, not a broken soundness argument.
 
 A malicious Token-Proof Service cannot rebind a ceremony to other call data,
 because the Claim Digest fixes it before the platform is contacted. It can
