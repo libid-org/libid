@@ -9,7 +9,7 @@ authenticated identity fields, evidence composition, proof-validity ceiling,
 exchange service, and platform-specific failure behavior. The
 [common ceremony rules](ceremony-common.md) own the claim digest,
 serialization, PKCE, transcript extraction, client binding, and evidence
-time. The contract protocol owns registry dispatch and trust-root governance.
+time. The consumer protocol owns Registry dispatch and trust-root governance.
 The browser protocol owns browsing contexts, redirect transport, storage,
 resume, and runtime handoff.
 
@@ -44,7 +44,7 @@ Each platform ceremony has an independently versioned immutable profile:
   The Canonical Runtime MUST construct the verified claim exclusively from the
   Platform Profile's canonical authenticated source after locally verifying
   the proof. For X and GitHub, the Canonical Runtime MUST parse the exact
-  revealed identity-response bytes that the Consuming Contract parses, using
+  revealed identity-response bytes that the Consumer parses, using
   the same canonical extraction and normalization rules. The Canonical Runtime
   MUST reject a detached proof output, sidecar value, or caller value that
   supplies or overrides `userId`, handle, or `metadataObservedAt`.
@@ -58,8 +58,8 @@ create a ceremony-owned confirmation page.
 | Identity platform | Authenticated source | Canonical `userId` | Mutable handle |
 |---|---|---|---|
 | Google | signed ID-Token `sub` | its exact 1–255 case-sensitive ASCII bytes | normalized email |
-| X | `/2/users/me.data.id` JSON string | canonical nonzero `uint64` decimal | normalized `username` |
-| GitHub | `/user.id` JSON integer token | canonical nonzero `uint64` decimal | normalized `login` |
+| X | `/2/users/me.data.id` JSON string | canonical nonzero unsigned 64-bit decimal | normalized `username` |
+| GitHub | `/user.id` JSON integer token | canonical nonzero unsigned 64-bit decimal | normalized `login` |
 
 - REQ-PLAT-04:
   The Implementation MUST accept a Google `sub` of bytes `0x20` through `0x7e`
@@ -71,7 +71,7 @@ create a ceremony-owned confirmation page.
   identity compatibility.
 - REQ-PLAT-06:
   The Implementation MUST require an X or GitHub identifier to match
-  `^[1-9][0-9]{0,19}$` with a numeric value at most `uint64.max`. Necessity:
+  `^[1-9][0-9]{0,19}$` with a numeric value at most `2^64 - 1`. Necessity:
   identity compatibility.
 - REQ-PLAT-07:
   The Implementation MUST copy the GitHub raw JSON number token's decimal bytes
@@ -119,12 +119,12 @@ REQ-COMMON-25A. Older evidence cannot regress stored metadata and does not
 block an otherwise valid authority operation.
 
 - REQ-PLAT-09 (upholds SP-FRESH-01):
-  The Consuming Contract MUST reject an X or GitHub attestation timestamp more
-  than `maxFutureAttestationSkew` ahead of `block.timestamp`.
+  The Consumer MUST reject an X or GitHub attestation timestamp more than
+  `maxFutureAttestationSkew` ahead of Block Time.
 - REQ-PLAT-09A (upholds SP-FRESH-01):
-  The Consuming Contract MUST derive `metadataObservedAt` and
+  The Consumer MUST derive `metadataObservedAt` and
   `proofValidUntil` from the exact sources in the table above. An X or GitHub
-  identity attestation does not authorize an extension: the Consuming Contract
+  identity attestation does not authorize an extension: the Consumer
   MUST NOT use it to extend `proofValidUntil`.
 
 ## 3. Google OIDC ceremony
@@ -146,7 +146,7 @@ Identity evidence is the signed ID Token delivered in the redirect fragment.
 | 4 | `redirect_uri` | immutable redirect URI |
 | 5 | `scope` | `openid email` |
 | 6 | `state` | immutable one-use OAuth state |
-| 7 | `nonce` | `BASE64URL_NOPAD(bytes32(claimDigest))` |
+| 7 | `nonce` | `BASE64URL_NOPAD(claimDigest)` |
 
 The authorization request is plain browser navigation and is never
 notarized; no proof semantics attach to any field above. The table is
@@ -177,8 +177,8 @@ Conformance vector, for the Claim Digest of
 [common §5](ceremony-common.md#5-claim-digest):
 
 ```text
-claimDigest  = 0xbbc7bfcce62d070cc25d7ba04ce8820da8f4e5c92f5e63a2bd403940c84ab625
-Google nonce = u8e_zOYtBwzCXXugTOiCDaj05ckvXmOivUA5QMhKtiU
+claimDigest  = 0xc6fdbd8afe88e9137e8d4d5c821095cee12d7803689a61c4ba204f4c3ccd9d4c
+Google nonce = xv29iv6I6RN-jU1cghCVzuEteANommHEuiBPTDzNnUw
 ```
 
 ### 3.2 Local token verification
@@ -193,7 +193,7 @@ Google nonce = u8e_zOYtBwzCXXugTOiCDaj05ckvXmOivUA5QMhKtiU
 
 ### 3.3 Proof statement
 
-The Proving Circuit and consuming contract enforce all of the following:
+The Proving Circuit and Consumer enforce all of the following:
 
 - REQ-PLAT-16 (upholds SP-CLIENT-01):
   The Proving Circuit MUST accept only a compact JWS consisting of exactly
@@ -212,7 +212,7 @@ The Proving Circuit and consuming contract enforce all of the following:
   require JWK `e` to be the canonical unpadded value `AQAB` for 65537. The
   Proving Circuit MUST reject an empty integer, leading zero octet, padding, or
   other encoding. The Proving Circuit MUST NOT decide Registry membership or
-  take the active set as an input. The Consuming Contract alone checks the
+  take the active set as an input. The Consumer alone checks the
   modulus under REQ-PLAT-23. Necessity: a prover-selected exponent would change
   the signature relation.
 - REQ-PLAT-16B (upholds SP-BIND-01, SP-CLIENT-01, SP-FRESH-01):
@@ -237,8 +237,8 @@ The Proving Circuit and consuming contract enforce all of the following:
   The Proving Circuit MUST prove `nonce` equals the Claim Digest.
 - REQ-PLAT-19 (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the signed `aud` as the client-binding public
-  input. Admission stays permissionless per common REQ-COMMON-17C; the Consuming
-  Contract MAY read the exposed `aud`.
+  input. Admission stays permissionless per common REQ-COMMON-17C; the Consumer
+  MAY read the exposed `aud`.
 - REQ-PLAT-20:
   The Proving Circuit MUST prove `email_verified` is the boolean `true`.
   Necessity: an unverified email would let one account assert another party's
@@ -248,18 +248,19 @@ The Proving Circuit and consuming contract enforce all of the following:
   The Proving Circuit MUST check the string claims `iss`, `sub`, `aud`,
   `nonce`, and `email` under common REQ-COMMON-19 and REQ-COMMON-19B. The
   Proving Circuit MUST check `exp` as a canonical unsigned JSON integer bounded
-  by `uint64`, and `email_verified` as the exact unquoted JSON boolean `true`,
+  by an unsigned 64-bit integer, and `email_verified` as the exact unquoted
+  JSON boolean `true`,
   under common REQ-COMMON-19D.
   Duplicate-free top-level structure is the issuer's behavior under
   ASM-PROV-06; the circuit performs no search and no duplicate scan.
 - REQ-PLAT-22 (upholds SP-FRESH-01):
-  The Consuming Contract MUST reject a proof whose signed `exp` places
-  `proofValidUntil` at or before `block.timestamp`.
+  The Consumer MUST reject a proof whose signed `exp` places
+  `proofValidUntil` at or before Block Time.
 
 The signing key is fetched from Google's JWKS endpoint as witness input.
 
 - REQ-PLAT-23 (upholds SP-CLIENT-01):
-  The Consuming Contract MUST reject a proof whose RSA modulus is absent from
+  The Consumer MUST reject a proof whose RSA modulus is absent from
   the registry's active trusted Google modulus set.
 - REQ-PLAT-24:
   The Registry Governance Process MUST add a newly published Google signing
@@ -368,7 +369,7 @@ Attestation Verifier:
 `Authorization: Bearer <access_token>`, `Accept: application/json`.
 
 - REQ-PLAT-31 (upholds SP-BIND-01):
-  The Consuming Contract MUST extract `id` and `username` from the revealed
+  The Consumer MUST extract `id` and `username` from the revealed
   response bytes by their full `"field":"` delimiters, rejecting a transcript
   in which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. Necessity: the response carries account-holder-influenced
@@ -391,7 +392,7 @@ Public proof inputs are the Claim Digest, the client identifier, both
 attestation timestamps, the revealed identity-response ranges, and the
 authenticated authority, method, and path of both notarized sessions. No
 detached identity fields or bearer are public proof inputs. The `code_verifier`
-is recomputed in circuit per REQ-COMMON-15. The Consuming Contract compares the
+is recomputed in circuit per REQ-COMMON-15. The Consumer compares the
 endpoint inputs with the `x/v1` profile.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
@@ -545,9 +546,9 @@ local ceremony and the later `/user` transcript. The separately returned
 | `code_verifier` | yes | the Canonical Runtime compares it to the verifier it derived |
 | `SHA256(ASCII(access_token))` | yes | opens the returned bearer and links it to `/user` |
 | attestation timestamp | yes | derives the authenticated validity ceiling |
-| token endpoint authority | yes | the Consuming Contract checks the profile endpoint |
-| token request method | yes | the Consuming Contract checks the profile method |
-| token request path | yes | the Consuming Contract checks the profile path |
+| token endpoint authority | yes | the Consumer checks the profile endpoint |
+| token request method | yes | the Consumer checks the profile method |
+| token request path | yes | the Consumer checks the profile path |
 | `client_secret` | no | never revealed, per REQ-PLAT-35A |
 | everything else | no | headers, status line, `scope`, `token_type`, other response fields |
 
@@ -572,7 +573,7 @@ check and would widen exposure.
   The Token-Proof Circuit MUST require the configured notary signature and
   expose the authenticated token-endpoint authority, method, and path. The
   Final Identity Circuit MUST carry those public inputs unchanged to the
-  Consuming Contract.
+  Consumer.
 - REQ-PLAT-46 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST require the disclosed `code` to equal the code it
   consumed at redirect ingress, byte for byte.
@@ -605,10 +606,10 @@ the commitments while keeping the client secret from the browser.
 `X-GitHub-Api-Version: 2022-11-28`.
 
 - REQ-PLAT-51 (upholds SP-BIND-01):
-  The Consuming Contract MUST extract `id` and `login` from the revealed
+  The Consumer MUST extract `id` and `login` from the revealed
   response bytes by their full field delimiters, rejecting a transcript in
   which either delimiter matches at more than one position, per common
-  REQ-COMMON-19A. The Consuming Contract MUST reject a noncanonical `id`
+  REQ-COMMON-19A. The Consumer MUST reject a noncanonical `id`
   encoding.
 - REQ-PLAT-51A (upholds SP-BIND-01):
   The Canonical Runtime MUST derive the GitHub `userId` and normalized handle
@@ -619,7 +620,7 @@ the commitments while keeping the client secret from the browser.
   The Final Identity Circuit MUST verify the `github/v1` token proof and assert
   the same bearer commitment across that proof and the identity transcript. The
   Final Identity Circuit MUST also expose the authenticated authority, method,
-  and path of the `/user` request. The Consuming Contract MUST compare both
+  and path of the `/user` request. The Consumer MUST compare both
   endpoint triples with the `github/v1` profile.
 
 - REQ-PLAT-52A (upholds SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01, SP-FRESH-01):
@@ -668,8 +669,7 @@ behavior; and conformance vectors.
 
 ## 8. Conformance
 
-Roles: Canonical Runtime, Token-Proof Service, proving circuit, consuming
-contract.
+Roles: Canonical Runtime, Token-Proof Service, proving circuit, Consumer.
 
 - TEST-PLAT-01 (exercises REQ-PLAT-10, REQ-PLAT-18):
   The §3.1 nonce vector reproduces exactly, and a token carrying another nonce
@@ -698,10 +698,10 @@ contract.
   modulus is rejected in each case. Header, payload, signature, or public-output
   substitution is rejected. A cryptographically valid proof under an inactive
   signing modulus passes circuit verification but is rejected by the
-  Consuming Contract.
+  Consumer.
 - TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09, REQ-PLAT-09A):
   A proof at or after `proofValidUntil`, and an attestation timestamp more than
-  `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected. A later
+  `maxFutureAttestationSkew` ahead of Block Time, are rejected. A later
   X or GitHub identity attestation advances `metadataObservedAt` without
   extending the token-attestation-derived `proofValidUntil`; Google uses its
   signed `exp` for both values.
@@ -753,8 +753,8 @@ contract.
 - TEST-PLAT-17A (exercises REQ-PLAT-03, REQ-PLAT-31A, REQ-PLAT-51A):
   Pair authenticated X or GitHub identity-response bytes for account B with a
   detached `userId`, handle, or metadata value for account A. The runtime
-  rejects the extra representation; without it, the runtime and Consuming
-  Contract both derive account B byte for byte.
+  rejects the extra representation; without it, the runtime and Consumer both
+  derive account B byte for byte.
 - TEST-PLAT-18 (exercises REQ-PLAT-25, REQ-PLAT-26, REQ-PLAT-27):
   Launch uses Proxy mode, rejects application or request selection of Browser
   MPC, uses no application-controlled platform egress, and carries no partial
@@ -799,13 +799,14 @@ refusal of other media types scope that assumption to the behavior exercised
 by TEST-PLAT-19. If an endpoint begins accepting any duplicate profile field,
 its profile is ineligible until a new proof construction closes the ambiguity.
 
-A malicious Token-Proof Service cannot rebind a ceremony to other call data,
+A malicious Token-Proof Service cannot rebind a ceremony to other Authorized
+Transaction Data,
 because the Claim Digest fixes it before the platform is contacted. It can
 withhold, and it can attempt to substitute a token obtained under a
 separately arranged authorization; REQ-PLAT-46 rejects that substitution by
 requiring the proven code to be the one this ceremony consumed. A proof
 built outside the Canonical Runtime performs no such check, so a submission
-of that proof is bounded by the caller-authentication rule stated in
+of that proof is bounded by the Transaction Author rule stated in
 [common §12](ceremony-common.md#12-security-considerations).
 
 The notary key is a trust root for X and GitHub evidence. Its compromise

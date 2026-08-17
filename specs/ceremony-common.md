@@ -10,20 +10,48 @@ PKCE construction, notarized-transcript extraction, client binding, and
 evidence-time rules. Each platform profile owns its endpoints, ordered
 fields, authenticated response locations, canonical user-ID encoding, and
 proof-validity ceiling. The browser protocol owns redirect transport,
-persistence, continuation, and caller control flow and code composition.
+persistence, continuation, and application control flow and code composition.
 
 ## 2. Terminology
 
-Claim Digest: The 32-byte value binding one authorization to the call data
-   that will consume it, constructed as specified in §5.
+Claim Digest: The 32-byte value binding one authorization to the Authorized
+   Transaction Data that will consume it, constructed as specified in §5.
 
-Call Data: Opaque bytes carried in the Claim Digest and decoded by the
-   consuming contract into that operation's expected arguments.
+Authorized Transaction Data: Opaque canonical bytes carried in the Claim
+   Digest and decoded by the Consumer into one transaction's expected
+   arguments.
 
 Claim Random: Fresh 32-byte randomness that makes each Claim Digest unique.
 
 Protocol Version: The libID protocol revision a ceremony ran under, fixing its
    digest layout, binding construction, and evidence rules.
+
+Consumer Chain: The chain whose canonical state transition consumes a libID
+   proof.
+
+Consumer: The deterministic contract, program, module, or native transition
+   handler on the Consumer Chain that verifies a libID proof and applies its
+   Authorized Transaction Data.
+
+Transaction Author: The Consumer-Chain principal whose authenticated authority
+   permits the transaction. It can be an account, multisignature contract,
+   program, module, or equivalent chain principal.
+
+Fee Payer: The principal economically charged for a transaction. It can differ
+   from the Transaction Author.
+
+Transaction Submitter: The principal that delivers a transaction to the
+   Consumer Chain. Submission alone grants no transaction authority.
+
+Chain ID: The canonical nonempty ASCII identifier fixed by a Consumer Chain's
+   Chain Profile.
+
+Block Time: The Consumer Chain's consensus-provided integer Unix time in
+   seconds, bounded by an unsigned 64-bit integer.
+
+Chain Profile: The normative mapping from one Consumer Chain to its Chain ID,
+   Transaction Author authentication, Block Time, and Authorized Transaction
+   Data encoding.
 
 Platform Ceremony: The complete operation that turns one platform
    authorization into a locally verified claim.
@@ -45,11 +73,11 @@ Attestation Verifier: The exact TLSNotary attestation format and verifier
 ## 3. Assumptions
 
 - ASM-CHAIN-01:
-  The Consuming Contract observes an authentic `msg.sender` and a block
-  timestamp within tolerance of real time.
+  The Consumer Chain authenticates the Transaction Author and supplies Block
+  Time within tolerance of real time.
 - ASM-CHAIN-02:
-  Each deployment is reachable under exactly one chain identifier, and that
-  identifier is observable on chain.
+  The Consumer observes exactly one canonical Chain ID supplied by its Consumer
+  Chain.
 - ASM-PROV-01:
   An Identity Platform delivers an authorization response only to a redirect
   URI registered against the requesting client.
@@ -95,13 +123,15 @@ Attestation Verifier: The exact TLSNotary attestation format and verifier
 The properties below survive a malicious application operator and, where
 present, a malicious Token-Proof Service under their cited assumptions. They
 assume an unmodified Canonical Runtime, the selected verifier artifact, the
-Consuming Contract, and Registry configuration. Compromise of the applicable
+Consumer, and Registry configuration. Compromise of the applicable
 identity-platform signing root, notary key, proof verifier, Registry governance,
-browser supply chain, or chain invalidates the properties that depend on it.
+browser supply chain, or Consumer Chain invalidates the properties that depend
+on it.
 
 - SP-BIND-01:
-  Evidence produced by a ceremony discharges only for the Call Data committed
-  in its Claim Digest. Depends on ASM-PROV-02, ASM-PROV-05, ASM-PROV-06,
+  Evidence produced by a ceremony discharges only for the Authorized
+  Transaction Data committed in its Claim Digest. Depends on ASM-PROV-02,
+  ASM-PROV-05, ASM-PROV-06,
   ASM-PROV-07, ASM-NOTARY-01, ASM-PROOF-01, ASM-CHAIN-01. Evidence:
   conformance tests (supporting, not proving) plus the collision resistance of
   SHA-256 and keccak256.
@@ -125,93 +155,128 @@ browser supply chain, or chain invalidates the properties that depend on it.
 - SP-FRESH-01:
   Evidence older than its authenticated ceiling is rejected. Depends on
   ASM-CHAIN-01, ASM-NOTARY-01, ASM-PROV-05, ASM-PROOF-01. Evidence: checked
-  invariant in the Consuming Contract.
+  invariant in the Consumer.
 - SP-REPLAY-01:
-  Within one Consuming Contract deployment, one ceremony authorizes at most
+  Within one Consumer deployment, one ceremony authorizes at most
   one authoritative effect. Depends on ASM-CHAIN-01, ASM-CHAIN-02. Evidence:
-  checked invariant in the consuming contract.
+  checked invariant in the Consumer.
 
 ## 5. Claim digest
 
 The Claim Digest is the single value binding one authorization to the
-operation that will consume it.
+transaction that will consume it. `U16BE` and `U32BE` are fixed-width unsigned
+big-endian encodings. `UTF8` emits the exact UTF-8 bytes of a string.
 
 ```text
-claimDigest = keccak256(abi.encode(
-  operationDomain, // bytes32
-  version,         // uint16
-  chainId,         // uint256
-  claimRandom,     // bytes32
-  callData         // bytes
-))
+CLAIM_DIGEST_V1 = keccak256(UTF8("libid.claim-digest.v1"))
+
+claimPreimage =
+    CLAIM_DIGEST_V1
+    || U16BE(version)
+    || U16BE(BYTE_LENGTH(UTF8(chainId)))
+    || UTF8(chainId)
+    || operationDomain
+    || claimRandom
+    || U32BE(BYTE_LENGTH(transactionData))
+    || transactionData
+
+claimDigest = keccak256(claimPreimage)
 ```
 
 - REQ-COMMON-01 (upholds SP-BIND-01):
   The Canonical Runtime MUST construct every Claim Digest as the keccak256 of
-  the ABI encoding of exactly `operationDomain` as `bytes32`, `version` as
-  `uint16`, `chainId` as `uint256`, `claimRandom` as `bytes32`, and `callData`
-  as `bytes`, in that order and with no other input.
+  exactly the byte concatenation above. The Canonical Runtime MUST encode
+  `version` in exactly two bytes, the Chain ID byte length in exactly two
+  bytes, and the Authorized Transaction Data byte length in exactly four
+  bytes. The Canonical Runtime MUST reject a value which does not fit its
+  fixed-width field.
 - REQ-COMMON-01A (upholds SP-BIND-01):
-  The Consuming Entrypoint MUST fix one ASCII operation-domain string, derive
-  `operationDomain = keccak256(bytes(domainString))`, and fix one exact
-  canonical ABI shape for `callData`. The Consuming Entrypoints MUST NOT share
-  an operation domain when they can produce different authoritative effects.
+  The Consumer MUST fix one ASCII operation-domain string for each transaction
+  kind and derive `operationDomain = keccak256(UTF8(domainString))`. The
+  Consumer MUST fix one exact canonical Authorized Transaction Data format for
+  that kind. The Consumer MUST NOT assign the same operation domain to
+  transaction kinds that can produce different authoritative effects.
+- REQ-COMMON-01B (upholds SP-BIND-01, SP-REPLAY-01):
+  The Chain Profile MUST fix one canonical Chain ID containing a globally
+  domain-separated namespace and reference. The Chain Profile MUST require the
+  exact ASCII grammar `[a-z0-9-]{3,16}:[A-Za-z0-9._-]{1,64}`. The Consumer MUST
+  obtain that Chain ID from the Consumer Chain rather than Authorized
+  Transaction Data or another caller-controlled input.
+- REQ-COMMON-01C (upholds SP-BIND-01, SP-FRESH-01):
+  The Chain Profile MUST define how the Consumer Chain authenticates the
+  Transaction Author, supplies Block Time, and canonically encodes Authorized
+  Transaction Data. The Consumer MUST obtain the Transaction Author and Block
+  Time from that authenticated environment rather than caller-controlled data.
+  Necessity: the ceremony rules must not depend on one execution environment's
+  caller, clock, or transaction encoding.
 - REQ-COMMON-02 (upholds SP-BIND-01):
-  The Consuming Contract MUST recompute the Claim Digest from the immutable
-  operation domain and protocol version of the entrypoint being invoked, the
-  chain identifier it observes, and the `claimRandom` and `callData` supplied
-  in the submission.
+  The Consumer MUST recompute the Claim Digest from the immutable operation
+  domain and Protocol Version of the transaction kind being invoked, its
+  observed Chain ID, and the `claimRandom` and Authorized Transaction Data
+  supplied in the submission.
 - REQ-COMMON-02A (upholds SP-BIND-01):
-  The Consuming Contract MUST reject a proof whose Claim Digest public input
-  differs from the digest it recomputed.
+  The Consumer MUST reject a proof whose Claim Digest public input differs from
+  the digest it recomputed.
 - REQ-COMMON-03 (upholds SP-BIND-01):
-  The Consuming Contract MUST decode `callData` into the argument format of the
-  entrypoint being invoked. The Consuming Contract MUST reject trailing bytes,
-  noncanonical encodings, and call data it cannot decode into that exact
+  The Consumer MUST decode Authorized Transaction Data into the argument format
+  of the transaction kind being invoked. The Consumer MUST reject trailing
+  bytes, noncanonical encodings, and data it cannot decode into that exact
   format.
 - REQ-COMMON-04 (upholds SP-REPLAY-01):
   The Canonical Runtime MUST draw `claimRandom` from a cryptographically secure
   random source, freshly for each ceremony.
 - REQ-COMMON-05 (upholds SP-REPLAY-01):
-  The Consuming Contract MUST record every Claim Digest it accepts.
+  The Consumer MUST record every Claim Digest it accepts.
 - REQ-COMMON-05A (upholds SP-REPLAY-01):
-  The Consuming Contract MUST reject a Claim Digest it has already recorded.
+  The Consumer MUST reject a Claim Digest it has already recorded.
 - REQ-COMMON-06 (upholds SP-BIND-01):
-  The Consuming Contract MUST reject a submission whose `version` differs from
-  the protocol version that contract implements.
+  The Consumer MUST reject a submission whose `version` differs from the
+  Protocol Version it implements.
+- REQ-COMMON-06A (upholds SP-BIND-01):
+  The Consumer MUST authenticate the Transaction Author under its Chain Profile
+  and enforce the invoked transaction kind's authorization predicate before
+  applying any authoritative effect. The Consumer MUST NOT treat the
+  Transaction Submitter as the Transaction Author unless the Chain Profile
+  authenticates them as the same principal.
 
 `operationDomain` is the operation identifier and protocol separator. Each
-consuming entrypoint fixes one domain string, and no two entrypoints that can
-produce different authoritative effects may share it. A further libID
-operation takes a new domain string, not a new digest field. The Platform
-Ceremony remains reusable because it proves the resulting Claim Digest rather
-than interpreting the operation domain or call data.
+Consumer transaction kind fixes one domain string, and no two kinds that can
+produce different authoritative effects share it. A further libID transaction
+takes a new domain string, not a new digest field. The Platform Ceremony remains
+reusable because it proves the resulting Claim Digest rather than interpreting
+the operation domain or Authorized Transaction Data.
 
 `version` is the libID protocol version the ceremony ran under: it fixes the
 digest layout, the binding construction, and the evidence rules the ceremony
 followed. It is bound into the digest so evidence produced under one protocol
 version cannot be presented under another, and it is carried in the submission
-call data so a registry can route to the deployment implementing it.
+so a Registry can route to the Consumer implementing it.
 
-`callData` carries the operation's arguments as opaque bytes. The profile for
-each consuming entrypoint fixes their exact ABI types and validation. A name
-claim encodes the holder address; an operation that installs a session key
-encodes that key alongside it. The digest layout does not change between
-operations.
+`transactionData` carries one transaction's arguments as opaque bytes. The
+consumer protocol fixes their exact canonical encoding and validation. A name
+claim can encode its Transaction Author; a transaction that installs a session
+key encodes that key alongside it. The digest layout does not change between
+transaction kinds.
+
+Transaction Author, Fee Payer, and Transaction Submitter are separate roles. A
+consumer protocol can require the Transaction Author to pay a fee, but that
+policy does not make the submitter authoritative or change the Claim Digest
+layout.
 
 `claimRandom` makes each digest unique, which is what allows the digest
 itself to serve as the replay nullifier. No platform identifier and no user
 identifier appear in the digest or in the nullifier derived from it.
 
 Conformance vector, for `operationDomain =
-keccak256("libid.claim-identity")`, `version = 1`, `chainId = 1`,
-`claimRandom = 0x5555…5555`, and `callData = abi.encode(address
-0x5bb76b0f81f028de363150602cc6d0ca929e3c31)`:
+keccak256(UTF8("libid.claim-identity"))`, `version = 1`, `chainId =
+"example:1"`, `claimRandom = 0x5555…5555`, and `transactionData =
+0x00010203`:
 
 ```text
+CLAIM_DIGEST_V1 = 0xa8699d8cc7e915bfb8736b8eb063b4a474222ed61a0fcd438d96e867157d0339
 operationDomain = 0xcb29bed0428519ef88a3d670e8203db76e06f41aca3e684e2c63b516c9b93e1b
-callData    = 0x0000000000000000000000005bb76b0f81f028de363150602cc6d0ca929e3c31
-claimDigest = 0xbbc7bfcce62d070cc25d7ba04ce8820da8f4e5c92f5e63a2bd403940c84ab625
+claimPreimage    = 0xa8699d8cc7e915bfb8736b8eb063b4a474222ed61a0fcd438d96e867157d0339000100096578616d706c653a31cb29bed0428519ef88a3d670e8203db76e06f41aca3e684e2c63b516c9b93e1b55555555555555555555555555555555555555555555555555555555555555550000000400010203
+claimDigest      = 0xc6fdbd8afe88e9137e8d4d5c821095cee12d7803689a61c4ba204f4c3ccd9d4c
 ```
 
 Each platform carries the Claim Digest in the form its authorization allows:
@@ -278,7 +343,7 @@ X and GitHub bind the Claim Digest through S256 PKCE.
 
 ```text
 PKCE_V1        = keccak256("libid.identity.pkce.v1")
-pkceBinding    = abi.encode(PKCE_V1, claimDigest, pkceNonce)
+pkceBinding    = PKCE_V1 || claimDigest || pkceNonce
 verifierHash   = SHA256(pkceBinding)
 code_verifier  = BASE64URL_NOPAD(verifierHash)
 code_challenge = BASE64URL_NOPAD(SHA256(ASCII(code_verifier)))
@@ -307,9 +372,9 @@ Conformance vector, for the Claim Digest of §5 and
 
 ```text
 PKCE_V1        = 0x8e444e2acbb12cd1aa318b8613d3628d4ce9f16212d44ccf6fd27810c86bd552
-verifierHash   = 0x8732837fdb4664f0c5103c6d5cb1b916349d43216527811a8c4515e2132f3d94
-code_verifier  = hzKDf9tGZPDFEDxtXLG5FjSdQyFlJ4EajEUV4hMvPZQ
-code_challenge = YdTXrtdSCJvd5UpsW2wS13-XwSe7kJ5OE7Ex6J_AWks
+verifierHash   = 0xe5987b44783a301eeabbb01afec8bced2c67f980062a061d2622281293576677
+code_verifier  = 5Zh7RHg6MB7qu7Aa_si87Sxn-YAGKgYdJiIoEpNXZnc
+code_challenge = HbLDrNUWkmbx1diMiwo8zH18rM94_vSgQnHQZoYpf6U
 ```
 
 ## 8. Client binding
@@ -318,7 +383,7 @@ The OAuth client that issued the evidence is a public proof input. The
 Canonical Runtime compares it against the exact client fixed by the immutable
 ceremony profile before constructing a verified claim. Client admission is
 permissionless: any OAuth application can produce acceptable evidence, and no
-on-chain registration of clients exists.
+Consumer-Chain registration of clients exists.
 
 | Identity platform | Authenticated source of the client identifier |
 |---|---|
@@ -335,13 +400,14 @@ on-chain registration of clients exists.
   profile.
 - REQ-COMMON-17C (upholds SP-CLIENT-01):
   The Verifier MUST NOT require the exposed client identifier to belong to a
-  registered set. The Consuming Contract MAY read the exposed client identifier
-  for its own semantics. Necessity: client selection is permissionless
-  application policy; the on-chain authorization is that the claim's target
-  sends the transaction.
+  registered set. The Consumer MAY read the exposed client identifier for its
+  own semantics. Necessity: client selection is permissionless application
+  policy; authoritative transaction permission comes from the Consumer's
+  Transaction Author predicate over the proof-bound Authorized Transaction
+  Data.
 
 Redirect origin, frontend origin, and application authorization remain
-browser-local and produce no on-chain effect.
+browser-local and produce no Consumer-Chain effect.
 
 ## 9. Notarized-transcript extraction
 
@@ -409,7 +475,7 @@ exposes a minimal set of public inputs, which never includes a credential.
   body end. The circuit does not scan the rest of the body for duplicates;
   that property is ASM-PROV-07.
 - REQ-COMMON-19A (upholds SP-EXCHANGE-01):
-  The Consuming Contract extracting a field from revealed attestation bytes
+  The Consumer extracting a field from revealed attestation bytes
   MUST reject a transcript in which the field's full delimiter matches at
   more than one position. Necessity: an authenticated response value the
   account holder influences, such as a display name, can embed a lookalike
@@ -427,7 +493,7 @@ and containing no query. Launch profiles use TCP port 443.
 Authority prevents a transcript from an attacker-controlled server from
 substituting for the platform; path separates operations on the same server;
 method separates operations with different HTTP semantics. Exposing these
-authenticated values and comparing them in the contract avoids compiling
+authenticated values and comparing them in the Consumer avoids compiling
 platform endpoint constants into each circuit without weakening the binding.
 
 - REQ-COMMON-21 (upholds SP-BIND-01):
@@ -436,14 +502,14 @@ platform endpoint constants into each circuit without weakening the binding.
   MUST bind those values to the notarized session and request. The Proving
   Circuit MUST NOT require them to equal profile constants.
 - REQ-COMMON-21A (upholds SP-BIND-01):
-  The Consuming Contract MUST compare every authenticated authority, method,
+  The Consumer MUST compare every authenticated authority, method,
   and path byte for byte with the selected platform profile.
 - REQ-COMMON-21B (upholds SP-EXCHANGE-01):
   The Implementation MUST construct every notarized request with the media type
   and `redirect_uri` from its immutable deployment profile. Neither value is a
-  contract input. Necessity: media type selects the platform's request parser,
+  Consumer input. Necessity: media type selects the platform's request parser,
   while redirect URI is application delivery configuration rather than
-  on-chain identity authority.
+  Consumer-Chain identity authority.
 - REQ-COMMON-21C (upholds SP-CLIENT-01):
   The Proving Circuit MUST NOT embed a deployment-configured value, including
   a client identifier, client secret, or `redirect_uri`, as a compiled
@@ -466,8 +532,8 @@ request soundness additionally depends on ASM-PROV-07.
 
 - REQ-COMMON-23:
   The Implementation MUST decode every verified timestamp as an integer Unix
-  time in seconds represented as `uint64`. Necessity: cross-component
-  interoperability of authenticated time.
+  time in seconds bounded by an unsigned 64-bit integer. Necessity:
+  cross-component interoperability of authenticated time.
 - REQ-COMMON-24 (upholds SP-FRESH-01):
   The Implementation MUST reject a fractional, negative, overflowing, or
   textual timestamp.
@@ -476,40 +542,44 @@ request soundness additionally depends on ASM-PROV-07.
   value. The Implementation MUST NOT infer it from an HTTP `Date` header or a
   local clock.
 - REQ-COMMON-25A (upholds SP-FRESH-01):
-  The Consuming Contract MUST complete an otherwise valid authority operation
-  even when its mutable metadata is stale. The Consuming Contract MUST update
+  The Consumer MUST complete an otherwise valid authority operation even when
+  its mutable metadata is stale. The Consumer MUST update
   mutable metadata and its watermark only when `metadataObservedAt` is strictly
-  newer than the stored watermark. The Consuming Contract MUST leave both
+  newer than the stored watermark. The Consumer MUST leave both
   unchanged for older or equal evidence, including equal evidence carrying
   conflicting metadata.
 - REQ-COMMON-26 (upholds SP-FRESH-01):
-  The Consuming Contract MUST derive `proofValidUntil` from the platform
-  profile's authenticated validity input and any current protocol parameter
-  that profile names. The Consuming Contract MUST reject a submission where
-  `block.timestamp >= proofValidUntil`.
+  The Consumer MUST derive `proofValidUntil` from the platform profile's
+  authenticated validity input and any current protocol parameter that profile
+  names. The Consumer MUST reject a submission where
+  `Block Time >= proofValidUntil`.
 - REQ-COMMON-27 (upholds SP-FRESH-01):
-  The Consuming Contract MUST NOT accept a caller-supplied validity bound.
+  The Consumer MUST NOT accept a caller-supplied validity bound.
 - REQ-COMMON-28 (upholds SP-FRESH-01):
   The Implementation MUST perform every timestamp addition and comparison with
-  checked arithmetic before narrowing to `uint64`.
+  checked arithmetic before narrowing to an unsigned 64-bit integer.
 
 ## 11. Conformance
 
-Roles: Canonical Runtime, Token-Proof Service, Proving Circuit, Consuming
-Contract. The Implementation claiming a role MUST pass the vectors covering
+Roles: Canonical Runtime, Token-Proof Service, Proving Circuit, Consumer. The
+Implementation claiming a role MUST pass the vectors covering
 the constructions that role implements.
 
-- TEST-COMMON-01 (exercises REQ-COMMON-01, REQ-COMMON-01A, REQ-COMMON-02, REQ-COMMON-02A):
+- TEST-COMMON-01 (exercises REQ-COMMON-01, REQ-COMMON-01A, REQ-COMMON-01B, REQ-COMMON-02, REQ-COMMON-02A):
   The §5 digest vector reproduces `claimDigest` exactly.
 - TEST-COMMON-02 (exercises REQ-COMMON-03):
-  A submission carrying a foreign operation domain, or call data with trailing
-  bytes, a noncanonical encoding, or an argument shape other than the
-  entrypoint's exact format, is rejected.
+  A submission carrying a foreign operation domain, or Authorized Transaction
+  Data with trailing bytes, a noncanonical encoding, or an argument shape
+  other than the transaction kind's exact format, is rejected.
+- TEST-COMMON-02A (exercises REQ-COMMON-01B, REQ-COMMON-01C, REQ-COMMON-06A):
+  The Consumer rejects an empty, malformed, or caller-substituted Chain ID; a
+  caller-substituted Block Time; and a Transaction Submitter that cannot satisfy
+  the transaction kind's Transaction Author predicate.
 - TEST-COMMON-03 (exercises REQ-COMMON-05, REQ-COMMON-05A):
   Resubmitting a recorded Claim Digest is rejected.
 - TEST-COMMON-04 (exercises REQ-COMMON-04, REQ-COMMON-06):
-  Two ceremonies over identical call data yield distinct digests, and a digest
-  carrying a foreign `version` is rejected.
+  Two ceremonies over identical Authorized Transaction Data yield distinct
+  digests, and a digest carrying a foreign `version` is rejected.
 - TEST-COMMON-05 (exercises REQ-COMMON-07, REQ-COMMON-08, REQ-COMMON-10):
   The §6 serializer vector reproduces byte for byte.
 - TEST-COMMON-06 (exercises REQ-COMMON-09, REQ-COMMON-11):
@@ -535,7 +605,7 @@ the constructions that role implements.
   rejected. A profile without an exact published Attestation Verifier artifact
   digest is ineligible.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
-  The Consuming Contract rejects an authenticated foreign authority, method,
+  The Consumer rejects an authenticated foreign authority, method,
   or path. The request constructor refuses a media type or `redirect_uri`
   differing from its immutable deployment profile. One verifying key serves
   two deployments configured with different clients and redirect URIs.
@@ -559,27 +629,28 @@ the constructions that role implements.
 This document enforces SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01,
 SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §3.
 
-Replay within one Consuming Contract deployment is prevented by `claimRandom`
-and REQ-COMMON-05. Replay across chains is prevented by `chainId` in the
-digest. Replay across protocol versions is prevented by `version`. The digest
-does not prevent cross-deployment replay because it binds no registry address.
-Every binding entrypoint therefore requires the proof-bound target to equal
-the authenticated caller, so a copied proof creates no authority for its
-copier. The Consuming Contract MUST authenticate an equivalent authorization
-of the target at any entrypoint that does not authenticate the caller directly.
+Replay within one Consumer deployment is prevented by `claimRandom` and
+REQ-COMMON-05. Replay across Consumer Chains is prevented by the Chain ID in
+the digest. Replay across Protocol Versions is prevented by `version`. The
+digest does not prevent cross-deployment replay because it binds no Consumer or
+Registry identifier. Every Consumer transaction kind therefore defines an
+authorization predicate over the authenticated Transaction Author and the
+proof-bound Authorized Transaction Data. A copied proof creates no authority
+for a submitter that cannot satisfy that predicate.
 
 Client binding rejects evidence issued to a client other than the one whose
 ceremony the Canonical Runtime opened. The check is local because independent
-application deployments own different OAuth clients. The Consuming Contract
-authenticates the proof-bound operation and caller instead; it does not maintain
-an OAuth-client allowlist or admit applications on chain.
+application deployments own different OAuth clients. The Consumer
+authenticates the proof-bound transaction and Transaction Author instead; it
+does not maintain an OAuth-client allowlist or admit applications on the
+Consumer Chain.
 
 Consent-screen phishing remains outside protocol enforcement. A hostile site
 borrowing an honest deployment's OAuth client does not receive its response,
 because the Identity Platform delivers it only to that client's registered
 redirect URI (ASM-PROV-01). A hostile site using its own client and redirect can
 receive evidence from a ceremony the user approves; the proof-bound operation,
-caller authentication, and any composition-owned transaction authorization
+Transaction Author authentication, and any composition-owned transaction authorization
 contain that case. The ceremony layer defines no extra confirmation page. The
 registered redirect URI list and the origins on it are therefore trust-bearing
 configuration.
