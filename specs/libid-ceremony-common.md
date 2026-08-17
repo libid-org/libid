@@ -11,7 +11,7 @@ more platform ceremonies: the claim digest, OAuth request serialization, the
 PKCE construction, notarized-transcript extraction, client binding, and
 evidence-time rules. Each platform profile owns its endpoints, ordered
 fields, authenticated response locations, canonical user-ID encoding, and
-proof-validity ceiling. The browser protocol owns callback transport,
+proof-validity ceiling. The browser protocol owns redirect transport,
 persistence, continuation, and runtime composition.
 
 ## 2. Conventions
@@ -42,8 +42,8 @@ Identity Platform: Google, X, GitHub, or a future source of authenticated
    identity evidence. "Provider" is reserved for the formal OIDC term and for
    the EIP-1193 wallet provider.
 
-Exchange Service: The confidential-client component that performs a token
-   exchange requiring a client secret.
+Token-Proof Service: The confidential-client component that performs and
+   proves a token exchange requiring a client secret.
 
 Canonical Runtime: The immutable browser release that constructs claim
    digests, verifies attestations, and builds proofs.
@@ -85,14 +85,16 @@ Canonical Runtime: The immutable browser release that constructs claim
   Evidence: conformance tests (supporting, not proving) plus the collision
   resistance of SHA-256 and keccak256.
 - SP-CLIENT-01:
-  Evidence issued to an OAuth client other than the configured one is rejected.
-  Depends on ASM-PROV-04, ASM-PROV-05. Evidence: checked invariant in the
-  Consuming Contract, plus conformance tests (supporting).
+  The Canonical Runtime rejects evidence issued to an OAuth client other than
+  the one fixed by its immutable ceremony profile. Depends on ASM-PROV-04,
+  ASM-PROV-05, ASM-NOTARY-01, and ASM-BROWSER-01. Evidence: checked invariant
+  in the Canonical Runtime, plus conformance tests (supporting).
 - SP-DELIVERY-01:
-  An authorization response reaches only an origin the deployment controls, so
-  a site that registered no redirect URI cannot obtain evidence for a ceremony
-  it induced. Depends on ASM-PROV-01, ASM-BROWSER-01. Evidence: external audit
-  of the registered redirect URI list, plus conformance tests (supporting).
+  An authorization response for one OAuth client reaches only an origin
+  registered to that client, so a site borrowing another deployment's client
+  cannot receive its evidence. Depends on ASM-PROV-01, ASM-BROWSER-01.
+  Evidence: external audit of the registered redirect URI list, plus
+  conformance tests (supporting).
 - SP-EXCHANGE-01:
   An attested token exchange redeems the authorization code produced by this
   ceremony and no other. Depends on ASM-PROV-03, ASM-NOTARY-01, ASM-BROWSER-01.
@@ -112,25 +114,38 @@ The Claim Digest is the single value binding one authorization to the
 operation that will consume it.
 
 ```text
-DOMAIN      = keccak256("libid.claim")
-claimDigest = keccak256(abi.encode(DOMAIN, version, chainId, claimRandom, callData))
+claimDigest = keccak256(abi.encode(
+  operationDomain, // bytes32
+  version,         // uint16
+  chainId,         // uint256
+  claimRandom,     // bytes32
+  callData         // bytes
+))
 ```
 
 - REQ-COMMON-01 (upholds SP-BIND-01):
   The Canonical Runtime MUST construct every Claim Digest as the keccak256 of
-  the ABI encoding of exactly `DOMAIN`, `version`, `chainId`, `claimRandom`,
-  and `callData`, in that order and with no other input.
+  the ABI encoding of exactly `operationDomain` as `bytes32`, `version` as
+  `uint16`, `chainId` as `uint256`, `claimRandom` as `bytes32`, and `callData`
+  as `bytes`, in that order and with no other input.
+- REQ-COMMON-01A (upholds SP-BIND-01):
+  The Consuming Entrypoint MUST fix one ASCII operation-domain string, derive
+  `operationDomain = keccak256(bytes(domainString))`, and fix one exact
+  canonical ABI shape for `callData`. The Consuming Entrypoints MUST NOT share
+  an operation domain when they can produce different authoritative effects.
 - REQ-COMMON-02 (upholds SP-BIND-01):
-  The Consuming Contract MUST recompute the Claim Digest from its own `DOMAIN`
-  constant, its own `version`, the chain identifier it observes, and the
-  `claimRandom` and `callData` supplied in the submission.
+  The Consuming Contract MUST recompute the Claim Digest from the immutable
+  operation domain and protocol version of the entrypoint being invoked, the
+  chain identifier it observes, and the `claimRandom` and `callData` supplied
+  in the submission.
 - REQ-COMMON-02A (upholds SP-BIND-01):
   The Consuming Contract MUST reject a proof whose Claim Digest public input
   differs from the digest it recomputed.
 - REQ-COMMON-03 (upholds SP-BIND-01):
   The Consuming Contract MUST decode `callData` into the argument format of the
-  entrypoint being invoked. The Consuming Contract MUST reject call data it
-  cannot decode into that exact format.
+  entrypoint being invoked. The Consuming Contract MUST reject trailing bytes,
+  noncanonical encodings, and call data it cannot decode into that exact
+  format.
 - REQ-COMMON-04 (upholds SP-REPLAY-01):
   The Canonical Runtime MUST draw `claimRandom` from a cryptographically secure
   random source, freshly for each ceremony.
@@ -142,9 +157,12 @@ claimDigest = keccak256(abi.encode(DOMAIN, version, chainId, claimRandom, callDa
   The Consuming Contract MUST reject a submission whose `version` differs from
   the protocol version that contract implements.
 
-`DOMAIN` is simultaneously the protocol separator and the operation
-identifier. A further libID operation takes a new domain string, not a new
-digest field.
+`operationDomain` is the operation identifier and protocol separator. Each
+consuming entrypoint fixes one domain string, and no two entrypoints that can
+produce different authoritative effects may share it. A further libID
+operation takes a new domain string, not a new digest field. The Platform
+Ceremony remains reusable because it proves the resulting Claim Digest rather
+than interpreting the operation domain or call data.
 
 `version` is the libID protocol version the ceremony ran under: it fixes the
 digest layout, the binding construction, and the evidence rules the ceremony
@@ -152,22 +170,25 @@ followed. It is bound into the digest so evidence produced under one protocol
 version cannot be presented under another, and it is carried in the submission
 call data so a registry can route to the deployment implementing it.
 
-`callData` carries the operation's arguments as opaque bytes. A name claim
-encodes the holder address; an operation that installs a session key encodes
-that key alongside it. The digest layout does not change between operations.
+`callData` carries the operation's arguments as opaque bytes. The profile for
+each consuming entrypoint fixes their exact ABI types and validation. A name
+claim encodes the holder address; an operation that installs a session key
+encodes that key alongside it. The digest layout does not change between
+operations.
 
 `claimRandom` makes each digest unique, which is what allows the digest
 itself to serve as the replay nullifier. No platform identifier and no user
 identifier appear in the digest or in the nullifier derived from it.
 
-Conformance vector, for `version = 1`, `chainId = 1`,
+Conformance vector, for `operationDomain =
+keccak256("libid.claim-identity")`, `version = 1`, `chainId = 1`,
 `claimRandom = 0x5555…5555`, and `callData = abi.encode(address
 0x5bb76b0f81f028de363150602cc6d0ca929e3c31)`:
 
 ```text
-DOMAIN      = 0x5dbcc26f8c343151a88e6a31ed1ffc21d48c5d18123023fb73d683cb2ad24cf7
+operationDomain = 0xcb29bed0428519ef88a3d670e8203db76e06f41aca3e684e2c63b516c9b93e1b
 callData    = 0x0000000000000000000000005bb76b0f81f028de363150602cc6d0ca929e3c31
-claimDigest = 0x0f2c7b78eb48061ef5ee980dbab5d7d80326c6e343e29ad6c8803b7fb46cf8ef
+claimDigest = 0xbbc7bfcce62d070cc25d7ba04ce8820da8f4e5c92f5e63a2bd403940c84ab625
 ```
 
 Each platform carries the Claim Digest in the form its authorization allows:
@@ -204,7 +225,7 @@ Google as the OIDC `nonce`, X and GitHub through the PKCE construction in §8.
   compiled application origin.
 - REQ-COMMON-31 (upholds SP-DELIVERY-01):
   The Canonical Runtime MUST ignore a forwarding target supplied in the
-  callback request.
+  redirect request.
 
 The HTTPS authority, method, path, parameter tuple, and authenticated
 request and response values carry proof semantics. Header casing and order do
@@ -215,11 +236,11 @@ Serializer conformance vector:
 ```text
 ordered tuple:
   label        = A B
-  redirect_uri = https://callback.example/oauth/callback
+  redirect_uri = https://redirect.example/oauth/redirect
   state        = _-~
 
 serialized:
-label=A+B&redirect_uri=https%3A%2F%2Fcallback.example%2Foauth%2Fcallback&state=_-%7E
+label=A+B&redirect_uri=https%3A%2F%2Fredirect.example%2Foauth%2Fredirect&state=_-%7E
 ```
 
 ## 8. PKCE construction
@@ -242,7 +263,7 @@ code_challenge = BASE64URL_NOPAD(SHA256(ASCII(code_verifier)))
   from a cryptographically secure random source.
 - REQ-COMMON-14 (upholds SP-BIND-01):
   The Canonical Runtime MUST NOT emit `pkceNonce` as a platform parameter, a
-  public proof output, a callback value, or a log field.
+  public proof output, a redirect value, or a log field.
 - REQ-COMMON-15 (upholds SP-BIND-01):
   The Proving Circuit MUST recompute `code_verifier` from the public Claim
   Digest and the private `pkceNonce`. The Proving Circuit MUST assert byte
@@ -257,15 +278,18 @@ Conformance vector, for the Claim Digest of §6 and
 
 ```text
 PKCE_V1        = 0x8e444e2acbb12cd1aa318b8613d3628d4ce9f16212d44ccf6fd27810c86bd552
-verifierHash   = 0x99eebca3842581b0bf16b70914482877627e53bb8cc0cf1f4503406dc9b8911f
-code_verifier  = me68o4QlgbC_FrcJFEgod2J-U7uMwM8fRQNAbcm4kR8
-code_challenge = 3dO6tdOjSBXmevuCoQPdbfiMtI1F1cuV2mXmsb1052s
+verifierHash   = 0x8732837fdb4664f0c5103c6d5cb1b916349d43216527811a8c4515e2132f3d94
+code_verifier  = hzKDf9tGZPDFEDxtXLG5FjSdQyFlJ4EajEUV4hMvPZQ
+code_challenge = YdTXrtdSCJvd5UpsW2wS13-XwSe7kJ5OE7Ex6J_AWks
 ```
 
 ## 9. Client binding
 
 The OAuth client that issued the evidence is a public proof input, and the
-consuming contract compares it against the client it was configured with.
+Canonical Runtime compares it against the exact client fixed by the immutable
+ceremony profile before constructing a verified claim. Different application
+deployments may use different OAuth clients without changing Registry or
+verifier admission.
 
 | Identity platform | Authenticated source of the client identifier |
 |---|---|
@@ -275,13 +299,17 @@ consuming contract compares it against the client it was configured with.
 
 - REQ-COMMON-16 (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the authenticated client identifier as a
-  public proof input, so that the Consuming Contract can both check it and use
-  it in its own logic.
+  public proof input so the Canonical Runtime can check it locally.
 - REQ-COMMON-17 (upholds SP-CLIENT-01):
-  The Consuming Contract MUST reject a proof whose client identifier differs
-  from its configured client.
+  The Canonical Runtime MUST reject a proof whose client identifier differs
+  byte for byte from the client fixed by the selected immutable ceremony
+  profile.
+- REQ-COMMON-17C (upholds SP-CLIENT-01):
+  The Consuming Contract MUST NOT accept or reject evidence based on an
+  application OAuth client identifier. Necessity: client selection and
+  authentication are local ceremony policy, not Registry admission.
 
-Callback origin, frontend origin, and application authorization remain
+Redirect origin, frontend origin, and application authorization remain
 browser-local and produce no on-chain effect.
 
 ## 10. Notarized-transcript extraction
@@ -350,15 +378,16 @@ prover hiding a second copy of a field behind it.
 
 ## 12. Conformance
 
-Roles: Canonical Runtime, Exchange Service, Proving Circuit, Consuming
+Roles: Canonical Runtime, Token-Proof Service, Proving Circuit, Consuming
 Contract. The Implementation claiming a role MUST pass the vectors covering
 the constructions that role implements.
 
-- TEST-COMMON-01 (exercises REQ-COMMON-01, REQ-COMMON-02, REQ-COMMON-02A):
+- TEST-COMMON-01 (exercises REQ-COMMON-01, REQ-COMMON-01A, REQ-COMMON-02, REQ-COMMON-02A):
   The §6 digest vector reproduces `claimDigest` exactly.
 - TEST-COMMON-02 (exercises REQ-COMMON-03):
-  Call data that does not decode into the entrypoint's argument format is
-  rejected.
+  A submission carrying a foreign operation domain, or call data with trailing
+  bytes, a noncanonical encoding, or an argument shape other than the
+  entrypoint's exact format, is rejected.
 - TEST-COMMON-03 (exercises REQ-COMMON-05, REQ-COMMON-05A):
   Resubmitting a recorded Claim Digest is rejected.
 - TEST-COMMON-04 (exercises REQ-COMMON-04, REQ-COMMON-06):
@@ -374,9 +403,10 @@ the constructions that role implements.
 - TEST-COMMON-08 (exercises REQ-COMMON-14):
   No ceremony artifact, log, or public input contains `pkceNonce`.
   Verification: inspection of the emitted artifacts.
-- TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-17, REQ-COMMON-22A):
-  A proof carrying a client identifier other than the configured one is
-  rejected.
+- TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-17, REQ-COMMON-17C, REQ-COMMON-22A):
+  The Canonical Runtime rejects a proof carrying a client identifier other than
+  its immutable profile's client, while two application deployments using
+  different clients remain acceptable to the same Consuming Contract.
 - TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-19, REQ-COMMON-20, REQ-COMMON-22):
   A transcript carrying a second copy of a templated field, placed inside or
   after an undisclosed range, is rejected.
@@ -389,7 +419,7 @@ the constructions that role implements.
   A submission at or after `proofValidUntil` is rejected, and a caller-supplied
   validity bound has no effect.
 - TEST-COMMON-14 (exercises REQ-COMMON-30, REQ-COMMON-31):
-  A callback carrying a forwarding target in its request forwards to the
+  A redirect request carrying a forwarding target forwards to the
   compiled application origin instead.
 - TEST-COMMON-15 (exercises REQ-COMMON-29):
   Every redirect URI registered against each production client resolves to an
@@ -410,17 +440,20 @@ authenticated caller, so a copied proof creates no authority for its copier.
 The Consuming Contract MUST authenticate an equivalent authorization of the
 target at any entrypoint that does not authenticate the caller directly.
 
-Client binding rejects evidence issued to another OAuth client, which is what
-prevents an application registering its own OAuth client from harvesting
-authorizations and claiming the identities behind them. It creates no on-chain
-application admission.
+Client binding rejects evidence issued to a client other than the one whose
+ceremony the Canonical Runtime opened. The check is local because independent
+application deployments own different OAuth clients. The Consuming Contract
+authenticates the proof-bound operation and caller instead; it does not maintain
+an OAuth-client allowlist or admit applications on chain.
 
-Consent-screen phishing remains outside protocol enforcement. A user who
-approves a real consent screen presented by a hostile site produces an
-authorization the platform delivers only to a registered redirect URI
-(ASM-PROV-01), so the hostile site does not receive it. The registered
-redirect URI list and the origins on it are therefore trust-bearing
-configuration.
+Consent-screen phishing remains outside protocol enforcement. A hostile site
+borrowing an honest deployment's OAuth client does not receive its response,
+because the Identity Platform delivers it only to that client's registered
+redirect URI (ASM-PROV-01). A hostile site using its own client and redirect can
+receive evidence from a ceremony the user approves; the proof-bound operation,
+caller authentication, and canonical post-proof confirmation contain that
+case. The registered redirect URI list and the origins on it are therefore
+trust-bearing configuration.
 
 Input validation, denial of service, trust-anchor lifecycle, and browser
 origin, storage, and credential boundaries are owned by the browser
