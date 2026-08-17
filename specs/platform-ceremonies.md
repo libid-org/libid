@@ -94,6 +94,41 @@ Conformance vectors:
 Email, audience, client identifier, X username, and GitHub login never
 replace the immutable `userId`.
 
+### 2.1a Handle normalization
+
+Proof layers work with raw bytes; normalization is a consumption-time
+derivation, layered strictly:
+
+- REQ-PLAT-08A (upholds SP-BIND-01):
+  Every proof layer MUST verify and carry the handle as the raw authenticated
+  bytes of its platform source. A Proving Circuit or Attestation Verifier
+  MUST NOT case-fold, trim, or otherwise transform identity bytes.
+- REQ-PLAT-08B (upholds SP-BIND-01):
+  The Consuming Contract MUST derive the normalized handle from the
+  proof-verified raw bytes on its own write path. The Consuming Contract MUST
+  NOT accept a caller-supplied normalized handle or pre-hashed handle key.
+  Necessity: the handle arrives inside a proof; a caller supplying the
+  derived key could name any handle it liked.
+- REQ-PLAT-08C:
+  A browser-side normalization exists only for display and local checks. No
+  proof statement or contract behavior may rely on it. Necessity: a check
+  running in software the prover chooses whether to run is not a defense.
+
+Normalization applies these per-platform criteria: ASCII-only input with
+disallowed bytes rejected; lowercasing; Google validates the value as an
+email address and keeps its `@`; X and GitHub strip one leading `@`;
+underscore is allowed on X and not on GitHub; hyphen is allowed on GitHub and
+not on X, and never leading, trailing, or doubled; a per-platform maximum
+length; an empty result is rejected. The exact byte-level algorithm is fixed
+by the shared cross-language handle vector table, which every implementation
+reproduces; the table, not this prose, is the precision anchor.
+
+- TEST-PLAT-20 (exercises REQ-PLAT-08A, REQ-PLAT-08B, REQ-PLAT-08C):
+  Every implementation reproduces the shared handle vector table byte for
+  byte; a caller-supplied normalized handle or pre-hashed key is rejected;
+  and identity bytes transformed anywhere before contract-side derivation
+  fail conformance.
+
 ### 2.2 Metadata ordering and validity ceilings
 
 Proof validity and mutable-metadata ordering use the authenticated times below.
@@ -383,7 +418,10 @@ soundness dependency.
   from its immutable deployment profile. Neither value is a circuit
   constraint, a public proof input, or a value the Consuming Contract reads;
   the reveal exists so no token-request body byte stays both hidden and
-  unopened in the evidence the chain verifies.
+  unopened in the evidence the chain verifies. The Attestation Verifier
+  enforces the disclosure itself: a presentation hiding either range does not
+  match the profile layout of common REQ-COMMON-17A and REQ-COMMON-18A and
+  fails verification.
 - REQ-PLAT-30A (upholds SP-EXCHANGE-01):
   The Implementation MUST reveal the returned `access_token` from the notarized
   token session only as its `SHA256(ASCII(access_token))` hash commitment. The
@@ -771,9 +809,9 @@ contract.
   An X transcript that reveals plaintext `access_token` bytes in either
   session, or omits the bearer hash commitment, is rejected.
 - TEST-PLAT-09C (exercises REQ-PLAT-29C):
-  An X presentation that hides the `grant_type` or `redirect_uri` range is
-  rejected, and the Canonical Runtime rejects a revealed value differing from
-  its deployment profile.
+  The Attestation Verifier rejects an X presentation that hides the
+  `grant_type` or `redirect_uri` range, and the Canonical Runtime rejects a
+  revealed value differing from its deployment profile.
 - TEST-PLAT-10 (exercises REQ-PLAT-30, REQ-PLAT-31, REQ-PLAT-32, REQ-PLAT-36, REQ-PLAT-51, REQ-PLAT-52):
   A response missing the required field, carrying a duplicate, or carrying a
   differently typed value is rejected; GitHub rejects a response whose
