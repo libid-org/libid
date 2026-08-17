@@ -36,8 +36,17 @@ Each platform ceremony has an independently versioned immutable profile:
   contains every fixed route it requires. Necessity: cross-component
   interoperability between runtime and deployment.
 - REQ-PLAT-03 (upholds SP-CLIENT-01):
-  The Canonical Runtime MUST construct the verified claim exclusively from
-  locally verified proof public inputs.
+  The Canonical Runtime MUST construct the verified claim exclusively from the
+  Platform Profile's canonical authenticated source after locally verifying
+  the proof. For X and GitHub, the Canonical Runtime MUST parse the exact
+  revealed identity-response bytes that the Consuming Contract parses, using
+  the same canonical extraction and normalization rules. The Canonical Runtime
+  MUST reject a detached proof output, sidecar value, or caller value that
+  supplies or overrides `userId`, handle, or `metadataObservedAt`.
+
+This is a data-source invariant, not a browser-flow requirement. It defines the
+claim returned to callers and used by any composition-owned UI; it does not
+create a ceremony-owned confirmation page.
 
 ### 2.1 Canonical platform user identifiers
 
@@ -331,6 +340,11 @@ byte stays behind a blinded, charset-constrained hash commitment:
   in which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. Necessity: the response carries account-holder-influenced
   text, such as the display name, that can embed a lookalike field.
+- REQ-PLAT-31A (upholds SP-BIND-01):
+  The Canonical Runtime MUST derive the X `userId` and normalized handle from
+  those same revealed `id` and `username` bytes. The Final Identity Circuit
+  MUST NOT expose a second independently supplied representation of either
+  identity field.
 - REQ-PLAT-32 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST assert the same bearer commitment across the token
   transcript and the identity transcript.
@@ -341,10 +355,11 @@ byte stays behind a blinded, charset-constrained hash commitment:
   the plaintext token bytes redacted.
 
 Public proof inputs are the Claim Digest, the client identifier, both
-attestation timestamps, the identity fields, and the authenticated authority,
-method, and path of both notarized sessions. The bearer is never a public proof
-input. The `code_verifier` is recomputed in circuit per REQ-COMMON-15. The
-Consuming Contract compares the endpoint inputs with the `x/v1` profile.
+attestation timestamps, the revealed identity-response ranges, and the
+authenticated authority, method, and path of both notarized sessions. No
+detached identity fields or bearer are public proof inputs. The `code_verifier`
+is recomputed in circuit per REQ-COMMON-15. The Consuming Contract compares the
+endpoint inputs with the `x/v1` profile.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
   The Canonical Runtime MUST complete the token request within X's
@@ -561,6 +576,11 @@ the commitments while keeping the client secret from the browser.
   which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. The Consuming Contract MUST reject a noncanonical `id`
   encoding.
+- REQ-PLAT-51A (upholds SP-BIND-01):
+  The Canonical Runtime MUST derive the GitHub `userId` and normalized handle
+  from those same revealed `id` and `login` bytes. The Final Identity Circuit
+  MUST NOT expose a second independently supplied representation of either
+  identity field.
 - REQ-PLAT-52 (upholds SP-EXCHANGE-01):
   The Final Identity Circuit MUST verify the `github/v1` token proof and assert
   the same bearer commitment across that proof and the identity transcript. The
@@ -663,6 +683,11 @@ contract.
 - TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-02, REQ-PLAT-03):
   A resume that substitutes a newer profile is rejected, an unlisted profile is
   ineligible, and no claim field originates outside verified public inputs.
+- TEST-PLAT-17A (exercises REQ-PLAT-03, REQ-PLAT-31A, REQ-PLAT-51A):
+  Pair authenticated X or GitHub identity-response bytes for account B with a
+  detached `userId`, handle, or metadata value for account A. The runtime
+  rejects the extra representation; without it, the runtime and Consuming
+  Contract both derive account B byte for byte.
 - TEST-PLAT-18 (exercises REQ-PLAT-25, REQ-PLAT-26, REQ-PLAT-27):
   Launch uses Proxy mode, rejects application or request selection of Browser
   MPC, uses no application-controlled platform egress, and carries no partial
