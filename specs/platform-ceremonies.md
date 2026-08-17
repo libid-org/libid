@@ -112,7 +112,7 @@ derivation, layered strictly:
   derived key could name any handle it liked.
 - REQ-PLAT-08C:
   A browser-side normalization exists only for display and local checks. No
-  proof statement or contract behavior may rely on it. Necessity: a check
+  proof statement or Consumer behavior may rely on it. Necessity: a check
   running in software the prover chooses whether to run is not a defense.
 
 Normalization applies these per-platform criteria: ASCII-only input with
@@ -127,7 +127,7 @@ reproduces; the table, not this prose, is the precision anchor.
 - TEST-PLAT-20 (exercises REQ-PLAT-08A, REQ-PLAT-08B, REQ-PLAT-08C):
   Every implementation reproduces the shared handle vector table byte for
   byte; a caller-supplied normalized handle or pre-hashed key is rejected;
-  and identity bytes transformed anywhere before contract-side derivation
+  and identity bytes transformed anywhere before Consumer-side derivation
   fail conformance.
 
 ### 2.2 Metadata ordering and validity ceilings
@@ -732,7 +732,7 @@ client secret from the browser.
   keep the code, redirect URI, verifier, bearer, bearer commitment, and all
   hidden-range commitments private. The Final Identity Circuit MUST NOT add
   its own `userId`, handle, or timestamp public input. Necessity: identity
-  and time live in the notary-signed attestations the contract reads; an
+  and time live in the notary-signed attestations the Consumer reads; an
   extra unconstrained copy would let a reader accept a prover-typed value
   while the proof still verifies.
 
