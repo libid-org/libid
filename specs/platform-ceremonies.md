@@ -82,14 +82,26 @@ replace the immutable `userId`.
 
 ### 2.2 Metadata ordering and validity ceilings
 
-| Identity platform | `metadataObservedAt` | `proofValidUntil` — first invalid timestamp |
+One rule bounds every proof's validity: `proofValidUntil =
+metadataObservedAt` plus a per-platform protocol parameter, where
+`metadataObservedAt` is the platform-signed time below and the parameter is
+Registry-configurable state, never a caller parameter.
+
+| Identity platform | `metadataObservedAt` | Validity parameter |
 |---|---|---|
-| Google | signed ID-Token `iat` | `min(signed exp + googleClockSkewGrace, trustedUntil)` |
-| X | signed `meAttest.timestamp` | `min(tokenAttest.timestamp, meAttest.timestamp) + proofLifetime[x]` |
-| GitHub | signed `userAttest.timestamp` | `min(tokenAttest.timestamp, userAttest.timestamp) + proofLifetime[github]` |
+| Google | signed ID-Token `exp` | `googleClockSkewGrace` |
+| X | `min(tokenAttest.timestamp, meAttest.timestamp)` | `proofLifetime[x]` |
+| GitHub | `min(tokenAttest.timestamp, userAttest.timestamp)` | `proofLifetime[github]` |
 
 For X and GitHub, "timestamp" is the signed TLSNotary attestation creation
-time. The named values are current [protocol parameters](libid.md#protocol-parameters).
+time. The named values are current
+[protocol parameters](libid.md#protocol-parameters). Google's `exp` already
+encodes issuance plus Google's own token lifetime, so its parameter is only
+clock-skew grace. The Claim Digest carries no expiration; validity derives
+only from authenticated platform time plus the current parameter.
+`metadataObservedAt` is also the monotone replay watermark of common
+REQ-COMMON-25A: a binding never regresses to evidence observed earlier than
+what it already holds.
 
 - REQ-PLAT-09 (upholds SP-FRESH-01):
   The Consuming Contract MUST reject an X or GitHub attestation timestamp more
@@ -115,6 +127,11 @@ Identity evidence is the signed ID Token delivered in the redirect fragment.
 | 5 | `scope` | `openid email` |
 | 6 | `state` | immutable one-use OAuth state |
 | 7 | `nonce` | `BASE64URL_NOPAD(bytes32(claimDigest))` |
+
+The authorization request is plain browser navigation and is never
+notarized; no proof semantics attach to any field above. The table is
+operational guidance for obtaining a token whose signed claims satisfy
+§3.2–§3.3. The signed ID Token is the only Google evidence.
 
 - REQ-PLAT-10 (upholds SP-BIND-01):
   The Canonical Runtime MUST set `nonce` to the base64url encoding of the 32
@@ -161,6 +178,12 @@ The Proving Circuit and consuming contract enforce all of the following:
 - REQ-PLAT-16 (upholds SP-CLIENT-01):
   The Proving Circuit MUST prove Google's signature over the ID Token under a
   key whose modulus the registry lists as trusted.
+- REQ-PLAT-16A (upholds SP-CLIENT-01):
+  The Proving Circuit MUST expose the signing modulus, or a
+  collision-resistant digest of it, as a public proof input. Necessity: the
+  signature is proven in circuit because verifying it on chain would publish
+  the signed token and disclose its claims; the Consuming Contract checks
+  only the exposed modulus against the trusted set of REQ-PLAT-23.
 - REQ-PLAT-17 (upholds SP-BIND-01):
   The Proving Circuit MUST prove the signed `iss` equals
   `https://accounts.google.com`.
@@ -168,16 +191,20 @@ The Proving Circuit and consuming contract enforce all of the following:
   The Proving Circuit MUST prove `nonce` equals the Claim Digest.
 - REQ-PLAT-19 (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the signed `aud` as the client-binding public
-  input.
+  input. Admission stays permissionless per common REQ-COMMON-17C; a Consuming
+  Contract MAY read the exposed `aud`.
 - REQ-PLAT-20:
   The Proving Circuit MUST prove `email_verified` is the boolean `true`.
   Necessity: an unverified email would let one account assert another party's
   address as its handle.
 - REQ-PLAT-21 (upholds SP-BIND-01):
-  The Proving Circuit MUST require exactly one top-level value of the required
-  type for `iss`, `sub`, `aud`, `iat`, `exp`, `nonce`, `email`, and
-  `email_verified`. The Proving Circuit MUST reject duplicate keys, type
-  substitution, and nested lookalikes.
+  The prover supplies the offset of each checked claim as a private input.
+  The Proving Circuit MUST assert the JSON pattern of `iss`, `sub`, `aud`,
+  `exp`, `nonce`, `email`, and `email_verified` at the supplied offsets per
+  common REQ-COMMON-19 and REQ-COMMON-19B. The Proving Circuit MUST
+  constrain each extracted value to its required type and charset.
+  Duplicate-free top-level structure is the issuer's behavior under
+  ASM-PROV-06; the circuit performs no search and no duplicate scan.
 - REQ-PLAT-22 (upholds SP-FRESH-01):
   The Consuming Contract MUST reject a proof whose signed `exp` places
   `proofValidUntil` at or before `block.timestamp`.
@@ -265,18 +292,46 @@ sessions.
   The Proving Circuit MUST require exactly one nonempty printable-ASCII
   top-level `access_token` string of at most 4096 bytes in the token response.
 
+Per common §9, the token session reveals exactly these ranges; every other
+byte stays behind a blinded, charset-constrained hash commitment:
+
+| Range | Revealed | Why |
+|---|---|---|
+| endpoint authority, method, path | yes | exposed as public proof inputs per common REQ-COMMON-21 |
+| `client_id` | yes | exposed as a public proof input |
+| `code` | yes | compared to the code consumed at redirect ingress |
+| `SHA256(ASCII(access_token))` | yes | hash commitment linking the token and identity transcripts |
+| attestation timestamp | yes | derives the authenticated validity ceiling |
+| everything else | no | headers, `code_verifier`, `scope`, `token_type`, other response fields |
+
+- REQ-PLAT-29A (upholds SP-CLIENT-01):
+  The Proving Circuit MUST reveal the `client_id` range of the token request.
+- REQ-PLAT-29B (upholds SP-CLIENT-01):
+  The Proving Circuit MUST expose that revealed `client_id` as a public proof
+  input.
+- REQ-PLAT-30A (upholds SP-EXCHANGE-01):
+  The notarized token session MUST reveal the returned `access_token` only as
+  its `SHA256(ASCII(access_token))` hash commitment. The plaintext token bytes
+  MUST stay redacted.
+
 ### 5.3 Identity request
 
 `GET https://api.x.com/2/users/me` with no query,
 `Authorization: Bearer <access_token>`, `Accept: application/json`.
 
 - REQ-PLAT-31 (upholds SP-BIND-01):
-  The Proving Circuit MUST require one top-level `data` object carrying exactly
-  one string `id` and one string `username`. The Proving Circuit MUST reject
-  duplicate, nested-lookalike, differently typed, and out-of-object fields.
+  The Consuming Contract MUST extract `id` and `username` from the revealed
+  response bytes by their full `"field":"` delimiters, rejecting a transcript
+  in which either delimiter matches at more than one position, per common
+  REQ-COMMON-19A. Necessity: the response carries account-holder-influenced
+  text, such as the display name, that can embed a lookalike field.
 - REQ-PLAT-32 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST assert the same bearer commitment across the token
   transcript and the identity transcript.
+- REQ-PLAT-32A (upholds SP-EXCHANGE-01):
+  The notarized identity session MUST reveal the `Authorization` bearer value
+  only as the same `SHA256(ASCII(access_token))` hash commitment. The
+  plaintext token bytes MUST stay redacted.
 
 Public proof inputs are the Claim Digest, the client identifier, both
 attestation timestamps, the identity fields, and the authenticated authority,
@@ -417,10 +472,11 @@ interface TokenProofResponseV1 {
 ### 6.4 Disclosure and verification
 
 The Token-Proof Service, which knows the client secret and complete exchange
-transcript, produces `tokenProof`. Its circuit verifies the TLSNotary
-attestation and applies REQ-COMMON-18 to the complete form body and response.
-The browser never receives the client secret or an unverifiable selectively
-disclosed transcript.
+transcript, produces `tokenProof`. Its circuit opens the hidden-range
+commitments of common REQ-COMMON-18, and the verifier checks the revealed
+ranges and layout per common REQ-COMMON-18A and REQ-COMMON-21A. The browser
+never receives the client secret or an unverifiable selectively disclosed
+transcript.
 
 The token proof exposes exactly the public outputs needed to bind it to the
 local ceremony and the later `/user` transcript. The separately returned
@@ -440,10 +496,11 @@ local ceremony and the later `/user` transcript. The separately returned
 | `client_secret` | no | never revealed, per REQ-PLAT-35A |
 | everything else | no | headers, status line, `scope`, `token_type`, other response fields |
 
-The circuit proves every unexposed form-body and response byte against the
-profile template. It also proves the exact response grammar, `token_type`, and
-scope rule from REQ-PLAT-36. Revealing those bytes would add no check and would
-widen exposure.
+Every unexposed range stays behind a blinded hash commitment, bounded by
+revealed anchor bytes and charset-constrained per common REQ-COMMON-20. The
+`token_type` and scope rule of REQ-PLAT-36 are asserted in circuit against
+their committed ranges without disclosure. Revealing those bytes would add no
+check and would widen exposure.
 
 - REQ-PLAT-43D (upholds SP-EXCHANGE-01):
   The Token Proof MUST expose no public output outside the nine rows marked `yes`
@@ -476,11 +533,14 @@ widen exposure.
   The Canonical Runtime MUST discard the response and start neither `/user` nor
   a resume record when any check in REQ-PLAT-44 through REQ-PLAT-49 fails.
 
-Verifying only selected attestation ranges is insufficient: a prover that
-composes the request could otherwise hide a second `code` or `code_verifier`
-in an unverified range and let GitHub honor that copy. The server-produced
-token proof is the concrete artifact that enforces REQ-COMMON-18 while keeping
-the client secret from the browser.
+Verifying only an arbitrary selection of ranges is insufficient: a prover
+that composes the request could otherwise hide a second `code` or
+`code_verifier` in an unaccounted range and let GitHub honor that copy. The
+layout tiling of common REQ-COMMON-18A closes this: every transcript byte is
+either revealed or inside a charset-constrained committed range, so no
+unaccounted range exists. The server-produced token proof is the concrete
+artifact that carries these commitments while keeping the client secret from
+the browser.
 
 ### 6.5 Identity request
 
@@ -489,9 +549,11 @@ the client secret from the browser.
 `X-GitHub-Api-Version: 2022-11-28`.
 
 - REQ-PLAT-51 (upholds SP-BIND-01):
-  The Proving Circuit MUST require exactly one top-level `id` JSON integer and
-  one top-level `login` string. The Proving Circuit MUST reject duplicate,
-  nested-lookalike, differently typed, and noncanonical values.
+  The Consuming Contract MUST extract `id` and `login` from the revealed
+  response bytes by their full field delimiters, rejecting a transcript in
+  which either delimiter matches at more than one position, per common
+  REQ-COMMON-19A. The Consuming Contract MUST reject a noncanonical `id`
+  encoding.
 - REQ-PLAT-52 (upholds SP-EXCHANGE-01):
   The Final Identity Circuit MUST verify the `github/v1` token proof and assert
   the same bearer commitment across that proof and the identity transcript. The
@@ -546,7 +608,7 @@ contract.
   A Google response carrying an authorization code or access token is rejected,
   and the deployment contains no Google exchange route or client secret.
   Verification: inspection of emitted artifacts.
-- TEST-PLAT-06 (exercises REQ-PLAT-16, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
+- TEST-PLAT-06 (exercises REQ-PLAT-16, REQ-PLAT-16A, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
   A token with a foreign issuer, foreign audience, `email_verified: false`, a
   duplicated top-level claim, or an untrusted signing modulus is rejected in
   each case.
@@ -559,6 +621,12 @@ contract.
 - TEST-PLAT-09 (exercises REQ-PLAT-29, REQ-PLAT-46):
   A transcript whose disclosed `code` differs from the code consumed at
   redirect ingress is rejected on X and on GitHub.
+- TEST-PLAT-09A (exercises REQ-PLAT-29A, REQ-PLAT-29B):
+  An X proof that does not reveal the token request's `client_id`, or does not
+  expose it as a public input, is rejected.
+- TEST-PLAT-09B (exercises REQ-PLAT-30A, REQ-PLAT-32A):
+  An X transcript that reveals plaintext `access_token` bytes in either
+  session, or omits the bearer hash commitment, is rejected.
 - TEST-PLAT-10 (exercises REQ-PLAT-30, REQ-PLAT-31, REQ-PLAT-32, REQ-PLAT-36, REQ-PLAT-51, REQ-PLAT-52):
   A response missing the required field, carrying a duplicate, or carrying a
   differently typed value is rejected; GitHub rejects a response whose

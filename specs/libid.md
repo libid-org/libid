@@ -33,8 +33,8 @@ ceilings.
 
 | Parameter | Launch value | Use |
 |---|---:|---|
-| `proofLifetime[x]` | 600 | maximum age of the earlier X token/identity attestation |
-| `proofLifetime[github]` | 600 | maximum age of the earlier GitHub token/identity attestation |
+| `proofLifetime[x]` | 3600 | maximum age of the earlier X token/identity attestation |
+| `proofLifetime[github]` | 3600 | maximum age of the earlier GitHub token/identity attestation |
 | `googleClockSkewGrace` | 300 | grace added to the signed Google ID-Token expiry |
 | `maxFutureAttestationSkew` | 300 | maximum X/GitHub attestation lead over chain time |
 
