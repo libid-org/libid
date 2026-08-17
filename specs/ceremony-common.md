@@ -38,6 +38,10 @@ Token-Proof Service: The confidential-client component that performs and
 Canonical Runtime: The immutable browser release that constructs claim
    digests, verifies attestations, and builds proofs.
 
+Attestation Verifier: The exact TLSNotary attestation format and verifier
+   artifact pinned by a Platform Profile. It authenticates the notary
+   signature, transcript commitment, disclosure ranges, and creation time.
+
 ## 3. Assumptions
 
 - ASM-CHAIN-01:
@@ -63,7 +67,8 @@ Canonical Runtime: The immutable browser release that constructs claim
   includes the requested `nonce` verbatim.
 - ASM-PROV-06:
   An Identity Platform emits a well-formed authenticated response in which
-  each authoritative field appears exactly once at the top level.
+  each authoritative field appears exactly once at the JSON location fixed by
+  its Platform Profile.
 - ASM-PROV-07:
   At the exact token endpoint and method fixed by a Platform Profile, the
   Identity Platform accepts token redemption only under the profile's media
@@ -74,23 +79,37 @@ Canonical Runtime: The immutable browser release that constructs claim
   another. Evidence: recurring integration probes against each production
   endpoint.
 - ASM-NOTARY-01:
-  The configured notary key signs only transcripts it observed.
+  The configured notary key is unforgeable, signs only transcripts it
+  observed, and signs their creation time no more than
+  `maxFutureAttestationSkew` ahead of real time.
+- ASM-PROOF-01:
+  A proof accepted under a profile's selected verifier artifact satisfies
+  that profile's complete proof statement. Registry governance does not
+  replace an artifact without selecting a new profile or verifier revision.
 - ASM-BROWSER-01:
   The Canonical Runtime executes unmodified, and the user agent enforces the
   same-origin policy over authorization responses.
 
 ## 4. Security properties
 
+The properties below survive a malicious application operator and, where
+present, a malicious Token-Proof Service under their cited assumptions. They
+assume an unmodified Canonical Runtime, the selected verifier artifact, the
+Consuming Contract, and Registry configuration. Compromise of the applicable
+identity-platform signing root, notary key, proof verifier, Registry governance,
+browser supply chain, or chain invalidates the properties that depend on it.
+
 - SP-BIND-01:
   Evidence produced by a ceremony discharges only for the Call Data committed
   in its Claim Digest. Depends on ASM-PROV-02, ASM-PROV-05, ASM-PROV-06,
-  ASM-PROV-07, ASM-CHAIN-01. Evidence: conformance tests (supporting, not
-  proving) plus the collision resistance of SHA-256 and keccak256.
+  ASM-PROV-07, ASM-NOTARY-01, ASM-PROOF-01, ASM-CHAIN-01. Evidence:
+  conformance tests (supporting, not proving) plus the collision resistance of
+  SHA-256 and keccak256.
 - SP-CLIENT-01:
   The Canonical Runtime rejects evidence issued to an OAuth client other than
   the one fixed by its immutable ceremony profile. Depends on ASM-PROV-04,
-  ASM-PROV-05, ASM-PROV-07, ASM-NOTARY-01, and ASM-BROWSER-01. Evidence:
-  checked invariant in the Canonical Runtime, plus conformance tests
+  ASM-PROV-05, ASM-PROV-07, ASM-NOTARY-01, ASM-PROOF-01, and ASM-BROWSER-01.
+  Evidence: checked invariant in the Canonical Runtime, plus conformance tests
   (supporting).
 - SP-DELIVERY-01:
   An authorization response for one OAuth client reaches only an origin
@@ -100,16 +119,17 @@ Canonical Runtime: The immutable browser release that constructs claim
   conformance tests (supporting).
 - SP-EXCHANGE-01:
   An attested token exchange redeems the authorization code produced by this
-  ceremony and no other. Depends on ASM-PROV-03, ASM-PROV-07, ASM-NOTARY-01,
-  ASM-BROWSER-01. Evidence: conformance tests (supporting, not proving).
+  ceremony and no other. Depends on ASM-PROV-02, ASM-PROV-03, ASM-PROV-07,
+  ASM-NOTARY-01, ASM-PROOF-01, ASM-BROWSER-01. Evidence: conformance tests
+  (supporting, not proving).
 - SP-FRESH-01:
   Evidence older than its authenticated ceiling is rejected. Depends on
-  ASM-CHAIN-01, ASM-NOTARY-01, ASM-PROV-05. Evidence: checked invariant in the
-  Consuming Contract.
+  ASM-CHAIN-01, ASM-NOTARY-01, ASM-PROV-05, ASM-PROOF-01. Evidence: checked
+  invariant in the Consuming Contract.
 - SP-REPLAY-01:
-  One ceremony authorizes at most one authoritative effect. Depends on
-  ASM-CHAIN-01, ASM-CHAIN-02. Evidence: checked invariant in the consuming
-  contract.
+  Within one Consuming Contract deployment, one ceremony authorizes at most
+  one authoritative effect. Depends on ASM-CHAIN-01, ASM-CHAIN-02. Evidence:
+  checked invariant in the consuming contract.
 
 ## 5. Claim digest
 
@@ -333,14 +353,16 @@ typed local matches of REQ-COMMON-19D. A form-field check asserts a field
 boundary, the exact ASCII name and `=`, the value, and the next `&` or body end.
 Because the authenticated parser outputs satisfy ASM-PROV-06 and ASM-PROV-07,
 these local checks provide the required field meaning without the impractical
-proving cost of a complete JSON or form parser. Hidden ranges stay behind
-blinded hash commitments the circuit opens; the circuit links transcripts
+proving cost of a complete JSON or form parser. Hidden ranges stay behind the
+pinned Attestation Verifier's range commitments; the circuit links transcripts
 through those commitments and binds the Claim Digest.
 
 Disclosure and verification are two separate layers. The Platform Profile
-fixes a minimal set of revealed ranges; every other byte stays behind a
-blinded hash commitment. Separately, the proof exposes a minimal set of
-public inputs, which never includes a credential.
+fixes a minimal set of revealed ranges; every other byte stays behind a range
+commitment native to its pinned Attestation Verifier. These commitments and
+openings are verifier inputs, not final libID public proof inputs unless a
+profile's public-input table explicitly lists one. Separately, the proof
+exposes a minimal set of public inputs, which never includes a credential.
 
 - REQ-COMMON-17A (upholds SP-CLIENT-01):
   The Platform Profile MUST list the exact ranges a notarized session reveals.
@@ -348,13 +370,15 @@ public inputs, which never includes a credential.
   The Implementation MUST redact every byte outside the ranges its profile
   lists.
 - REQ-COMMON-18 (upholds SP-EXCHANGE-01):
-  The Implementation MUST commit every hidden attestation range with a blinded
-  hash commitment. The Proving Circuit MUST open the commitment of each hidden
-  range whose value the profile checks.
+  The Platform Profile MUST pin an exact Attestation Verifier artifact and its
+  format. The Implementation MUST use that format's native commitment for
+  every hidden range. The Proving Circuit MUST open each hidden range whose
+  value the profile checks. A profile without a published verifier artifact
+  digest is ineligible.
 - REQ-COMMON-18A (upholds SP-EXCHANGE-01):
-  The Verifier MUST check that the revealed ranges and hidden-range commitments
-  tile the transcript in the exact layout the profile fixes, with each hidden
-  range bounded by revealed anchor bytes.
+  The Attestation Verifier MUST check that the revealed ranges and hidden-range
+  commitments tile the transcript in the exact layout the profile fixes, with
+  each hidden range bounded by revealed anchor bytes.
 - REQ-COMMON-19 (upholds SP-EXCHANGE-01):
   The Proving Circuit extracting a JSON string field MUST receive the field's
   offset as a private input supplied by the prover; the circuit performs no
@@ -452,9 +476,12 @@ request soundness additionally depends on ASM-PROV-07.
   value. The Implementation MUST NOT infer it from an HTTP `Date` header or a
   local clock.
 - REQ-COMMON-25A (upholds SP-FRESH-01):
-  The Consuming Contract MUST reject evidence whose `metadataObservedAt`
-  precedes the watermark stored for the binding it updates. Necessity: an
-  older proof replayed after a handle change would roll the binding back.
+  The Consuming Contract MUST complete an otherwise valid authority operation
+  even when its mutable metadata is stale. The Consuming Contract MUST update
+  mutable metadata and its watermark only when `metadataObservedAt` is strictly
+  newer than the stored watermark. The Consuming Contract MUST leave both
+  unchanged for older or equal evidence, including equal evidence carrying
+  conflicting metadata.
 - REQ-COMMON-26 (upholds SP-FRESH-01):
   The Consuming Contract MUST derive `proofValidUntil` from the platform
   profile's authenticated validity input and any current protocol parameter
@@ -505,7 +532,8 @@ the constructions that role implements.
   placed in padding past the payload length, fails to prove; a form-field match
   not bounded by the body start or `&` and the next `&` or body end fails to
   prove; and a transcript whose ranges do not tile the profile layout is
-  rejected.
+  rejected. A profile without an exact published Attestation Verifier artifact
+  digest is ineligible.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
   The Consuming Contract rejects an authenticated foreign authority, method,
   or path. The request constructor refuses a media type or `redirect_uri`
@@ -515,8 +543,9 @@ the constructions that role implements.
   A fractional, negative, overflowing, or textual timestamp is rejected.
 - TEST-COMMON-13 (exercises REQ-COMMON-25A, REQ-COMMON-26, REQ-COMMON-27, REQ-COMMON-28):
   A submission at or after `proofValidUntil` is rejected, a caller-supplied
-  validity bound has no effect, and evidence whose `metadataObservedAt`
-  precedes the stored watermark is rejected.
+  validity bound has no effect, and reverse-order older or equal-conflicting
+  metadata does not change the newer stored metadata or watermark while the
+  otherwise valid authority operation succeeds.
 - TEST-COMMON-14 (exercises REQ-COMMON-30, REQ-COMMON-31):
   A redirect request carrying a forwarding target forwards to the
   compiled application origin instead.
@@ -530,14 +559,14 @@ the constructions that role implements.
 This document enforces SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01,
 SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §3.
 
-Replay across ceremonies is prevented by `claimRandom` and REQ-COMMON-05.
-Replay across chains is prevented by `chainId` in the digest. Replay across
-protocol versions is prevented by `version`. The digest binds no registry
-address: a proof carrying the same call data cannot be redirected, because
-every binding entrypoint requires the proof-bound target to equal the
-authenticated caller, so a copied proof creates no authority for its copier.
-The Consuming Contract MUST authenticate an equivalent authorization of the
-target at any entrypoint that does not authenticate the caller directly.
+Replay within one Consuming Contract deployment is prevented by `claimRandom`
+and REQ-COMMON-05. Replay across chains is prevented by `chainId` in the
+digest. Replay across protocol versions is prevented by `version`. The digest
+does not prevent cross-deployment replay because it binds no registry address.
+Every binding entrypoint therefore requires the proof-bound target to equal
+the authenticated caller, so a copied proof creates no authority for its
+copier. The Consuming Contract MUST authenticate an equivalent authorization
+of the target at any entrypoint that does not authenticate the caller directly.
 
 Client binding rejects evidence issued to a client other than the one whose
 ceremony the Canonical Runtime opened. The check is local because independent
@@ -550,9 +579,10 @@ borrowing an honest deployment's OAuth client does not receive its response,
 because the Identity Platform delivers it only to that client's registered
 redirect URI (ASM-PROV-01). A hostile site using its own client and redirect can
 receive evidence from a ceremony the user approves; the proof-bound operation,
-caller authentication, and canonical post-proof confirmation contain that
-case. The registered redirect URI list and the origins on it are therefore
-trust-bearing configuration.
+caller authentication, and any composition-owned transaction authorization
+contain that case. The ceremony layer defines no extra confirmation page. The
+registered redirect URI list and the origins on it are therefore trust-bearing
+configuration.
 
 Input validation, denial of service, trust-anchor lifecycle, and browser
 origin, storage, and credential boundaries are owned by the browser

@@ -13,6 +13,76 @@ specifications.
 - [Identity-platform ceremonies](platform-ceremonies.md) define the launch
   profiles for Google, X, and GitHub.
 
+## System model and specification ownership
+
+libID turns an identity-platform authorization into a proof that a consuming
+contract applies to one proof-bound operation:
+
+```text
+User -> Identity Platform -> Canonical Runtime -> Proving Circuit -> Consuming Contract
+                                  |
+                                  +-> Token-Proof Service (GitHub only)
+```
+
+The application operator controls its frontend, redirect deployment, OAuth
+clients, and any Token-Proof Service, but is not trusted to choose identity
+fields, change the proof-bound operation, or widen proof validity. The identity
+platform controls the authenticated account response. The notary authenticates
+X/GitHub transcripts and their creation times. Registry governance selects
+accepted verifier artifacts, trust roots, and protocol parameters. The chain
+authenticates the caller, deployment, chain identifier, and block time.
+
+| Principal | Knows and can | Trusted for | Not trusted for |
+|---|---|---|---|
+| User | chooses an account and authorizes an operation | human intent | parsing or cryptographic verification |
+| Application operator | configures clients and deployment assets; starts or withholds work | deployment availability and declared configuration | identity fields, proof target, or proof validity |
+| Identity-platform operator | authenticates accounts and issues signed or TLS-authenticated responses | the `ASM-PROV-*` behavior the selected profile cites | the on-chain operation or caller |
+| Notary operator | operates the X/GitHub attestation key and observes sessions | `ASM-NOTARY-01` | user intent or contract authorization |
+| Registry governance administrator | activates verifier artifacts, trust roots, and parameters | correct authority lifecycle | user consent |
+
+The principal trust roots are Google's active signing moduli, the active
+X/GitHub notary keys, the selected proof-verifier artifacts, Registry
+governance, and chain consensus. Replacing or retiring a root stops future
+acceptance after the change takes effect; it does not undo bindings or sessions
+already committed. Loss of an application deployment is a liveness failure.
+Compromise of the browser release or its supply chain defeats local client and
+operation construction. Compromise of a platform signing root, notary key, or
+selected proof verifier can mint future evidence for the affected profiles.
+Compromise of Registry governance can change every accepted root and verifier.
+
+| Subject | Single normative owner |
+|---|---|
+| Claim digest, PKCE, extraction, client binding, evidence time | [Common ceremony rules](ceremony-common.md) |
+| Platform endpoints, fields, trust roots, and proof projections | [Identity-platform ceremonies](platform-ceremonies.md) |
+| Redirect transport, persistence, resume, and UI control flow | browser protocol |
+| Entrypoint dispatch, caller authorization, replay storage, and trust-root governance | contract protocol |
+
+The linked ceremony chapters specify the ceremony layer. The browser and
+contract protocol specifications do not redefine its proof fields or security
+assumptions. A profile is implementable only when its exact proving
+and attestation verifier artifacts are published and selected by the contract
+protocol.
+
+## Enforceable guarantees and accepted boundaries
+
+Circuits and consuming contracts enforce proof-field provenance, the
+proof-bound operation, per-deployment replay rejection, and authenticated
+freshness. The Canonical Runtime locally enforces the selected OAuth client and
+redirect profile. The protocol assumes the named identity-platform parser,
+PKCE, delivery, notary, browser, verifier-soundness, and chain behaviors. It
+does not enforce human understanding of a platform consent screen, prevent
+cross-deployment presentation of the same proof, or make mutable display
+metadata authoritative.
+
+Collusion sanity check — non-exhaustive: application plus Token-Proof Service
+control can withhold but cannot retarget valid evidence; application plus a
+malicious identity-platform operator defeats identity authenticity for that
+platform but not Claim-Digest binding; any pair containing compromised Registry
+governance, a selected verifier, or the applicable platform/notary trust root
+inherits that single-root compromise. This does not model adaptive or
+three-party compromise, shared key custody, browser supply-chain compromise, or
+chain failure.
+
 ## Conventions
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",

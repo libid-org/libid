@@ -30,6 +30,11 @@ Each platform ceremony has an independently versioned immutable profile:
   selected. The Canonical Runtime MUST NOT substitute another profile on
   resume. Necessity: a resumed ceremony that changed profile would produce
   evidence the selected verifier cannot check.
+- REQ-PLAT-01A (upholds SP-BIND-01):
+  The Registry Governance Process MUST select an exact final-proof verifier
+  artifact for every eligible profile and an exact Attestation Verifier
+  artifact for every TLSNotary profile. Necessity: a profile name without its
+  verifier artifacts does not identify one proof statement.
 - REQ-PLAT-02:
   The Canonical Runtime MUST treat a profile as ineligible until the
   application's authenticated profile lists it and the generated deployment
@@ -110,8 +115,8 @@ Google's signed `exp` already supplies the accepted one-hour ordering and
 validity value. A Google proof also requires its signing modulus to remain in
 the Registry's active set. The Claim Digest carries no expiration.
 `metadataObservedAt` is the monotone replay watermark of common
-REQ-COMMON-25A. A binding never regresses to evidence ordered earlier than what
-it already holds.
+REQ-COMMON-25A. Older evidence cannot regress stored metadata and does not
+block an otherwise valid authority operation.
 
 - REQ-PLAT-09 (upholds SP-FRESH-01):
   The Consuming Contract MUST reject an X or GitHub attestation timestamp more
@@ -191,17 +196,40 @@ Google nonce = u8e_zOYtBwzCXXugTOiCDaj05ckvXmOivUA5QMhKtiU
 The Proving Circuit and consuming contract enforce all of the following:
 
 - REQ-PLAT-16 (upholds SP-CLIENT-01):
-  The Proving Circuit MUST prove Google's signature over the ID Token under a
-  signing modulus and bind that exact modulus to the public input of
-  REQ-PLAT-16A.
+  The Proving Circuit MUST accept only a compact JWS consisting of exactly
+  three unpadded base64url segments separated by two `.` bytes. The Proving
+  Circuit MUST prove that the protected header contains exactly one `alg`
+  equal to `RS256`. The Proving Circuit MUST hash the exact ASCII
+  `BASE64URL_NOPAD(header) || "." || BASE64URL_NOPAD(payload)` bytes with
+  SHA-256. The Proving Circuit MUST verify the signature as
+  RSASSA-PKCS1-v1_5 under the exact RSA modulus `n` and the profile-fixed
+  exponent `e = 65537`. The Proving Circuit MUST decode the claims checked
+  below from that signed payload, not from a detached copy.
 - REQ-PLAT-16A (upholds SP-CLIENT-01):
-  The Proving Circuit MUST expose the signing modulus, or a
-  collision-resistant digest of it, as a public proof input. Necessity: the
-  signature is proven in circuit because verifying it on chain would publish
-  the signed token and disclose its claims. The Proving Circuit MUST NOT decide
-  Registry membership or take the active trusted set as an input. The Consuming
-  Contract alone checks the exposed modulus against the current trusted set of
-  REQ-PLAT-23.
+  The Proving Circuit MUST expose the exact RSA modulus used for REQ-PLAT-16 as
+  a public proof input. The Proving Circuit MUST decode JWK `n` as a canonical
+  unsigned big-endian integer from unpadded base64url. The Proving Circuit MUST
+  require JWK `e` to be the canonical unpadded value `AQAB` for 65537. The
+  Proving Circuit MUST reject an empty integer, leading zero octet, padding, or
+  other encoding. The Proving Circuit MUST NOT decide Registry membership or
+  take the active set as an input. The Consuming Contract alone checks the
+  modulus under REQ-PLAT-23. Necessity: a prover-selected exponent would change
+  the signature relation.
+- REQ-PLAT-16B (upholds SP-BIND-01, SP-CLIENT-01, SP-FRESH-01):
+  The Proving Circuit MUST expose exactly the following Google public inputs,
+  each derived from the signed payload or verified signing key:
+
+  | Public input | Authenticated source |
+  |---|---|
+  | Claim Digest | signed `nonce`, decoded as exactly 32 bytes |
+  | client identifier | signed `aud` |
+  | canonical `userId` | signed `sub` |
+  | normalized handle | signed `email` |
+  | evidence timestamp | signed `exp`; used for both `metadataObservedAt` and `proofValidUntil` |
+  | RSA modulus | exact `n` that verified the JWS; `e = 65537` is profile-fixed |
+
+  The Proving Circuit MUST NOT expose a detached second representation of a
+  claim.
 - REQ-PLAT-17 (upholds SP-BIND-01):
   The Proving Circuit MUST prove the signed `iss` equals
   `https://accounts.google.com`.
@@ -231,13 +259,13 @@ The Proving Circuit and consuming contract enforce all of the following:
 The signing key is fetched from Google's JWKS endpoint as witness input.
 
 - REQ-PLAT-23 (upholds SP-CLIENT-01):
-  The Consuming Contract MUST reject a proof whose signing modulus is absent
-  from the registry's active trusted Google modulus set.
+  The Consuming Contract MUST reject a proof whose RSA modulus is absent from
+  the registry's active trusted Google modulus set.
 - REQ-PLAT-24:
-  The Registry Governance Process MUST add a newly published Google modulus to
-  the trusted set before Google signs with it in production. Necessity: Google
-  rotates signing keys on the order of weekly, so every Google ceremony fails
-  closed while an active modulus is untrusted.
+  The Registry Governance Process MUST add a newly published Google signing
+  modulus to the trusted set before Google signs with it in production.
+  Necessity: Google rotates signing keys on the order of weekly, so every
+  Google ceremony fails closed while an active modulus is untrusted.
 
 ## 4. Browser TLSNotary launch transport
 
@@ -312,7 +340,8 @@ sessions.
   top-level `access_token` string of at most 4096 bytes in the token response.
 
 Per common §9, the token session reveals exactly these ranges; every other
-byte stays behind a blinded, charset-constrained hash commitment:
+byte stays behind a charset-constrained range commitment of the pinned
+Attestation Verifier:
 
 | Range | Revealed | Why |
 |---|---|---|
@@ -522,8 +551,9 @@ local ceremony and the later `/user` transcript. The separately returned
 | `client_secret` | no | never revealed, per REQ-PLAT-35A |
 | everything else | no | headers, status line, `scope`, `token_type`, other response fields |
 
-Every unexposed range stays behind a blinded hash commitment, bounded by
-revealed anchor bytes and charset-constrained per common REQ-COMMON-20. The
+Every unexposed range stays behind the pinned Attestation Verifier's range
+commitment, bounded by revealed anchor bytes and charset-constrained per common
+REQ-COMMON-20. The
 `token_type` and scope rule of REQ-PLAT-36 are asserted in circuit against
 their committed ranges without disclosure. Revealing those bytes would add no
 check and would widen exposure.
@@ -592,6 +622,26 @@ the commitments while keeping the client secret from the browser.
   and path of the `/user` request. The Consuming Contract MUST compare both
   endpoint triples with the `github/v1` profile.
 
+- REQ-PLAT-52A (upholds SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01, SP-FRESH-01):
+  The Final Identity Circuit MUST expose exactly the following GitHub public
+  inputs:
+
+  | Public input | Authenticated source |
+  |---|---|
+  | Claim Digest | public input bound to the nested `code_verifier` under common REQ-COMMON-15 |
+  | client identifier | token proof `client_id` |
+  | token-attestation timestamp | token proof |
+  | identity-attestation timestamp | notarized `/user` session |
+  | revealed identity-response ranges | notarized `/user` response containing `id` and `login` |
+  | token endpoint authority, method, and path | token proof |
+  | identity endpoint authority, method, and path | notarized `/user` session |
+
+  The Final Identity Circuit MUST carry every token-proof value in this table
+  unchanged from the verified nested proof. The Final Identity Circuit MUST
+  keep the code, redirect URI, verifier, bearer, bearer commitment, and all
+  hidden-range commitments private. The Final Identity Circuit MUST NOT expose
+  a detached `userId`, handle, or timestamp.
+
 Changing the pinned API version is a profile and verifier revision, not
 runtime configuration. The granted scope is enforced inside the token proof
 but is not a final public proof input. The bearer is never disclosed by the
@@ -639,13 +689,16 @@ contract.
   A Google response carrying an authorization code or access token is rejected,
   and the deployment contains no Google exchange route or client secret.
   Verification: inspection of emitted artifacts.
-- TEST-PLAT-06 (exercises REQ-COMMON-19D, REQ-PLAT-16, REQ-PLAT-16A, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
-  A token with a foreign issuer, foreign audience, `email_verified: false`, a
+- TEST-PLAT-06 (exercises REQ-COMMON-19D, REQ-PLAT-16, REQ-PLAT-16A, REQ-PLAT-16B, REQ-PLAT-17, REQ-PLAT-19, REQ-PLAT-20, REQ-PLAT-21, REQ-PLAT-23):
+  A token with a malformed compact serialization, padded segment, `alg` other
+  than `RS256`, foreign issuer, foreign audience, `email_verified: false`, a
   quoted or non-boolean `email_verified`, a quoted, negative, fractional,
   exponent, leading-zero, or overflowing `exp`, a duplicated top-level claim,
-  or an untrusted signing modulus is rejected in each case. A cryptographically
-  valid proof under an inactive modulus passes circuit verification but is
-  rejected by the Consuming Contract.
+  a noncanonical JWK integer, a different exponent, or an untrusted signing
+  modulus is rejected in each case. Header, payload, signature, or public-output
+  substitution is rejected. A cryptographically valid proof under an inactive
+  signing modulus passes circuit verification but is rejected by the
+  Consuming Contract.
 - TEST-PLAT-07 (exercises REQ-PLAT-22, REQ-PLAT-09, REQ-PLAT-09A):
   A proof at or after `proofValidUntil`, and an attestation timestamp more than
   `maxFutureAttestationSkew` ahead of `block.timestamp`, are rejected. A later
@@ -654,7 +707,7 @@ contract.
   signed `exp` for both values.
 - TEST-PLAT-08 (exercises REQ-PLAT-24):
   The trusted modulus set contains every modulus currently published at
-  Google's JWKS endpoint.
+  Google's JWKS endpoint, and every corresponding exponent is 65537.
 - TEST-PLAT-09 (exercises REQ-PLAT-29, REQ-PLAT-46):
   A transcript whose disclosed `code` differs from the code consumed at
   redirect ingress is rejected on X and on GitHub.
@@ -685,10 +738,17 @@ contract.
   A token proof with a bad proof or notary signature, a foreign endpoint, a
   foreign client, a foreign verifier, or a bearer that does not open the
   commitment is discarded in each case, and no resume record is written.
+- TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A):
+  Substituting the Claim Digest, client identifier, either timestamp, either
+  endpoint triple, or the revealed identity-response ranges between the token
+  proof, identity attestation, and final proof is rejected. The final proof
+  contains no bearer, bearer commitment, code, verifier, redirect URI, hidden
+  range commitment, or detached identity field.
 - TEST-PLAT-16 (exercises REQ-PLAT-53):
   A ceremony whose exchange response was lost restarts from authorization.
-- TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-02, REQ-PLAT-03):
+- TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-02, REQ-PLAT-03):
   A resume that substitutes a newer profile is rejected, an unlisted profile is
+  ineligible, a profile missing either required verifier artifact is
   ineligible, and no claim field originates outside verified public inputs.
 - TEST-PLAT-17A (exercises REQ-PLAT-03, REQ-PLAT-31A, REQ-PLAT-51A):
   Pair authenticated X or GitHub identity-response bytes for account B with a
@@ -765,7 +825,7 @@ untrusted modulus.
 
 ## 10. References
 
-Normative: [RFC6749], [RFC7636], [RFC7519], [OIDC],
-[RFC8446].
+Normative: [RFC6749], [RFC7636], [RFC7515], [RFC7517], [RFC7518], [RFC7519],
+[RFC8017], [OIDC], [RFC8446].
 
 Informative: [RFC9700], [TLSNotary-Proxy].
