@@ -53,7 +53,7 @@ Compromise of Registry governance can change every accepted root and verifier.
 
 | Subject | Single normative owner |
 |---|---|
-| Claim digest, PKCE, extraction, client binding, evidence time | [Common ceremony rules](ceremony-common.md) |
+| Authorization Digest, PKCE, extraction, client binding, evidence time | [Common ceremony rules](ceremony-common.md) |
 | Chain ID, Transaction Author, Block Time, and transaction-data encoding | consumer protocol Chain Profile |
 | Platform endpoints, fields, trust roots, and proof projections | [Identity-platform ceremonies](platform-ceremonies.md) |
 | Redirect transport, persistence, resume, and UI control flow | browser protocol |
@@ -79,9 +79,9 @@ metadata authoritative.
 Collusion sanity check — non-exhaustive: application plus Token-Proof Service
 control can withhold but cannot retarget valid evidence; application plus a
 malicious identity-platform operator defeats identity authenticity for that
-platform but not Claim-Digest binding; any pair containing compromised Registry
-governance, a selected verifier, or the applicable platform/notary trust root
-inherits that single-root compromise. This does not model adaptive or
+platform but not Authorization Digest binding; any pair containing compromised
+Registry governance, a selected verifier, or the applicable platform/notary
+trust root inherits that single-root compromise. This does not model adaptive or
 three-party compromise, shared key custody, browser supply-chain compromise, or
 Consumer Chain failure.
 

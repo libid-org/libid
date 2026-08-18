@@ -7,7 +7,7 @@ Part of the [libID protocol specification](libid.md).
 This document is the normative owner of each platform's OAuth profile,
 authenticated identity fields, evidence composition, proof-validity ceiling,
 exchange service, and platform-specific failure behavior. The
-[common ceremony rules](ceremony-common.md) own the claim digest,
+[common ceremony rules](ceremony-common.md) own the Authorization Digest,
 serialization, PKCE, transcript extraction, client binding, and evidence
 time. The consumer protocol owns Registry dispatch and trust-root governance.
 The browser protocol owns browsing contexts, redirect transport, storage,
@@ -24,8 +24,8 @@ Terms are imported from
 
 Each platform ceremony has an independently versioned immutable profile:
 `google/v1`, `x/v1`, `github/v1`. Every profile fixes the exact Platform
-Verifier Version carried in its Claim Digest and submission; launch profiles
-use `platformVerifierVersion = 1`.
+Verifier Version carried in its Authorization Digest and submission; launch
+profiles use `platformVerifierVersion = 1`.
 
 - REQ-PLAT-01:
   The Canonical Runtime MUST record in the ceremony state the exact profile it
@@ -143,8 +143,8 @@ Proof validity and mutable-metadata ordering use the authenticated times below.
 | GitHub | signed `tokenAttest.timestamp` | `metadataObservedAt + proofLifetime[github]` |
 
 For X and GitHub, "timestamp" is the signed TLSNotary attestation creation
-time. The token attestation is the one-time PKCE and Claim-Digest binding, so
-it alone supplies evidence time: one signed timestamp anchors both metadata
+time. The token attestation is the one-time PKCE and Authorization Digest
+binding, so it alone supplies evidence time: one signed timestamp anchors both metadata
 ordering and proof validity, exactly as Google's single signed `exp` does.
 The identity attestation opens the same bearer and carries the identity
 fields; its own creation time is not an evidence-time input and does not
@@ -153,7 +153,7 @@ refresh the authorization. The named lifetimes are current
 
 Google's signed `exp` already supplies the accepted one-hour ordering and
 validity value. A Google proof also requires its signing modulus to remain in
-the Registry's active set. The Claim Digest carries no expiration.
+the Registry's active set. The Authorization Digest carries no expiration.
 `metadataObservedAt` is the monotone replay watermark of common
 REQ-COMMON-25A. Older evidence cannot regress stored metadata and does not
 block an otherwise valid authority operation.
@@ -185,7 +185,7 @@ Identity evidence is the signed ID Token delivered in the redirect fragment.
 | 4 | `redirect_uri` | immutable redirect URI |
 | 5 | `scope` | `openid email` |
 | 6 | `state` | immutable one-use OAuth state |
-| 7 | `nonce` | `BASE64URL_NOPAD(claimDigest)` |
+| 7 | `nonce` | `BASE64URL_NOPAD(authorizationDigest)` |
 
 The authorization request is plain browser navigation and is never
 notarized; no proof semantics attach to any field above. The table is
@@ -194,7 +194,7 @@ operational guidance for obtaining a token whose signed claims satisfy
 
 - REQ-PLAT-10 (upholds SP-BIND-01):
   The Canonical Runtime MUST set `nonce` to the base64url encoding of the 32
-  Claim Digest bytes, not to hexadecimal text.
+  Authorization Digest bytes, not to hexadecimal text.
 - REQ-PLAT-11 (upholds SP-DELIVERY-01):
   The Canonical Runtime MUST request only `response_type=id_token` with
   `response_mode=fragment`. The Canonical Runtime MUST NOT request an
@@ -212,19 +212,19 @@ operational guidance for obtaining a token whose signed claims satisfy
   and consume it once before accepting the ID Token. No server-side state or
   prepare request participates in this lookup.
 
-Conformance vector, for the Claim Digest of
-[common §5](ceremony-common.md#5-claim-digest):
+Conformance vector, for the Authorization Digest of
+[common §5](ceremony-common.md#5-authorization-digest):
 
 ```text
-claimDigest  = 0xc6fdbd8afe88e9137e8d4d5c821095cee12d7803689a61c4ba204f4c3ccd9d4c
-Google nonce = xv29iv6I6RN-jU1cghCVzuEteANommHEuiBPTDzNnUw
+authorizationDigest = 0x38b1dd79dba45ddb053de8085708f91495d60f61cf8a09955807a128601c8b0c
+Google nonce         = OLHdedukXdsFPegIVwj5FJXWD2HPigmVWAehKGAciww
 ```
 
 ### 3.2 Local token verification
 
 - REQ-PLAT-14 (upholds SP-BIND-01):
   The Canonical Runtime MUST reject an ID Token whose `nonce` differs from the
-  Claim Digest it constructed.
+  Authorization Digest it constructed.
 - REQ-PLAT-15:
   The Redirect Runtime MUST reject a Google response carrying `code` or
   `access_token`. Necessity: neither artifact belongs to this
@@ -261,7 +261,7 @@ require a verifier that dispatches on the header `alg`; none exists here.
 
   | Public input | Authenticated source |
   |---|---|
-  | Claim Digest | signed `nonce`, decoded as exactly 32 bytes |
+  | Authorization Digest | signed `nonce`, decoded as exactly 32 bytes |
   | client identifier | signed `aud` |
   | canonical `userId` | signed `sub` |
   | raw `email` bytes | signed `email`; the Consumer derives the normalized handle |
@@ -275,7 +275,7 @@ require a verifier that dispatches on the header `alg`; none exists here.
   The Proving Circuit MUST prove the signed `iss` equals
   `https://accounts.google.com`.
 - REQ-PLAT-18 (upholds SP-BIND-01):
-  The Proving Circuit MUST prove `nonce` equals the Claim Digest.
+  The Proving Circuit MUST prove `nonce` equals the Authorization Digest.
 - REQ-PLAT-19 (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the signed `aud` as the client-binding public
   input. Admission stays permissionless per common REQ-COMMON-17C; the Consumer
@@ -461,7 +461,7 @@ dependency.
 
   | Public input | Authenticated source |
   |---|---|
-  | Claim Digest | bound to the token request's `code_verifier` under common REQ-COMMON-15 |
+  | Authorization Digest | bound to the token request's `code_verifier` under common REQ-COMMON-15 |
   | client identifier | revealed token-request `client_id` |
   | evidence timestamp | signed `tokenAttest.timestamp`; used for both `metadataObservedAt` and `proofValidUntil` |
   | revealed identity-response ranges | notarized `/users/me` response containing `id` and `username` |
@@ -473,10 +473,10 @@ dependency.
   Circuit MUST NOT add its own `userId`, handle, or timestamp public input.
 
 The circuit proves only two links: the same bearer opens both notarized
-transcripts, and the token request's `code_verifier` derives from the Claim
-Digest (recomputed in circuit per REQ-COMMON-15). Identity, time, and client
-values live in the notary-signed attestations, and the Consumer reads them
-from the revealed bytes. The circuit carries no copy of them, because a
+transcripts, and the token request's `code_verifier` derives from the
+Authorization Digest (recomputed in circuit per REQ-COMMON-15). Identity,
+time, and client values live in the notary-signed attestations, and the Consumer
+reads them from the revealed bytes. The circuit carries no copy of them, because a
 public input that no constraint ties to the transcript is just prover-typed
 transaction data: a reader trusting such a copy instead of the revealed
 bytes would accept a forged value while the proof still verifies. Every fact
@@ -493,9 +493,9 @@ with the `x/v1` profile.
 GitHub uses a confidential client, a deployment-owned token-exchange proof,
 and a browser-owned `/user` TLSNotary session. The
 structure matches X: two attestations, one bearer linked across both, one
-proof binding both to the Claim Digest. The exchange runs server-side because
-the client is confidential, which makes the Token-Proof Service the prover for
-that transcript.
+proof binding both to the Authorization Digest. The exchange runs server-side
+because the client is confidential, which makes the Token-Proof Service the
+prover for that transcript.
 
 ### 6.1 Authorization request
 
@@ -720,7 +720,7 @@ keeping the client secret from the browser.
 
   | Public input | Authenticated source |
   |---|---|
-  | Claim Digest | public input bound to the nested `code_verifier` under common REQ-COMMON-15 |
+  | Authorization Digest | public input bound to the nested `code_verifier` under common REQ-COMMON-15 |
   | client identifier | token proof `client_id` |
   | evidence timestamp | token proof `tokenAttest.timestamp`; used for both `metadataObservedAt` and `proofValidUntil` |
   | revealed identity-response ranges | notarized `/user` response containing `id` and `login` |
@@ -754,8 +754,8 @@ identifier and immutable
 user-ID namespace; canonical handle normalization and authenticated
 observation ordering; client portability or a bounded client family; exact
 authorization and redirect transport; every authenticated request and
-response field with its provenance; how the Claim Digest is carried through
-that platform's authorization; its authenticated client-binding source; an
+response field with its provenance; how the Authorization Digest is carried
+through that platform's authorization; its authenticated client-binding source; an
 authenticated proof-validity ceiling; its trust root and registry lifecycle;
 browser and deployment data exposure, retry, resume, and withholding
 behavior; and conformance vectors.
@@ -835,7 +835,7 @@ Roles: Canonical Runtime, Token-Proof Service, proving circuit, Consumer.
   foreign client, a foreign verifier, or a bearer that does not open the
   commitment is discarded in each case, and no resume record is written.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A):
-  Substituting the Claim Digest, client identifier, evidence timestamp, either
+  Substituting the Authorization Digest, client identifier, evidence timestamp, either
   endpoint triple, or the revealed identity-response ranges between the token
   proof, identity attestation, and final proof is rejected. The final proof
   contains no bearer, bearer commitment, code, verifier, redirect URI, hidden
@@ -903,7 +903,7 @@ profile ineligible for new ceremonies.
 
 A malicious Token-Proof Service cannot rebind a ceremony to other Authorized
 Transaction Data,
-because the Claim Digest fixes it before the platform is contacted. It can
+because the Authorization Digest fixes it before the platform is contacted. It can
 withhold, and it can attempt to substitute a token obtained under a
 separately arranged authorization; REQ-PLAT-46 rejects that substitution by
 requiring the proven code to be the one this ceremony consumed. A proof
