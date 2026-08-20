@@ -486,6 +486,7 @@ interface PopupHello {
 interface PopupOAuthResult {
   type: 'popup-oauth-result'
   ceremonyId: string
+  status: 'accepted' | 'denied'
   oauthResult: string
 }
 
@@ -505,7 +506,12 @@ interface PopupAbort {
 interface PopupNotifyEvent {
   type: 'popup-notify-event'
   ceremonyId: string
-  event: CeremonyEvent
+  event: {
+    type: 'progress'
+    stage: CeremonyStage
+    platformStep: PlatformStep | null
+    timestamp: number
+  }
 }
 
 interface PopupDeliverProof {
@@ -515,11 +521,6 @@ interface PopupDeliverProof {
   attestations: readonly Uint8Array[]
 }
 
-interface PopupDenied {
-  type: 'popup-denied'
-  ceremonyId: string
-}
-
 type PopupMessage =
   | PopupHello
   | PopupOAuthResult
@@ -527,7 +528,6 @@ type PopupMessage =
   | PopupAbort
   | PopupNotifyEvent
   | PopupDeliverProof
-  | PopupDenied
 ```
 
 After clearing its URL and loading configuration, the popup sends the
@@ -551,19 +551,20 @@ severs the opener, and renders the same fixed unapproved-application result as
 an invalid opener origin. No callback value is rendered or used for navigation.
 
 After readiness, popup-to-application messages are `PopupOAuthResult`,
-`PopupAbort`, `PopupNotifyEvent`, `PopupDeliverProof`, and `PopupDenied`.
+`PopupAbort`, `PopupNotifyEvent`, and `PopupDeliverProof`.
 Application-to-popup messages are `PopupProve` and parameterless
 `PopupAbort`. They are the two application responses to `PopupOAuthResult`;
 application-to-popup Abort may also stop a ceremony after `PopupProve`. Before
-`PopupProve` it clears the OAuth result and renders restart; afterwards it cancels reachable
-proving work and attempts to close. Popup-to-application Abort reports a
+`PopupProve`, Abort clears the OAuth result and attempts to close when the retained
+result is a valid denial; otherwise it renders restart. Afterwards it cancels
+reachable proving work and attempts to close. Popup-to-application Abort reports a
 technical terminal failure and rejects the live Ceremony. Direction supplies
 the meaning; Abort carries no reason and has no response. Warmup has no public
 message or input of its own.
 
-`PopupOAuthResult` parses the captured OAuth `state` into `ceremonyId` and sends
-that ID with the bounded provider result to
-the authenticated application client. The application origin is trusted for
+`PopupOAuthResult` parses the captured OAuth `state` into `ceremonyId`, classifies
+the closed top-level result as accepted or denied, and sends that ID, status,
+and bounded provider result to the authenticated application client. The application origin is trusted for
 both the transient `PopupProve` and provider result; the protocol does
 not attempt to isolate either value from other scripts executing in that
 origin. Exact `targetOrigin`, `MessageEvent.origin`, and `MessageEvent.source`
@@ -572,12 +573,16 @@ The application-scoped `CeremonyClient` uses its in-memory table to select one
 live `Ceremony`; it does not query IndexedDB or reveal the ID to the
 composition. For an unknown, stale, replayed, or post-reload state, the client
 sends `PopupAbort` and the popup renders restart. Otherwise, the client
-atomically claims the matching state before constructing `PopupProve`
-from that live Ceremony's ID, selected platform/version, derived code verifier,
-and the received `oauthResult`.
-The popup exact-matches the echoed result to its retained capture, validates the
-return, and then forwards that exact `PopupProve` to the qualified prover without
-another app roundtrip. The claimed map entry,
+atomically claims the matching state and exact-validates the status and raw
+result against that Ceremony's platform profile. An invalid result rejects the
+Ceremony and sends `PopupAbort`. A valid denial emits the local OAuth-result
+event, resolves with `{ status: 'denied' }`, and sends `PopupAbort` for popup
+cleanup. A valid acceptance emits the local OAuth-result event and constructs
+`PopupProve` from the live Ceremony's ID, selected platform/version, derived
+code verifier, and received `oauthResult`.
+The popup exact-matches the echoed result to its retained capture, validates
+the current configuration and `PopupProve` shape, and forwards that exact
+message to the qualified prover without another app roundtrip. The claimed map entry,
 single-use Ceremony instance, and one-shot popup state machine prevent duplicate
 proving; the final Job CAS prevents a late result from producing an application
 effect. No separate OAuth-state value, job revision, composition discriminator, wallet state,
@@ -618,26 +623,28 @@ sequenceDiagram
     P-->>C: Internally ready
     C->>A: PopupHello(version)
     A-->>C: PopupHello(version)
-    C->>A: PopupOAuthResult(ceremonyId, oauthResult)
+    C->>A: PopupOAuthResult(ceremonyId, status, oauthResult)
     alt No matching live Ceremony
         A-->>C: PopupAbort
         C->>C: Render fixed restart
     else Matching live Ceremony
         A->>A: Claim live Ceremony in memory
-        A-->>C: PopupProve(minimal proving inputs)
-        C->>C: Validate callback, config, and ceremony
+        A->>A: Validate status and callback against Ceremony
 
         alt Invalid callback or setup
-            C-->>A: PopupAbort
             A->>A: Reject Ceremony
-            C->>C: Clear credential and render fixed restart
+            A-->>C: PopupAbort
+            C->>C: Clear result and render fixed restart
         else Valid provider denial
-            C->>A: PopupNotifyEvent(oauth-result denied)
-            C->>A: PopupDenied(ceremonyId)
+            A->>A: Emit CeremonyEvent(oauth-result denied)
             A->>A: Resolve IdentityResult(denied)
             A->>J: Retire Job
+            A-->>C: PopupAbort
+            C->>C: Clear result and close
         else Valid provider success
-            C->>A: PopupNotifyEvent(oauth-result accepted)
+            A->>A: Emit CeremonyEvent(oauth-result accepted)
+            A-->>C: PopupProve(minimal proving inputs)
+            C->>C: Echo-check result and validate config
             P-->>C: PopupHello from qualified iframe or popup
             C->>P: Forward PopupProve unchanged
             P-->>C: PopupNotifyEvent(platform step)
@@ -702,12 +709,12 @@ nonempty fragment and empty query; X and GitHub
 accept a nonempty query and empty fragment. Platform-specific exact parsing is
 owned by the selected platform version.
 
-An unsupported request/configuration combination clears the return and renders
-**Application updated—return and try again** without mutating the Job. An
-unknown state, malformed response, wrong origin, timeout, or internal failure
-renders a fixed **Restart authorization** result and exposes no callback value.
-After a live Ceremony has been selected, either fixed failure first sends
-popup-to-application `PopupAbort`; failures before live binding send nothing.
+An unsupported request/configuration combination discovered after `PopupProve`
+clears the return, sends popup-to-application `PopupAbort`, and renders
+**Application updated—return and try again**. An unknown state, malformed
+response, wrong origin, timeout, or internal failure sends application-to-popup
+`PopupAbort` after live binding and renders a fixed **Restart authorization**
+result. Failures before live binding send nothing and expose no callback value.
 
 ## Popup/prover channel
 
@@ -808,11 +815,11 @@ errors. The application may map this advisory view into its broader job
 progress; later confirmation, submission, and finality never enter the
 Ceremony Popup Protocol.
 
-After validating the provider return against the claimed Ceremony, the popup
-emits exactly one `oauth-result` event: accepted before exchange/proving, or
-denied before `IdentityResult` resolves as denied. A popup close or invalid
-return emits neither. Events are advisory; `proveUserIdentity()` remains the
-authoritative result.
+After validating `PopupOAuthResult` against the claimed Ceremony, the client
+emits exactly one local `oauth-result` event: accepted before `PopupProve`, or
+denied before `IdentityResult` resolves as denied. `PopupNotifyEvent` carries
+only prover progress. A popup close or invalid return emits neither. Events are
+advisory; `proveUserIdentity()` remains the authoritative result.
 
 The prover's same-origin `BroadcastChannel` supplies routing inside the trusted
 deployment, not separate sender authentication, durable state, or proof
