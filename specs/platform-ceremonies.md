@@ -602,9 +602,12 @@ copy of any of them, because a fact that can be checked in the open does not
 belong in a proof.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
-  The Ceremony Client MUST complete the token request within X's
-  authorization-code deadline of 30 seconds. The Ceremony Client MUST abandon
-  the ceremony otherwise.
+  The Ceremony Client MUST complete the request direction of X's first
+  notarized token session before X's 30-second authorization-code deadline.
+  The deadline ends when X has received the complete token request; receiving
+  or notarizing the response, running the identity session, proving, and proof
+  delivery are outside it. The Ceremony Client MUST abandon the ceremony if it
+  cannot complete that request direction in time.
 
 ## 6. GitHub ceremony
 
@@ -1071,7 +1074,10 @@ Platform Verifier, Notary Service, Consumer.
   different bearers is rejected. No proof statement covers `token_type` or the
   granted scope.
 - TEST-PLAT-11 (exercises REQ-PLAT-33):
-  A token request issued after the 30-second deadline is abandoned.
+  The complete request direction of X's first notarized session reaches X
+  before the authorization-code deadline in the success case; delaying its
+  completion past the deadline abandons the ceremony, while delaying only the
+  response or later proof work does not trigger that deadline.
 - TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C):
   An authorization request carrying a scope other than `read:user` is
   rejected; no public proof input derives from the client secret; an exchange
