@@ -297,19 +297,9 @@ redirect URI in the live Ceremony. `PopupProve` carries those values; the popup
 applies its existing opener-origin validation and closed platform/version
 dispatch without fetching configuration again.
 
-### Ceremony plan and result
+### Ceremony result
 
 ```ts
-interface CeremonyAuthorization {
-  chainId: Uint8Array
-  platformId: PlatformId
-  operationDomain: Uint8Array
-  transactionData: Uint8Array
-  platformVerifierVersion: PlatformVerifierVersion
-  authorizationNonce: Uint8Array
-  authorizationDigest: Uint8Array
-}
-
 interface Identity {
   oauthProof: OAuthProof
   platformId: PlatformId
@@ -337,24 +327,26 @@ normative ceremony specification.
 public authorization fields the Consumer will verify. Its platform-specific
 shape is not redefined here.
 `@libid/ceremony/protocol`
-checks that exact `OAuthProof` against `CeremonyAuthorization`, derives
+checks that exact `OAuthProof` against the live Ceremony's retained
+authorization fields, derives
 the identity preview only from locally verified proof inputs and authenticated
 attestation bytes, enforces the platform's canonical encodings and configured client, and
 returns `Identity` with the same `OAuthProof`. The client constructs it from
-the retained `CeremonyAuthorization` and the proof and attestations returned by
-the prover. The ceremony exact-matches the
+those retained fields and the proof and attestations returned by the prover.
+The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
 resolving `proveUserIdentity()`. `status: 'accepted'` means the provider result
 and local checks succeeded; only Consumer acceptance makes Identity
 authoritative. Callers cannot supply or override Identity fields.
 
-The live `Ceremony` privately retains its ID, `CeremonyAuthorization`, OAuth
-client and redirect, derived code verifier, and popup. Before proof acceptance,
-the durable Job stores only its `jobId` and composition-owned input and state;
-it does not store `CeremonyAuthorization`. A restart creates a fresh Ceremony
+The live `Ceremony` privately retains its ID, copied operation inputs, selected
+platform and verifier version, authorization nonce and digest, OAuth client and
+redirect, derived code verifier, and popup. A restart creates a fresh Ceremony
 with a fresh nonce, digest, and verifier. After proof acceptance, the Job may
-store the accepted `IdentityResult`. No Job or IndexedDB index stores a code
-verifier, provider credential, private witness, or separate OAuth-state value.
+store the accepted `IdentityResult` and its public `OAuthProof` fields. Before
+acceptance, no Job or IndexedDB index stores the authorization nonce or digest,
+code verifier, provider credential, or private witness. No separate OAuth-state
+value or pre-proof checkpoint is ever persisted.
 
 The ceremony receives no action kind, job revision, chain RPC, Registry client,
 wallet key, threshold, fee, connector, transaction submitter, database,
@@ -735,7 +727,7 @@ both exact-validate the record.
 The prover does not receive the expected Authorization Digest. Google exposes
 the signed token nonce as a proof public input; X and GitHub expose the
 attested code verifier. The Ceremony Client matches that verified output to
-its retained `CeremonyAuthorization` after delivery.
+its retained authorization fields after delivery.
 
 After `PopupProve`, the prover sends zero or more `PopupNotifyEvent` records followed
 by exactly one `PopupDeliverProof`. Either side may instead send parameterless
