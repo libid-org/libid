@@ -682,7 +682,12 @@ interface OAuthRedirectCapture {
   fragment: string
 }
 
-startPopup(capture, allowedAppOrigins: readonly string[])
+declare function startPopup(
+  capture: OAuthRedirectCapture,
+  allowedAppOrigins: readonly string[],
+): void
+
+startPopup(capture, allowedAppOrigins)
 ```
 
 Empty query plus empty fragment is the scripted warmup launch. The bootstrap
