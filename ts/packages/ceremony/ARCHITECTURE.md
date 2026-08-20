@@ -350,13 +350,16 @@ resolving `proveUserIdentity()`. `status: 'accepted'` means the provider result
 and local checks succeeded; only Consumer acceptance makes Identity
 authoritative. Callers cannot supply or override Identity fields.
 
-`CeremonyRequest` is private to the live application/popup/prover protocol;
-the durable Job stores only its `jobId`, `CeremonyAuthorization`, and
-composition-owned state. In particular, no Job or IndexedDB index stores OAuth
-state, provider credentials, or private witness material. For X and GitHub,
-the app-owned authorization nonce temporarily also acts as the PKCE secret; it
-is never sent to server storage or another untrusted destination before token
-exchange completes.
+`CeremonyRequest` is private to the live application/popup/prover protocol.
+Before proof acceptance, the durable Job stores only its `jobId` and
+composition-owned input and state; it does not store `CeremonyAuthorization`.
+A restart creates a fresh Ceremony with a fresh authorization nonce, digest,
+and OAuth state. After proof acceptance, the Job may store the accepted
+`IdentityResult`, whose `OAuthProof` publishes the nonce. No Job or IndexedDB
+index stores OAuth state, provider credentials, or private witness material.
+For X and GitHub, the authorization nonce temporarily also acts as the PKCE
+secret and remains in live memory, crossing only the authenticated
+application/popup/prover channel until token exchange completes.
 
 The ceremony receives no action kind, job revision, chain RPC, Registry client,
 wallet key, threshold, fee, connector, transaction submitter, database,
