@@ -302,20 +302,20 @@ the selected Platform Verifier, including this Authorization Digest layout.
   those canonical bytes differ from every other Consumer Chain on which the
   same operation domains may accept libID OAuth Proofs. This specification
   supplies no global chain-identifier registry; reusing the bytes forfeits
-  cross-chain replay separation. The Ceremony Client MUST take the Chain
-  ID it commits in the Authorization Digest from the Chain Profile of the
-  Consumer Chain the ceremony authorizes, sourcing it from its execution
-  environment where that chain exposes a chain identity to a deployed program
-  and from immutable deployment configuration where it does not. The Proof
-  Verifier MUST take the Chain ID of its digest recomputation from that same
-  Chain Profile value, sourced the same way. The Ceremony Client MUST NOT
-  take the Chain ID from caller-controlled input. The Proof Verifier MUST NOT
-  take the Chain ID from Authorized Transaction Data or any other
-  caller-controlled input. Necessity: the Ceremony Client constructs the digest and
-  the verifier recomputes it, so the two must read one value or the
-  recomputation never matches; several Consumer Chains expose no chain
-  identity at execution time, so environment-sourcing cannot be required
-  universally; what must hold everywhere is that a caller cannot choose it.
+  cross-chain replay separation. The application composition MUST select the
+  Consumer Chain's Chain Profile and supply its canonical Chain ID to the
+  Ceremony Client for each ceremony. The Ceremony Client MUST validate and
+  commit that exact 32-byte value. Selecting a Chain Profile is destination
+  selection, not proof authority: the Proof Verifier MUST independently take
+  the Chain ID of its digest recomputation from its own Consumer-Chain
+  environment or immutable deployment configuration. The Proof Verifier MUST
+  NOT take the Chain ID from the OAuth Proof, Authorized Transaction Data, or
+  any other caller-controlled input. Necessity: an application can select a
+  destination chain just as it selects the operation and its transaction data,
+  while independent Consumer-Chain recomputation makes a proof constructed for
+  any other chain unusable there. Several Consumer Chains expose no chain
+  identity at execution time, so environment-sourcing cannot be required of
+  the browser universally.
 - REQ-COMMON-01D (upholds SP-BIND-01, SP-FRESH-01):
   The Chain Profile MUST define how the Consumer Chain authenticates the
   Transaction Author and supplies Block Time. The Consumer MUST obtain both
@@ -1138,10 +1138,11 @@ the constructions that role implements.
   Data with trailing bytes, a noncanonical encoding, or an argument shape
   other than the transaction kind's exact format, is rejected.
 - TEST-COMMON-02A (exercises REQ-COMMON-01C, REQ-COMMON-01D, REQ-COMMON-04):
-  The Proof Verifier refuses an empty, malformed, or caller-substituted Chain
-  ID; a Ceremony Client and Proof Verifier reading one Chain Profile agree
-  on the Chain ID, and a Ceremony Client committing any other value produces a digest
-  the recomputation rejects; two Chain Profiles which accept the same operation
+  A Ceremony Client accepts the canonical Chain ID selected from either of two
+  Chain Profiles and produces distinct digests; the Proof Verifier accepts the
+  proof for its own Chain Profile and rejects the proof constructed for the
+  other, and neither the OAuth Proof nor Authorized Transaction Data can
+  override its Chain ID. Two Chain Profiles which accept the same operation
   domains are ineligible when they reuse the same canonical identifier bytes;
   the Consumer rejects a
   caller-substituted Block Time; and a Transaction Submitter that cannot satisfy

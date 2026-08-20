@@ -174,10 +174,10 @@ stable discovery order, not a product ranking; applications may present another 
 Neither array contains OAuth clients, verifier versions, server configuration,
 or display metadata.
 
-The caller owns the canonical bounded `operationDomain` and
-`transactionData`; the selected Chain Profile supplies the canonical `chainId`.
-The client exact-validates both 32-byte values, otherwise treats all three as
-opaque, and requires the selected platform to be enabled
+The composition selects a Chain Profile per ceremony and supplies its canonical
+`chainId` together with the canonical bounded `operationDomain` and
+`transactionData`. The client exact-validates both 32-byte values, otherwise
+treats all three as opaque, and requires the selected platform to be enabled
 by validated `ServerConfig`, chooses the newest locally preferred verifier
 version also advertised for that platform, generates a fresh 32-byte
 authorization nonce, computes the authorization digest, and constructs OAuth.
