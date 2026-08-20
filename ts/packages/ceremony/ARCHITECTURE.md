@@ -707,11 +707,13 @@ query and empty fragment.
 
 An unsupported or invalid input discovered after `PopupProve`
 clears the return, sends popup-to-application `PopupAbort`, and renders
-**Application updated—return and try again**. An unknown state, malformed
-response, wrong origin, timeout, or internal failure sends application-to-popup
-`PopupAbort` after live binding; the popup clears the result, attempts to close,
-and renders one fixed fallback message if closing fails. Failures before live
-binding send nothing and expose no callback value.
+**Application updated—return and try again**. After live binding, an unknown or
+stale ceremony ID or a raw result rejected by the selected platform/version
+parser makes the application send `PopupAbort`; the popup clears the result,
+attempts to close, and renders one fixed fallback message if closing fails. A
+wrong opener origin, handshake timeout, or redirect capture without a valid
+bounded ceremony ID fails before live binding, sends nothing, and exposes no
+callback value.
 
 ## Popup/prover channel
 
@@ -748,8 +750,8 @@ second protocol or version exists.
 The prover performs the selected version's exchange, notarization, witness
 construction, and proof generation. It returns only the bounded generated
 proof and attestations through `PopupDeliverProof`; it does not receive the
-operation domain, chain ID, transaction data, authorization nonce, client ID,
-or redirect URI, and it does not assemble or verify `OAuthProof` or
+operation domain, chain ID, transaction data, or authorization nonce, and it
+does not assemble or verify `OAuthProof` or
 construct `Identity`. The application client combines the returned material
 with its retained ceremony fields, assembles the exact normative `OAuthProof`,
 and verifies it locally. For GitHub, the prover—not the
