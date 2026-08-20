@@ -548,9 +548,11 @@ REQ-COMMON-18A requires.
   text, such as the display name, that can embed a lookalike field.
 - REQ-PLAT-31A (upholds SP-BIND-01):
   The Canonical Runtime MUST derive the X `userId` and normalized handle from
-  those same revealed `id` and `username` bytes. The Proving Circuit
-  MUST NOT expose a second independently supplied representation of either
-  identity field.
+  those same revealed `id` and `username` bytes, by the same algorithm
+  REQ-PLAT-31 fixes. That derivation is the repeat common REQ-COMMON-19E
+  permits, and the extraction of REQ-PLAT-31 is the authoritative one. The
+  Proving Circuit MUST NOT expose a second independently supplied
+  representation of either identity field.
 - REQ-PLAT-32 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST assert that one private bearer value opens the
   bearer commitment of the token attestation and the `Authorization` bearer
@@ -914,9 +916,11 @@ REQ-COMMON-18A requires.
   order does not guarantee which of the two closes it.
 - REQ-PLAT-51A (upholds SP-BIND-01):
   The Canonical Runtime MUST derive the GitHub `userId` and normalized handle
-  from those same revealed `id` and `login` bytes. The Proving Circuit
-  MUST NOT expose a second independently supplied representation of either
-  identity field.
+  from those same revealed `id` and `login` bytes, by the same algorithm
+  REQ-PLAT-51 fixes. That derivation is the repeat common REQ-COMMON-19E
+  permits, and the extraction of REQ-PLAT-51 is the authoritative one. The
+  Proving Circuit MUST NOT expose a second independently supplied
+  representation of either identity field.
 - REQ-PLAT-52 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST assert that one private bearer value opens the
   bearer commitment of the token-exchange attestation and the

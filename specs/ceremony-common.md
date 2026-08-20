@@ -461,14 +461,12 @@ an identity session — so one submission on either path pays two fees.
   verifies nothing.
 - REQ-COMMON-05B:
   The Proof Verifier MUST support more than one Platform Verifier Version of
-  one identity platform concurrently. The Verifier Governance Process MUST
-  keep a version it is replacing in the Supported Version Set until every
-  ceremony that could have begun under it has passed its `proofValidUntil`.
-  The Verifier Governance Process MAY remove a version before then where that
-  version is unsafe, stranding the ceremonies that depend on it. Necessity:
-  concurrent support alone permits retiring the outgoing version the moment
-  its replacement activates, which strands every ceremony already in flight;
-  the emergency case is the one where stranding is the point.
+  one identity platform concurrently. Necessity: concurrent support is what
+  lets a deployment run a new version beside the one it replaces while holders
+  migrate. When a version leaves the Supported Version Set is the Verifier
+  Governance Process's decision under REQ-COMMON-05C, and this specification
+  fixes no minimum overlap: a ceremony stranded by a removal is recoverable,
+  because its holder can run the ceremony again under a supported version.
 - REQ-COMMON-05C:
   The Verifier Governance Process MUST own every addition to and removal from
   the Supported Version Set. Necessity: the set decides which proof statements
@@ -739,8 +737,12 @@ inside evidence that stays hidden — and only those fields, never the whole
 template. The Platform Verifier checks the fields carried in revealed
 attestation bytes, which it reads for itself. The Canonical Runtime checks the
 ceremony state that exists only in the browser and reaches no proof and no
-chain. The extraction of each field the profile needs happens in exactly one
-of the three; a comparison on the extracted value may happen in another. A JSON string check matches the full `"field":"` delimiter,
+chain. One role's extraction of each field is the authoritative one — the
+Proving Circuit's where the bytes stay hidden, the Platform Verifier's where
+they are revealed. The Canonical Runtime may repeat an authoritative
+extraction over the same bytes so the browser can show what the proof will
+bind, and nothing on chain depends on that repeat. A comparison on an
+already-extracted value may happen in a different role again. A JSON string check matches the full `"field":"` delimiter,
 the value, and its closing quote. JSON unsigned integers and booleans use the
 typed local matches of REQ-COMMON-19D. A form-field check asserts a field
 boundary, the exact ASCII name and `=`, the value, and the next `&` or body end.
@@ -904,19 +906,26 @@ and no `authorization` needle to count.
   the authenticated payload length and reject quoted, signed, fractional,
   exponent, leading-zero, padded, or wrong-type alternatives.
 - REQ-COMMON-19E (upholds SP-BIND-01):
-  The Platform Profile MUST assign the extraction of each field it requires —
-  the check that a range of authenticated bytes is that field's value — to
-  exactly one of the Proving Circuit, the Platform Verifier, and the Canonical
-  Runtime. The Platform Profile MUST assign an extraction to the Proving
-  Circuit only where the bytes carrying the field stay hidden, to the Platform
-  Verifier only where they are revealed, and to the Canonical Runtime only
-  where no proof statement and no Consumer Chain component reads the value. A
+  The Platform Profile MUST fix, for each field it requires, the authenticated
+  bytes that field is read from and the one algorithm that reads them. The
+  Platform Profile MUST name exactly one role whose extraction of that field
+  is authoritative. The Platform Profile MUST make the Proving Circuit
+  authoritative where those bytes stay hidden, and the Platform Verifier
+  authoritative where they are revealed to the Consumer Chain. The Platform
+  Profile MUST make the Canonical Runtime authoritative only for a field no
+  proof statement and no Consumer Chain component reads. The Canonical Runtime
+  MAY repeat an extraction another role owns, over the same bytes by the same
+  algorithm, for display and local checks. The Platform Profile MUST NOT let a
+  proof statement or a Consumer Chain component depend on that repeat. A
   comparison performed on an already-extracted value is not an extraction, and
-  the Platform Profile MAY assign it to a different role. Necessity: an
-  extraction named as two roles' work is one each can assume the other
-  performed, and an extraction assigned to a role that cannot see the bytes is
-  a check nobody performs; the Google audience, extracted in circuit and
-  compared on chain, is the ordinary case the second sentence allows.
+  the Platform Profile MAY assign it to a different role. Necessity: two
+  authoritative extractions of one field are two answers, each side able to
+  assume the other checked it; the runtime's repeat is what lets the browser
+  show the user the identity the proof will bind, so forbidding it outright
+  would reopen the gap where the display names one account and the proof binds
+  another; and an authoritative extraction owned by a role that cannot see the
+  bytes is a check nobody performs. The Google audience, extracted in circuit
+  and compared on chain, is the ordinary case the comparison sentence allows.
 - REQ-COMMON-19C (upholds SP-BIND-01, SP-EXCHANGE-01):
   The Proving Circuit extracting a field from an
   `application/x-www-form-urlencoded` request MUST assert that the match begins
@@ -1104,7 +1113,9 @@ the constructions that role implements.
   other than the transaction kind's exact format, is rejected.
 - TEST-COMMON-02A (exercises REQ-COMMON-01C, REQ-COMMON-01D, REQ-COMMON-04):
   The Proof Verifier refuses an empty, malformed, or caller-substituted Chain
-  ID; the Consumer rejects a
+  ID; a Canonical Runtime and Proof Verifier reading one Chain Profile agree
+  on the Chain ID, and a runtime committing any other value produces a digest
+  the recomputation rejects; the Consumer rejects a
   caller-substituted Block Time; and a Transaction Submitter that cannot satisfy
   the transaction kind's Transaction Author predicate.
 - TEST-COMMON-03 (exercises REQ-COMMON-03, REQ-COMMON-03A):
@@ -1142,10 +1153,11 @@ the constructions that role implements.
   placed in padding past the payload length, fails to prove; a form-field match
   not bounded by the body start or `&` and the next `&` or body end fails to
   prove; and a transcript whose ranges do not tile the profile layout is
-  rejected. A profile assigning one field's extraction to two roles, or
-  assigning an extraction to a role that cannot see the bytes, is ineligible,
-  while a profile extracting a field in one role and comparing it in another
-  stays eligible. A profile whose Attestation Count is nonzero and which pins no
+  rejected. A profile naming two authoritative extractions of one field, or
+  naming an authoritative extraction by a role that cannot see the bytes, is
+  ineligible; a profile whose Canonical Runtime repeats an extraction the
+  Platform Verifier owns, and one extracting a field in one role and comparing
+  it in another, both stay eligible. A profile whose Attestation Count is nonzero and which pins no
   Notary Service or no attestation format is ineligible, while a profile
   whose Attestation Count is zero stays eligible pinning neither.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
