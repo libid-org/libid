@@ -245,7 +245,7 @@ inputs, validates the provider return, performs
 exchange and proving, verifies the proof locally, and resolves with an accepted
 `IdentityResult`. A valid ceremony-bound provider denial resolves with a denied
 `IdentityResult`; popup
-closure, malformed return, configuration mismatch, isolation failure, and
+closure, malformed return, invalid proving input, isolation failure, and
 proving failure are ordinary ceremony failures, not denial.
 
 The Job is already committed before `proveUserIdentity()` and remains the composition's
@@ -279,10 +279,9 @@ interface ServerConfig {
 }
 ```
 
-The client and popup each fetch this record with native `fetch` and validate it
-through `@libid/ceremony/protocol`; there is no configuration module. The
-frontend fetch requires an exact browser `Origin`; the redirect fetches it
-same-origin after clearing its callback URL. `redirectUri` is the registered HTTPS URL with
+The application-scoped client fetches this record once with native `fetch` and
+validates it through `@libid/ceremony/protocol`; there is no configuration
+module. The fetch requires an exact browser `Origin`. `redirectUri` is the registered HTTPS URL with
 path exactly `/oauth/redirect`, no credentials, query, or fragment. Loopback
 development may use HTTP. `allowedAppOrigins` is a nonempty server-controlled
 set of canonical origins. Each platform entry contains its public client ID and
@@ -291,20 +290,14 @@ no meaning: the client chooses the newest version according to its closed local
 implementation table from the intersection. Platform entries contain no
 credentials.
 
-The frontend cannot make the redirect accept another configuration. The popup
-accepts the platform and verifier version in `PopupProve` only when its independently
-fetched configuration and closed dispatch table support that pair, and uses
-only that configuration's client and redirect.
+The client freezes the selected platform, verifier version, client ID, and
+redirect URI in the live Ceremony. `PopupProve` carries those values; the popup
+applies its existing opener-origin validation and closed platform/version
+dispatch without fetching configuration again.
 
 ### Ceremony plan and result
 
 ```ts
-interface OAuth {
-  redirectUri: string
-  clientId: string
-  codeVerifier: string | null
-}
-
 interface CeremonyAuthorization {
   chainId: Uint8Array
   platformId: PlatformId
@@ -495,6 +488,8 @@ interface PopupProve {
   ceremonyId: string
   platformId: PlatformId
   platformVerifierVersion: PlatformVerifierVersion
+  clientId: string
+  redirectUri: string
   oauthResult: string
   codeVerifier: string | null
 }
@@ -525,7 +520,7 @@ type PopupMessage =
   | PopupDeliverProof
 ```
 
-After clearing its URL and loading configuration, the popup sends the
+After clearing its URL, the popup sends the
 non-sensitive `PopupHello` to `window.opener`. It does not know the
 opener's origin yet, so this one discovery message may use `*`; it contains only
 the fixed protocol version. The application client accepts it only from a
@@ -534,8 +529,8 @@ answers with the same `PopupHello` directly to that source and origin. Before
 sending its initial Hello,
 the popup loads `/oauth/prove` and starts or joins the worker-owned warmup; Hello
 therefore also means that the asset single flights exist or warmup is known to
-be unavailable. The popup accepts the answering Hello only from `window.opener` and a
-browser-reported origin in `ServerConfig.allowedAppOrigins`. That exchange binds
+be unavailable. The popup accepts the answering Hello only from `window.opener`
+after the redirect's server-controlled validation of the browser-reported app origin. That exchange binds
 all later traffic to the exact source/origin pair. Messages are direct;
 unknown fields or types, wrong directions, stale order, source/origin changes,
 and replays change no state.
@@ -570,13 +565,13 @@ composition. For an unknown, stale, replayed, or post-reload state, the client
 sends `PopupAbort` and the popup renders restart. Otherwise, the client
 atomically claims the matching state and exact-validates the status and raw
 result against that Ceremony's platform profile. An invalid result rejects the
-Ceremony and sends `PopupAbort`. A valid denial emits the local OAuth-result
-event, resolves with `{ status: 'denied' }`, and sends `PopupAbort` for popup
-cleanup. A valid acceptance emits the local OAuth-result event and constructs
-`PopupProve` from the live Ceremony's ID, selected platform/version, derived
-code verifier, and received `oauthResult`.
+Ceremony and sends `PopupAbort`. A valid denial resolves with
+`{ status: 'denied' }` and sends `PopupAbort` for popup cleanup. A valid
+acceptance constructs `PopupProve` from the live Ceremony's ID, selected
+platform/version, frozen client and redirect, derived code verifier, and
+received `oauthResult`.
 The popup exact-matches the echoed result to its retained capture, validates
-the current configuration and `PopupProve` shape, and forwards that exact
+the `PopupProve` shape and closed platform/version dispatch, and forwards that exact
 message to the qualified prover without another app roundtrip. The claimed map entry,
 single-use Ceremony instance, and one-shot popup state machine prevent duplicate
 proving; the final Job CAS prevents a late result from producing an application
@@ -637,7 +632,7 @@ sequenceDiagram
             C->>C: Clear result and close
         else Valid provider success
             A-->>C: PopupProve(minimal proving inputs)
-            C->>C: Echo-check result and validate config
+            C->>C: Echo-check result and validate Prove
             P-->>C: PopupHello from qualified iframe or popup
             C->>P: Forward PopupProve unchanged
             P-->>C: PopupNotifyEvent(platform step)
@@ -691,18 +686,18 @@ parsing, storage, network request, dynamic rendering, or error reporting before
 clearing. Redirect servers suppress query strings in access logs, traces,
 analytics, and errors.
 
-After loading, the popup fetches same-origin `ServerConfig`, authenticates
-the opener, parses the captured OAuth `state` as `ceremonyId` for live client
+After loading, the popup authenticates the opener, parses the captured OAuth
+`state` as `ceremonyId` for live client
 routing, and exact-validates the returned `PopupProve` ID, platform, verifier
-version, provider result, and PKCE shape before using the
-credential. Client ID and redirect URI come only from current `ServerConfig`.
+version, client ID, redirect URI, provider result, and PKCE shape before using
+the credential.
 It rejects a Google ID Token at or after its signed `exp`; mutable X/GitHub
 proof lifetimes are enforced only by the Platform Verifier. Google accepts a
 nonempty fragment and empty query; X and GitHub
 accept a nonempty query and empty fragment. Platform-specific exact parsing is
 owned by the selected platform version.
 
-An unsupported request/configuration combination discovered after `PopupProve`
+An unsupported or invalid input discovered after `PopupProve`
 clears the return, sends popup-to-application `PopupAbort`, and renders
 **Application updated—return and try again**. An unknown state, malformed
 response, wrong origin, timeout, or internal failure sends application-to-popup
@@ -717,9 +712,9 @@ checks. The popup then forwards exactly the `PopupProve` received from
 the application. Its bounded `oauthResult` is the provider-returned callback
 value; `platformId` and `platformVerifierVersion` select its exact parser and
 implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
-verifier for X and GitHub. The independently validated current `ServerConfig`
-supplies the client and redirect; `PopupProve` does not repeat them. The popup and
-prover both exact-validate the record.
+verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
+the Ceremony Client from its validated `ServerConfig`. The popup and prover
+both exact-validate the record.
 
 The prover does not receive the expected Authorization Digest. Google exposes
 the signed token nonce as a proof public input; X and GitHub expose the
