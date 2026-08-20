@@ -117,7 +117,7 @@ Canonical Runtime: The immutable browser release that constructs
 Notary Service: The role that observes a TLS session and signs the resulting
    attestation, and that answers whether an attestation is authentic. Its
    answer is a single accept-or-reject decision covering its own signature
-   over the data it attested, and it charges the Notary Fee for giving
+   over the attested data of §9.1, and it charges the Notary Fee for giving
    one. It holds no transcript when it answers: the attested data carries
    the transcript lengths, the revealed ranges, and the range commitments
    inside the bytes it signed, so that signature is what binds them to the
@@ -451,7 +451,7 @@ an identity session — so one submission on either path pays two fees.
   The Consumer MUST call the Proof Verifier with the identity platform, the
   Platform Verifier Version, the submission, and the native value the
   quotation of REQ-COMMON-06E returns. That value covers one Notary Fee of
-  §9.1 for each attestation the selected profile requires, and is zero where
+  §9.2 for each attestation the selected profile requires, and is zero where
   its Attestation Count is zero. Necessity: cross-component interoperability
   of one verification entry point serving every Consumer.
 - REQ-COMMON-05A:
@@ -538,7 +538,7 @@ the Consumer decides whether that domain is its own.
   disagree with the submitted one because dispatch reads it from the
   submission in the first place.
 
-The Notary Fees of §9.1 are charged at the bottom of this path, so native
+The Notary Fees of §9.2 are charged at the bottom of this path, so native
 value passes down it and stops where the work is done. A path with no
 attestation to verify carries no value at all.
 
@@ -841,9 +841,10 @@ and no `authorization` needle to count.
   derivable from the ranges around it.
 - REQ-COMMON-36 (upholds SP-EXCHANGE-01):
   The Notary Service MUST carry the total transcript length of each direction
-  of the session it observed in the data it signs. The Platform Verifier MUST
-  take the transcript length used for the coverage check of REQ-COMMON-35
-  from those signed lengths and from nothing else.
+  of the session it observed in the `sentTranscriptLength` and
+  `recvTranscriptLength` fields of the attested data of §9.1. The Platform
+  Verifier MUST take the transcript length used for the coverage check of
+  REQ-COMMON-35 from those two signed fields and from nothing else.
   Necessity: without a signed length, bytes past the last revealed range are
   invisible, which is what makes a planted-header request pass every
   substring-anchored check.
@@ -997,7 +998,205 @@ Disclosure makes such bytes auditable but does not constrain their decoded
 form semantics. Launch therefore retains ASM-PROV-07 as a soundness dependency
 for every form-encoded token request.
 
-### 9.1 Attestation verification and its fee
+### 9.1 Attestation format
+
+An attestation is a byte string and a signature over it. The Notary Service
+signs off chain, where it holds the transcript. It verifies on chain, where
+it holds no transcript at all and nothing derived from one beyond what the
+attestation itself carries. The verifying side therefore answers one
+question, and that question is not whether the revealed bytes match a
+transcript: it derives the key that signed the attested data and decides
+whether that key is one it currently trusts. Everything tying the attested
+data to a session that really happened is carried by the notary key under
+ASM-NOTARY-01, not by any comparison performed on the Consumer Chain. The
+Notary Fee of §9.2 attaches to that same verification.
+
+The distinction is what makes the field list below load-bearing. A verifying
+side handed a digest its caller computed authenticates a number rather than
+a session: whatever the caller hashed is what the signature is checked
+against, and the values the Platform Verifier goes on to read are whatever
+the caller supplied next to it. Deriving the key from the attested data
+itself is what makes these fields the signed fields.
+
+`U16BE`, `U32BE`, and `U64BE` are the fixed-width unsigned big-endian
+encodings of §5. `UTF8` emits the exact UTF-8 bytes of a string. Offsets are
+zero-based byte offsets into that direction's complete transcript, `start`
+inclusive and `end` exclusive.
+
+```text
+attestedData =
+    formatTag                          // 32 bytes
+    || platformId                      // 32 bytes
+    || operationTag                    // 32 bytes
+    || authorityId                     // 32 bytes
+    || U64BE(createdAt)                //  8 bytes
+    || U32BE(sentTranscriptLength)     //  4 bytes
+    || U32BE(recvTranscriptLength)     //  4 bytes
+    || directionBlock(sent)            // variable
+    || directionBlock(received)        // variable
+
+directionBlock(d) =
+    U16BE(COUNT(revealedRanges(d)))
+    || revealedRange(d, 0) || ... || revealedRange(d, n - 1)
+    || U16BE(COUNT(rangeCommitments(d)))
+    || rangeCommitment(d, 0) || ... || rangeCommitment(d, m - 1)
+
+revealedRange(d, i) =
+    U32BE(start) || U32BE(end) || bytes    // exactly end - start bytes
+
+rangeCommitment(d, j) =
+    U32BE(start) || U32BE(end) || commitment          // 32-byte value
+
+attestationDigest = keccak256(attestedData)
+```
+
+The attested data describes the observed session and says nothing about where
+the evidence will be spent. It names no Consumer Chain and no Platform
+Verifier, and that omission is deliberate. The Authorization Digest of §5
+already commits the chain, and it is bound to the token attestation through
+the revealed `code_verifier` of §7, so presenting the same attestation on
+another chain would take a preimage of that verifier. Binding an attestation
+to one verifier identity would be worse than redundant: a newly registered
+Platform Verifier version could not check attestations made before it
+existed, which contradicts the concurrent version support REQ-COMMON-05B
+requires, and the notary would have to know at notarization time which
+verifier the user will later submit to, which it cannot know and which
+REQ-COMMON-33 forbids it from deciding.
+
+- REQ-COMMON-47 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST build the attested data of every attestation as
+  exactly the byte concatenation above. The Notary Service MUST sign
+  `attestationDigest` and no other preimage. Necessity: the verifying side
+  rebuilds the same bytes from the attestation it is handed, so a field
+  reordered, omitted, or encoded differently on either side derives a key
+  nobody trusts and rejects a genuine attestation.
+- REQ-COMMON-48 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST encode each fixed-width field at exactly the width
+  the layout states, rejecting a value that does not fit its field. The
+  Notary Service MUST emit every variable-length part behind the count and
+  offset fields the layout places before it. Necessity: every boundary in
+  the byte string is then derivable from bytes that precede it, so two
+  different attestations cannot share one preimage by shifting a boundary.
+- REQ-COMMON-49 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST take one attested-data-and-signature pair and
+  derive the verification key from that pair alone. The Notary Service
+  MUST NOT accept a digest, a preimage hash, or a verification key supplied
+  by its caller. Necessity: a caller-computed digest authenticates whatever
+  the caller hashed, which need not be the attested data the Platform
+  Verifier goes on to read.
+- REQ-COMMON-50 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST return exactly one accept-or-reject decision for
+  that pair. The Notary Service MUST accept only when the derived key is one
+  of the notary keys it currently holds as trusted.
+- REQ-COMMON-51 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST NOT compare the attested data against a
+  transcript. Its answer covers the signature and the trust status of the
+  derived key, and nothing else; whether the ranges are the ones a profile
+  expects, and what their bytes must contain, belong to the Platform
+  Verifier. Necessity: the verifying side holds no transcript, so a
+  requirement to compare against one is not implementable and would be read
+  as a guarantee nothing provides.
+- REQ-COMMON-52 (upholds SP-BIND-01, SP-EXCHANGE-01):
+  Where the attested data the Notary Service accepted carries a value, the
+  Platform Verifier MUST read that value out of the attested data. The
+  Platform Verifier MUST reject a submission carrying a caller-supplied
+  duplicate of a value the attested data already carries. The Platform
+  Verifier MAY act on a caller-supplied value the attested data does not
+  carry, and only where it authenticates that value itself against evidence
+  the caller does not control: `pkceNonce` by the verifier recomputation of
+  REQ-COMMON-15A, and Google `aud` bytes by the audience comparison its
+  Platform Profile fixes in REQ-PLAT-19A. Necessity: a duplicate read beside
+  the signed copy is caller-controlled, and a caller who can choose it can
+  retarget an otherwise genuine attestation; a value the verifier
+  authenticates itself is not that case, and a profile whose Attestation
+  Count is zero carries no attested data at all for such a rule to reach.
+- REQ-COMMON-53 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST derive `formatTag` as the keccak256 of a
+  libID-namespaced ASCII string naming this attestation format and its
+  version. The Platform Verifier MUST reject an attestation whose
+  `formatTag` differs from the one its Platform Profile pins. A change to
+  the field list, to a field's width, or to a field's meaning takes a new
+  version string rather than another field.
+- REQ-COMMON-54: Withdrawn. The attested data binds no Consumer Chain and no
+  Platform Verifier, for the reason stated above these requirements.
+- REQ-COMMON-55 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST set `platformId` to the keccak256 of the `UTF8`
+  bytes of the identity-platform name, and `operationTag` to the keccak256
+  of a libID-namespaced ASCII string naming which session of the ceremony
+  this attestation covers. The Platform Verifier MUST reject an attestation
+  whose `platformId` or `operationTag` differs from the constant its profile
+  pins for the session it is checking. Necessity: one ceremony notarizes more
+  than one session, and two attestations that differ only in which session
+  they came from are otherwise interchangeable.
+- REQ-COMMON-56 (upholds SP-BIND-01):
+  The Notary Service MUST set `authorityId` to the keccak256 of the
+  authority it authenticated under REQ-COMMON-21, in the canonical byte form
+  of §9. The Platform Verifier MUST compare that field with its pinned
+  authority constant under REQ-COMMON-21A. Necessity: `platformId` names the
+  ceremony the attestation belongs to, while the authority names the host
+  that actually answered, and one identity platform serves a ceremony from
+  more than one host.
+- REQ-COMMON-57 (upholds SP-FRESH-01):
+  The Notary Service MUST set `createdAt` to its own clock reading when the
+  session it observed completed. The Notary Service MUST NOT take that value
+  from the prover, from a response header, or from any other party.
+- REQ-COMMON-58 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST set `sentTranscriptLength` and
+  `recvTranscriptLength` to the total byte count of the sent and received
+  directions of the session it observed. The Platform Verifier MUST take the
+  signed transcript length REQ-COMMON-35 and REQ-COMMON-36 require from
+  these two fields and from nothing else. Necessity: these fields are where
+  the signed length REQ-COMMON-36 demands lives, and a length carried
+  anywhere outside the signed bytes is a length the prover chooses.
+- REQ-COMMON-59 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST emit one `revealedRange` per range the prover
+  disclosed in that direction, in ascending `start` order, each carrying its
+  offsets and exactly `end - start` bytes. The Platform Verifier MUST reject
+  an attestation whose revealed ranges for a direction are out of order,
+  overlapping, empty, or ending past that direction's transcript length.
+  Necessity: revealed bytes signed without their offsets state that some
+  bytes were disclosed but not where they sat, which is not enough to tile a
+  transcript under REQ-COMMON-18A or to cover it under REQ-COMMON-35.
+- REQ-COMMON-60 (upholds SP-CLIENT-01, SP-EXCHANGE-01):
+  The Notary Service MUST emit one `rangeCommitment` per hidden range in
+  that direction, in ascending `start` order, each carrying its offsets and
+  its commitment value. The Notary Service MUST NOT emit the plaintext of a
+  committed range anywhere in the attested data. The Platform Verifier MUST
+  reject an attestation whose range commitments for a direction are out of
+  order, overlapping, empty, ending past that direction's transcript length,
+  or overlapping a revealed range.
+- REQ-COMMON-61 (upholds SP-EXCHANGE-01):
+  The Notary Service MUST NOT place in the attested data any value it
+  obtained by applying a profile rule to the transcript, including a handle,
+  an account identifier, a client identifier, or a chain address. Necessity:
+  every such value is already derivable from the revealed ranges, a second
+  signed representation can disagree with the bytes it was taken from, and
+  producing one makes the Notary Service decide something profile-specific,
+  which REQ-COMMON-33 forbids.
+
+The layout generalizes the one shipped today, extends it in four places, and
+drops two consumer-side bindings. Today's signed fields are a chain
+identifier, a verifying-contract address,
+a hashed platform name, an operation tag, one commitment value with its two
+offsets, hashes of the revealed bytes of each direction, two revealed-range
+end offsets for the sent direction only, a handle, an account identifier, a
+session address, and a timestamp. The generalizations are: one commitment
+and one pair of offsets become a list per direction; the sent direction's
+two end offsets become explicit `start` and `end` pairs; and the received
+direction's revealed bytes, which today carry no offsets at all, gain them.
+The extensions are: a leading `formatTag`, so the preimage names its own
+layout instead of relying on the operation tag to do it; an `authorityId`
+separate from `platformId`, so the authenticated host is a field rather than
+an aspect of the platform name; and `sentTranscriptLength` and
+`recvTranscriptLength`, which appear nowhere in any signed field today and
+which REQ-COMMON-36 requires. The handle, the account identifier, and the
+session address are dropped by REQ-COMMON-61; the first two are read
+from the revealed ranges under REQ-COMMON-19A, and the address a ceremony
+authorizes is bound by the Authorization Digest of §5. The chain identifier
+and the verifying-contract address go with them, for the reason given above
+the requirements: the attested data describes a session, not a destination.
+
+### 9.2 Attestation verification and its fee
 
 An attestation is authenticated on the Consumer Chain, not inside the Proving
 Circuit. The Notary Service takes attested data and its notary
@@ -1012,7 +1211,7 @@ below governs one attestation a profile does require.
   Service calls and the fee quotation of REQ-COMMON-06E both count
   attestations, and a profile leaving that list open fixes neither.
 - REQ-COMMON-33 (upholds SP-EXCHANGE-01):
-  The Notary Service MUST take the attested data and its notary
+  The Notary Service MUST take the attested data of §9.1 and its notary
   signature and return exactly one accept-or-reject decision covering that
   signature over exactly those bytes. The Notary Service MUST NOT decide
   anything profile-specific. Necessity: the attested data carries the
@@ -1250,6 +1449,42 @@ the constructions that role implements.
   Platform Verifier taking the digest from any other source rejects the
   submission.
 
+- TEST-COMMON-24 (exercises REQ-COMMON-47, REQ-COMMON-48, REQ-COMMON-53, REQ-COMMON-58, REQ-COMMON-61):
+  Attested data built as the §9.1 concatenation rebuilds byte for byte on the
+  verifying side and hashes to the signed `attestationDigest`; attested data
+  whose fields are reordered, whose fixed-width field is emitted at another
+  width, or whose variable-length part is not preceded by the count and
+  offset fields the layout places before it derives a key no trusted notary
+  holds; an attestation whose `formatTag` differs from the one the Platform
+  Profile pins is rejected; the coverage length of REQ-COMMON-35 comes from
+  the two transcript-length fields and from no other source; attested data
+  carrying a handle, an account identifier, a client identifier, or a chain
+  address is rejected; and attested data carrying a Chain ID or a verifier
+  identity derives a key no trusted notary holds, because the §9.1 layout
+  lists neither field.
+- TEST-COMMON-25 (exercises REQ-COMMON-49, REQ-COMMON-50, REQ-COMMON-51, REQ-COMMON-52):
+  A verification call supplying a digest, a preimage hash, or a verification
+  key beside the attested-data-and-signature pair is rejected; one such pair
+  yields exactly one accept-or-reject decision, which accepts only under a
+  currently trusted notary key; the Notary Service exposes no interface
+  taking a transcript and no decision depending on one; a submission
+  carrying a caller-supplied duplicate of a value its attested data already
+  carries is rejected; and a submitted `pkceNonce`, together with the
+  Google `aud` bytes of a profile carrying no attested data at all, is
+  accepted because the Platform Verifier authenticates each of them itself.
+  Verification: inspection of the Notary Service interface for the
+  transcript rule.
+- TEST-COMMON-26 (exercises REQ-COMMON-55, REQ-COMMON-56, REQ-COMMON-57, REQ-COMMON-59, REQ-COMMON-60):
+  An attestation naming a foreign `platformId`, a foreign `operationTag`, or
+  a foreign `authorityId` is rejected; the same attestation verifies under
+  every Platform Verifier version registered for its platform, on the chain
+  whose Chain ID the Authorization Digest committed; revealed ranges and
+  range commitments that are out of order,
+  overlapping, empty, ending past that direction's transcript length, or
+  overlapping one another are each rejected; and no attested data carries the
+  plaintext of a committed range or a `createdAt` drawn from the prover, from
+  a response header, or from any party but the notary. Verification:
+  inspection of the emitted attestations for the `createdAt` source.
 ## 12. Security Considerations
 
 This document enforces SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01,

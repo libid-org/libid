@@ -123,22 +123,168 @@ derivation, layered strictly:
   proof statement or Consumer behavior may rely on it. Necessity: a check
   running in software the prover chooses whether to run is not a defense.
 
-Normalization applies these per-platform criteria: ASCII-only input with
-disallowed bytes rejected; lowercasing; Google validates the value as an
-email address and keeps its `@`; X and GitHub strip one leading `@`;
-underscore is allowed on X and not on GitHub; hyphen is allowed on GitHub and
-not on X, and never leading, trailing, or doubled; a per-platform maximum
-length; an empty result is rejected. The exact byte-level algorithm is fixed
-by the shared cross-language handle vector table this profile publishes
-alongside the specification, which every implementation reproduces; that
-table, not this prose, is the precision anchor. A profile that publishes no
-such table is ineligible.
+The input is the raw authenticated handle of §2.1: Google's signed `email`
+claim, X's `data.username`, GitHub's `login`. Normalization is a closed byte
+transform over those bytes. It is not Unicode case folding, not UTS-46, and
+not IDNA.
 
-- TEST-PLAT-20 (exercises REQ-PLAT-08A, REQ-PLAT-08B, REQ-PLAT-08C):
-  Every implementation reproduces the shared handle vector table byte for
-  byte; a caller-supplied normalized handle or pre-hashed key is rejected;
-  and identity bytes transformed anywhere before Consumer-side derivation
-  fail conformance.
+**Parameters.** A profile fixes five values, and nothing else varies between
+platforms. The permitted-byte and shape-rule rows are derived from those five
+and are stated here so an implementer needs no other source.
+
+| Parameter | Google | X | GitHub |
+|---|---|---|---|
+| `maxLength` (bytes) | 62 | 15 | 39 |
+| `stripLeadingAt` | false | true | true |
+| `isEmail` | true | false | false |
+| `allowUnderscore` | false | true | false |
+| `allowHyphen` | false | false | true |
+| Permitted bytes (step 5) | `a`-`z` `0`-`9` `.` `+` `-` `_` `@` | `a`-`z` `0`-`9` `_` | `a`-`z` `0`-`9` `-` |
+| Shape rule (step 6) | email | none | hyphen |
+
+`isEmail` supersedes the two boolean rows: Google's permitted set is the
+email set of the table, not a set assembled from `allowUnderscore` and
+`allowHyphen`, which are never read on that path.
+
+**Algorithm.** Given the raw handle bytes and the parameters above, the
+normalized handle is the result of these six steps, applied in this order:
+
+1. Trim. Remove leading `0x20` bytes and trailing `0x20` bytes. No other byte
+   is trimmable. Trim runs once, here, and never again.
+2. Strip. When `stripLeadingAt` is set, and bytes remain, and the first
+   remaining byte is `0x40`, remove that one byte. At most one byte is removed.
+3. Empty. When no bytes remain, reject as `EmptyHandle`.
+4. Length. When more than `maxLength` bytes remain, reject as `HandleTooLong`.
+   The count is bytes, not characters.
+5. Fold and filter, one byte at a time, left to right. A byte in `0x41`-`0x5A`
+   becomes that byte plus `0x20`; every other byte is unchanged. The folded
+   byte is then tested against the platform's permitted set, and a byte
+   outside that set rejects as `BadCharacter`.
+6. Shape, over the step-5 output. On the email rule, exactly one `0x40` is
+   present and it is neither the first nor the last byte; anything else
+   rejects as `BadShape`. On the hyphen rule, the first byte is not `0x2D`,
+   the last byte is not `0x2D`, and no two adjacent bytes are both `0x2D`;
+   anything else rejects as `BadShape`. On no rule, nothing is checked.
+
+The step-5 output is the normalized handle.
+
+| Rejection | Raised when | Step |
+|---|---|---|
+| `EmptyHandle` | no bytes remain after trimming and the `@` strip | 3 |
+| `HandleTooLong` | more than `maxLength` bytes remain after those two steps | 4 |
+| `BadCharacter` | a folded byte lies outside the permitted set | 5 |
+| `BadShape` | every byte is permitted, the arrangement is not | 6 |
+
+- REQ-PLAT-61:
+  The Implementation MUST apply steps 1 through 6 in the order given.
+  Necessity: the steps do not commute, so a re-ordered implementation derives
+  a different key from the same authenticated bytes.
+- REQ-PLAT-62:
+  In step 1 the Implementation MUST treat `0x20` as the only trimmable byte.
+  The Implementation MUST carry a leading or trailing `0x09`, `0x0a`, or
+  `0x0d` into step 5, which rejects it. Necessity: a byte trimmed by one
+  implementation and refused by another maps two inputs onto one identity in
+  half the system.
+- REQ-PLAT-63:
+  In step 2 the Implementation MUST remove at most one `0x40` byte. The
+  Implementation MUST NOT trim again after that removal. Necessity: after
+  `" @ alice "` is trimmed and stripped a space leads the value and step 5
+  refuses it, where a second trim would accept it as `alice`.
+- REQ-PLAT-64:
+  In step 4 the Implementation MUST compare `maxLength` against the byte count
+  remaining after steps 1 and 2. Necessity: the length gate precedes the
+  character gate, so an over-long input carrying a disallowed byte is
+  `HandleTooLong`, and a count of code points would disagree.
+- REQ-PLAT-65:
+  In step 5 the Implementation MUST map bytes `0x41` through `0x5A`, and no
+  other byte, to that byte plus `0x20`. The Implementation MUST NOT apply
+  Unicode case folding, UTS-46, IDNA, or any normalization form. Necessity:
+  two values differing by more than ASCII case are two identities, and a
+  folding table would merge them.
+- REQ-PLAT-66:
+  In step 5 the Implementation MUST reject every byte outside the platform's
+  permitted row, including every byte from `0x80` through `0xff`. Necessity:
+  refusing the whole range above ASCII keeps a multi-byte character out of the
+  key, which is what lets independent implementations agree without a shared
+  Unicode table.
+- REQ-PLAT-67:
+  When `isEmail` is set, the Implementation MUST use the email permitted set
+  whatever `allowUnderscore` and `allowHyphen` hold. Necessity: identity
+  compatibility, because those two parameters are not read on the email path.
+- REQ-PLAT-68:
+  In step 6 on the email rule, the Implementation MUST require exactly one
+  `0x40` byte at neither edge. Necessity: a value with no `@`, with two, or
+  with an empty side is not an address, and the keyspace would otherwise hold
+  names no account can prove.
+- REQ-PLAT-69:
+  In step 6 the Implementation MUST apply the hyphen rule only when
+  `allowHyphen` is set and `isEmail` is clear. Necessity: `-` is permitted
+  inside a Google address, where a leading, trailing, or doubled `-` occurs in
+  real local parts and domain labels.
+- REQ-PLAT-70:
+  The Implementation MUST report the first rejection the step order reaches.
+  Necessity: an input that is both over-long and ill-charactered is
+  `HandleTooLong`, and an implementation checking characters first would
+  disagree with the published vectors.
+- REQ-PLAT-71:
+  On the email rule the Implementation MUST preserve every dot, every `+` tag,
+  and the domain exactly as step 5 folded them. The Implementation MUST NOT
+  remove a dot, strip a tag, or rewrite a domain. Necessity: two addresses a
+  provider happens to route to one mailbox are two identities here, and
+  merging them would let one holder reach another's key.
+- REQ-PLAT-72:
+  The Platform Profile MUST fix all five parameters above. Necessity: a
+  profile leaving any of them open does not define one handle keyspace, and
+  §7 requires the same of every new platform.
+- REQ-PLAT-73:
+  The Consumer MUST derive the stored handle key from the exact step-5 output
+  bytes. Necessity: a key derived from the raw bytes, or from a differently
+  folded value, is a key no reader looks up.
+- REQ-PLAT-74:
+  When a caller-supplied lookup argument does not normalize, the Consumer MUST
+  answer that no holder exists. The Consumer MUST NOT fail the surrounding
+  transaction. Necessity: a resolver asked who holds a given text answers
+  "nobody" for text nobody could hold, and a stray space in a recipient field
+  would otherwise abort the transaction around it.
+
+**Conformance vectors.** The algorithm above is the definition. The profile
+publishes a cross-language vector table as a cross-check on an implementation
+of that algorithm, never as its source: 44 cases, 19 for X, 14 for GitHub and
+11 for Google; 15 accepted and 29 rejected, the rejections being 5
+`EmptyHandle`, 3 `HandleTooLong`, 13 `BadCharacter` and 8 `BadShape`. A
+disagreement between a published vector and the algorithm above is a defect
+in the vector table. A profile that publishes no such table is ineligible.
+
+Representative cases, quoted from that table:
+
+| Platform | Input | Result |
+|---|---|---|
+| X | `" @Alice_1 "` | `alice_1` |
+| X | `"@a"` | `a` |
+| X | `"a123456789012345"` | `HandleTooLong` |
+| X | `"@"` | `EmptyHandle` |
+| X | `"@@alice"` | `BadCharacter` |
+| X | `" @ alice "` | `BadCharacter` |
+| X | `"ali\tce"` | `BadCharacter` |
+| X | `"alicé"` | `BadCharacter` |
+| GitHub | `"@Octo-Cat"` | `octo-cat` |
+| GitHub | `"-octocat"` | `BadShape` |
+| GitHub | `"octo--cat"` | `BadShape` |
+| GitHub | `"octo_cat"` | `BadCharacter` |
+| Google | `"A.B+tag@Example.COM"` | `a.b+tag@example.com` |
+| Google | `"@Alice@example.com"` | `BadShape` |
+| Google | `"alice"` | `BadShape` |
+| Google | `"ali ce@example.com"` | `BadCharacter` |
+
+In that table `\t` is the single byte `0x09` and `é` is the two bytes
+`0xc3 0xa9`.
+
+- TEST-PLAT-20 (exercises REQ-PLAT-08A, REQ-PLAT-08B, REQ-PLAT-08C, REQ-PLAT-61, REQ-PLAT-62, REQ-PLAT-63, REQ-PLAT-64, REQ-PLAT-65, REQ-PLAT-66, REQ-PLAT-67, REQ-PLAT-68, REQ-PLAT-69, REQ-PLAT-70, REQ-PLAT-71, REQ-PLAT-72, REQ-PLAT-73, REQ-PLAT-74):
+  Every implementation reproduces the published handle vector table byte for
+  byte, including the rejection kind of each rejected case; a caller-supplied
+  normalized handle or pre-hashed key is rejected; a lookup argument that does
+  not normalize resolves to no holder rather than failing; and identity bytes
+  transformed anywhere before Consumer-side derivation fail conformance.
 
 ### 2.2 Metadata ordering and validity ceilings
 
@@ -419,13 +565,13 @@ attestation format:
 | Range | Revealed | Why |
 |---|---|---|
 | request method and path | yes | the Platform Verifier compares them with its profile constants |
-| endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attested authority against its pinned constant per common REQ-COMMON-21A |
+| endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attestation's `authorityId` per common REQ-COMMON-56 |
 | `grant_type` | yes | constant `authorization_code`; the Platform Verifier compares it byte for byte per REQ-PLAT-56 |
 | `client_id` | yes | the Platform Verifier reads and returns it |
 | `code` | yes | compared to the code consumed at redirect ingress |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile; no chain or circuit value |
 | `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
-| attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
+| attestation timestamp | not a range | the signed `createdAt` of the attested data, which derives the authenticated validity ceiling per §2.2 and common REQ-COMMON-57 |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit |
 | everything else | no | headers, `scope`, `token_type`, other response fields |
@@ -433,7 +579,7 @@ attestation format:
 Neither the authority nor the attestation timestamp is a transcript range.
 The authority reaches the Platform Verifier as
 the TLS server identity the Notary Service authenticated under common
-REQ-COMMON-21, carried in the attested data: the transcript
+REQ-COMMON-21, carried in the attested data as `authorityId`: the transcript
 holds the authority only in a `Host` header this table hides, and a revealed
 `Host` header is prover-composed text that says nothing about which server
 answered. The timestamp is the signed creation time of the attested data
@@ -776,8 +922,8 @@ submission and every published artifact.
 | `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit to link this attestation to `/user` |
-| attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
-| token endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attested authority against its pinned constant per common REQ-COMMON-21A |
+| attestation timestamp | not a range | the signed `createdAt` of the attested data, which derives the authenticated validity ceiling per §2.2 and common REQ-COMMON-57 |
+| token endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attestation's `authorityId` per common REQ-COMMON-56 |
 | token request method | yes | the Platform Verifier checks its profile method |
 | token request path | yes | the Platform Verifier checks its profile path |
 | `client_secret` | no | never revealed, per REQ-PLAT-35A |
@@ -790,7 +936,7 @@ leave that range indistinguishable from a `refresh_token` value. Neither the
 authority nor the attestation timestamp is a transcript range at all. The
 authority reaches the Platform Verifier
 as the TLS server identity the Notary Service authenticated under common
-REQ-COMMON-21, carried in the attested data, because the
+REQ-COMMON-21, carried in the attested data as `authorityId`, because the
 transcript holds the authority only in a `Host` header this table hides and a
 revealed `Host` header is prover-composed text that says nothing about which
 server answered. The timestamp is the signed creation time of the attested
@@ -827,8 +973,8 @@ response header. Revealing more would widen exposure without adding a check.
   configured notary's signature and revealing the token request's method and
   path. The Platform Verifier MUST compare those two revealed values with the
   `github/v1` profile. The Platform Verifier MUST compare the authority that
-  attestation authenticates with the same profile, per common REQ-COMMON-21A.
-  Necessity: the authority is never a revealed range,
+  attestation authenticates with the same profile, per common REQ-COMMON-21A
+  and REQ-COMMON-56. Necessity: the authority is never a revealed range,
   because the transcript carries it only in a prover-composed `Host` header.
 - REQ-PLAT-46 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST require the disclosed `code` to equal the code it
