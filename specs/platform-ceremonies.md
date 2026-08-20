@@ -757,12 +757,12 @@ interface TokenResponse {
   result route. Necessity: the service holds ceremony credentials, so retention
   creates a compromise target with no protocol purpose.
 - REQ-PLAT-43:
-  The GitHub Token Service MUST accept only the registered redirect origin.
-  Necessity: limits accidental browser disclosure; it is not caller
-  authentication.
-- REQ-PLAT-43A:
-  The GitHub Token Service MUST answer the CORS preflight for that origin.
-  Necessity: cross-component interoperability with the Ceremony Client.
+  The GitHub Token Service MUST require the browser-generated `Origin` to equal
+  the redirect/prover origin that serves the route. It MUST NOT grant CORS
+  access to another origin, including a configured application frontend.
+  Necessity: only the same-origin isolated prover owns the authorization code,
+  verifier, and token response; application-frontends are authenticated earlier
+  by the Ceremony Popup Protocol and never call this credential route.
 - REQ-PLAT-43B:
   The GitHub Token Service MUST reject redirects. Necessity: a followed redirect
   would notarize a session other than the pinned token endpoint.
@@ -1084,10 +1084,10 @@ Platform Verifier, Notary Service, Consumer.
   interfaces is rejected. GET, another method, a query, a non-JSON request, a
   malformed JSON body, and a successful response with another status or media
   type are rejected before credential use.
-- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43A, REQ-PLAT-43B, REQ-PLAT-43C, REQ-PLAT-43D, REQ-PLAT-43E):
+- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43B, REQ-PLAT-43C, REQ-PLAT-43D, REQ-PLAT-43E):
   A request selecting an endpoint, client, or return URL is rejected; no state
-  survives the call; a foreign origin is refused; the CORS preflight for the
-  compiled origin is answered; every response carries `Cache-Control:
+  survives the call; a foreign-origin request or preflight is refused even
+  when that origin is an allowed application frontend; every response carries `Cache-Control:
   no-store`; an attestation revealing a range outside the seven marked rows,
   or revealing the bearer range instead of committing it, is rejected; and no proof exposes the bearer or a value it can be recovered
   from.

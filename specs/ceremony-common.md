@@ -597,8 +597,9 @@ attestation to verify carries no value at all.
   The Deployment MUST register with each Identity Platform only redirect URIs
   whose origins it controls.
 - REQ-COMMON-30 (upholds SP-DELIVERY-01):
-  The Ceremony Client MUST forward an authorization response only to the
-  compiled application origin.
+  The Ceremony Client MUST forward an authorization response only over a live
+  browser channel authenticated to an exact origin in the deployment-configured
+  allowed application-origin set. The set MAY contain more than one origin.
 - REQ-COMMON-31 (upholds SP-DELIVERY-01):
   The Ceremony Client MUST ignore a forwarding target supplied in the
   redirect request.
@@ -1208,8 +1209,9 @@ the constructions that role implements.
   metadata does not change the newer stored metadata or watermark while the
   otherwise valid authority operation succeeds.
 - TEST-COMMON-14 (exercises REQ-COMMON-30, REQ-COMMON-31):
-  A redirect request carrying a forwarding target forwards to the
-  compiled application origin instead.
+  Each of two configured application origins can complete its own authenticated
+  live channel; an unlisted origin is rejected, and a redirect request carrying
+  a forwarding target cannot change either result.
 - TEST-COMMON-15 (exercises REQ-COMMON-29):
   Every redirect URI registered against each production client resolves to an
   origin the deployment controls. Verification: audit of the platform client
