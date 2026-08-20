@@ -506,12 +506,7 @@ interface PopupAbort {
 interface PopupNotifyEvent {
   type: 'popup-notify-event'
   ceremonyId: string
-  event: {
-    type: 'progress'
-    stage: CeremonyStage
-    platformStep: PlatformStep | null
-    timestamp: number
-  }
+  event: CeremonyEvent
 }
 
 interface PopupDeliverProof {
@@ -636,13 +631,11 @@ sequenceDiagram
             A-->>C: PopupAbort
             C->>C: Clear result and render fixed restart
         else Valid provider denial
-            A->>A: Emit CeremonyEvent(oauth-result denied)
             A->>A: Resolve IdentityResult(denied)
             A->>J: Retire Job
             A-->>C: PopupAbort
             C->>C: Clear result and close
         else Valid provider success
-            A->>A: Emit CeremonyEvent(oauth-result accepted)
             A-->>C: PopupProve(minimal proving inputs)
             C->>C: Echo-check result and validate config
             P-->>C: PopupHello from qualified iframe or popup
@@ -778,18 +771,11 @@ interface PlatformStep {
   status: 'started' | 'completed' | 'failed'
 }
 
-type CeremonyEvent =
-  | {
-      type: 'progress'
-      stage: CeremonyStage
-      platformStep: PlatformStep | null
-      timestamp: number
-    }
-  | {
-      type: 'oauth-result'
-      status: 'accepted' | 'denied'
-      timestamp: number
-    }
+interface CeremonyEvent {
+  stage: CeremonyStage
+  platformStep: PlatformStep | null
+  timestamp: number
+}
 ```
 
 The application-side `Ceremony` client owns the common stage. It enters
@@ -815,11 +801,8 @@ errors. The application may map this advisory view into its broader job
 progress; later confirmation, submission, and finality never enter the
 Ceremony Popup Protocol.
 
-After validating `PopupOAuthResult` against the claimed Ceremony, the client
-emits exactly one local `oauth-result` event: accepted before `PopupProve`, or
-denied before `IdentityResult` resolves as denied. `PopupNotifyEvent` carries
-only prover progress. A popup close or invalid return emits neither. Events are
-advisory; `proveUserIdentity()` remains the authoritative result.
+`CeremonyEvent` carries only advisory progress. OAuth denial is returned only
+through `proveUserIdentity()`; acceptance proceeds to `PopupProve`.
 
 The prover's same-origin `BroadcastChannel` supplies routing inside the trusted
 deployment, not separate sender authentication, durable state, or proof
