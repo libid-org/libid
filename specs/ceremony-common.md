@@ -81,7 +81,8 @@ Submission: The complete input a Consumer passes to the Proof Verifier for
    requires the caller to supply.
 
 Platform Ceremony: The complete operation that turns one platform
-   authorization into a locally verified claim.
+   authorization into a local claim preview and the exact Submission the
+   Consumer Chain verifies. The preview is not authority.
 
 Platform Profile: The immutable, independently versioned definition of one
    identity platform's ceremony: its endpoints, ordered request fields,
@@ -112,7 +113,8 @@ Token-Exchange Service: The confidential-client component that performs a
    and returns the resulting attestation.
 
 Canonical Runtime: The immutable browser release that constructs
-   Authorization Digests, verifies attestations, and builds proofs.
+   Authorization Digests, performs the required local evidence checks, and
+   builds proofs and claim previews.
 
 Notary Service: The role that observes a TLS session and signs the resulting
    attestation, and that answers whether an attestation is authentic. Its
@@ -298,7 +300,11 @@ the selected Platform Verifier, including this Authorization Digest layout.
   wide whatever form the identifier took. Necessity: chains identify themselves
   incompatibly — a number here, a string there, a genesis hash elsewhere, and
   some too wide for 64 bits — so the digest commits a hash of the identifier
-  rather than the identifier itself. The Canonical Runtime MUST take the Chain
+  rather than the identifier itself. The Chain Profile author MUST ensure
+  those canonical bytes differ from every other Consumer Chain on which the
+  same operation domains may accept libID submissions. This specification
+  supplies no global chain-identifier registry; reusing the bytes forfeits
+  cross-chain replay separation. The Canonical Runtime MUST take the Chain
   ID it commits in the Authorization Digest from the Chain Profile of the
   Consumer Chain the ceremony authorizes, sourcing it from its execution
   environment where that chain exposes a chain identity to a deployed program
@@ -569,7 +575,11 @@ attestation to verify carries no value at all.
   space as `+`, and using uppercase hexadecimal percent escapes. Necessity:
   byte-exact request reproduction across implementations, without which the
   fixed range layout of §9 does not hold. This is a runtime serialization
-  rule; no circuit re-verifies it.
+  rule; no circuit re-verifies it. The Canonical Runtime MUST compare a
+  revealed raw form-value range with the exact value bytes this serializer
+  emits for the expected unencoded value. The Canonical Runtime MUST NOT
+  compare that range directly with the unencoded value or apply a second,
+  permissive decoder.
 - REQ-COMMON-08:
   The Implementation MUST emit each field listed in the platform profile
   exactly once, in the listed order. The Implementation MUST emit no other
@@ -681,7 +691,7 @@ code_challenge = BhFqYIY1YnHafYOrrblUswFnjxFF97UvGjSgqugPQvA
 The OAuth client that issued the evidence is authenticated evidence in its
 own right, and it reaches the Consumer through §5.1. The Canonical Runtime
 also compares it against the exact client fixed by the immutable ceremony
-profile before constructing a verified claim. Client admission is
+profile before returning a local claim preview. Client admission is
 permissionless: any OAuth application can produce acceptable evidence, and no
 Consumer-Chain registration of clients exists.
 
@@ -710,14 +720,22 @@ and returns the readable value rather than a digest of it.
   identifier bytes are not authenticated by that platform's evidence, by the
   method its row above fixes. Necessity: bytes a caller supplies and nothing
   checks are the caller's claim, not the platform's.
+- REQ-COMMON-16B (upholds SP-CLIENT-01):
+  The Platform Verifier MUST require a client identifier authenticated from a
+  form-serialized request to match `[A-Za-z0-9*._-]+`, the serializer's
+  nonempty byte-identical ASCII subset. The Platform Verifier MUST reject any
+  other revealed client-identifier bytes. Necessity: the
+  Platform Verifier returns the revealed bytes as the one cross-platform
+  client-identifier representation; accepting percent-encoded bytes would
+  return the serialization rather than the identifier.
 
 A Consumer that wants a fixed-size key derives one itself, as the keccak256 of
 the returned bytes. Deriving is cheap and lossless; returning only a digest is
 not, because the readable value cannot be recovered from it.
 - REQ-COMMON-17 (upholds SP-CLIENT-01):
-  The Canonical Runtime MUST reject a proof whose client identifier differs
-  byte for byte from the client fixed by the selected immutable ceremony
-  profile.
+  The Canonical Runtime MUST reject a Submission whose authenticated client
+  identifier differs byte for byte from the client fixed by the selected
+  immutable ceremony profile.
 - REQ-COMMON-17C (upholds SP-CLIENT-01):
   The Proof Verifier and the Platform Verifier MUST NOT require the exposed
   client identifier to belong to a registered set. The Consumer MAY read the exposed client identifier for its
@@ -740,8 +758,9 @@ ceremony state that exists only in the browser and reaches no proof and no
 chain. One role's extraction of each field is the authoritative one — the
 Proving Circuit's where the bytes stay hidden, the Platform Verifier's where
 they are revealed. The Canonical Runtime may repeat an authoritative
-extraction over the same bytes so the browser can show what the proof will
-bind, and nothing on chain depends on that repeat. A comparison on an
+extraction over the same bytes so the browser can preview what the exact
+Submission asks the Consumer Chain to bind, and nothing on chain depends on
+that repeat. A comparison on an
 already-extracted value may happen in a different role again. A JSON string check matches the full `"field":"` delimiter,
 the value, and its closing quote. JSON unsigned integers and booleans use the
 typed local matches of REQ-COMMON-19D. A form-field check asserts a field
@@ -915,15 +934,23 @@ and no `authorization` needle to count.
   Profile MUST make the Canonical Runtime authoritative only for a field no
   proof statement and no Consumer Chain component reads. The Canonical Runtime
   MAY repeat an extraction another role owns, over the same bytes by the same
-  algorithm, for display and local checks. The Platform Profile MUST NOT let a
+  algorithm, for display and local checks. The Canonical Runtime MUST return
+  that repeat only with the exact Submission whose bytes it read. The Canonical
+  Runtime MUST discard and rederive the preview if any proof, attestation,
+  identity platform, Platform Verifier Version, or other Submission field
+  changes. The Canonical Runtime MUST NOT label the preview verified before
+  the Consumer accepts that Submission; only the Consumer's result is
+  authoritative.
+  The Platform Profile MUST NOT let a
   proof statement or a Consumer Chain component depend on that repeat. A
   comparison performed on an already-extracted value is not an extraction, and
   the Platform Profile MAY assign it to a different role. Necessity: two
   authoritative extractions of one field are two answers, each side able to
   assume the other checked it; the runtime's repeat is what lets the browser
-  show the user the identity the proof will bind, so forbidding it outright
-  would reopen the gap where the display names one account and the proof binds
-  another; and an authoritative extraction owned by a role that cannot see the
+  preview the identity the exact Submission asks the Consumer Chain to bind,
+  so allowing the preview and Submission to diverge would reopen the gap where
+  the display names one account and the Submission binds another; and an
+  authoritative extraction owned by a role that cannot see the
   bytes is a check nobody performs. The Google audience, extracted in circuit
   and compared on chain, is the ordinary case the comparison sentence allows.
 - REQ-COMMON-19C (upholds SP-BIND-01, SP-EXCHANGE-01):
@@ -1115,7 +1142,9 @@ the constructions that role implements.
   The Proof Verifier refuses an empty, malformed, or caller-substituted Chain
   ID; a Canonical Runtime and Proof Verifier reading one Chain Profile agree
   on the Chain ID, and a runtime committing any other value produces a digest
-  the recomputation rejects; the Consumer rejects a
+  the recomputation rejects; two Chain Profiles which accept the same operation
+  domains are ineligible when they reuse the same canonical identifier bytes;
+  the Consumer rejects a
   caller-substituted Block Time; and a Transaction Submitter that cannot satisfy
   the transaction kind's Transaction Author predicate.
 - TEST-COMMON-03 (exercises REQ-COMMON-03, REQ-COMMON-03A):
@@ -1138,13 +1167,14 @@ the constructions that role implements.
   No artifact, log, or platform parameter emitted before the token exchange
   completes contains `pkceNonce`. Verification: inspection of the emitted
   artifacts.
-- TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-16A, REQ-COMMON-17, REQ-COMMON-17C, REQ-COMMON-22A):
-  The Canonical Runtime rejects a proof carrying a client identifier other
+- TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-16A, REQ-COMMON-16B, REQ-COMMON-17, REQ-COMMON-17C, REQ-COMMON-22A):
+  The Canonical Runtime rejects a Submission carrying a client identifier other
   than its immutable profile's client, while a proof carrying a client
   identifier registered nowhere remains acceptable to the Platform Verifier.
   Every platform returns the identifier as exact bytes, never a digest, and a
   submission whose supplied bytes its evidence does not authenticate is
-  rejected.
+  rejected. X and GitHub reject an empty identifier and every identifier byte
+  outside `[A-Za-z0-9*._-]` rather than returning a form serialization.
 - TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-18A, REQ-COMMON-19, REQ-COMMON-19A, REQ-COMMON-19B, REQ-COMMON-19C, REQ-COMMON-19E, REQ-COMMON-20, REQ-COMMON-22):
   An authenticated JSON response carrying a second copy of a templated field
   in its revealed bytes is rejected; a transcript whose
@@ -1157,7 +1187,10 @@ the constructions that role implements.
   naming an authoritative extraction by a role that cannot see the bytes, is
   ineligible; a profile whose Canonical Runtime repeats an extraction the
   Platform Verifier owns, and one extracting a field in one role and comparing
-  it in another, both stay eligible. A profile whose Attestation Count is nonzero and which pins no
+  it in another, both stay eligible. Replacing any field of the exact
+  Submission after deriving the local preview discards that preview and
+  requires derivation from the replacement Submission. A profile whose
+  Attestation Count is nonzero and which pins no
   Notary Service or no attestation format is ineligible, while a profile
   whose Attestation Count is zero stays eligible pinning neither.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
@@ -1256,8 +1289,10 @@ This document enforces SP-BIND-01, SP-CLIENT-01, SP-EXCHANGE-01,
 SP-FRESH-01, and SP-REPLAY-01 under the assumptions of §3.
 
 Replay within one Consumer deployment is prevented by `authorizationNonce`
-and REQ-COMMON-03. Replay across Consumer Chains is prevented by the Chain ID
-in the digest. Replay across Platform Verifier Versions is prevented by
+and REQ-COMMON-03. Replay across Consumer Chains whose Chain Profiles use
+distinct canonical identifier bytes is prevented by the Chain ID in the
+digest; a profile collision forfeits that separation. Replay across Platform
+Verifier Versions is prevented by
 `platformVerifierVersion`. The digest does not prevent cross-deployment replay
 because it binds no Consumer identifier. Every Consumer transaction
 kind therefore defines an authorization predicate over the authenticated
