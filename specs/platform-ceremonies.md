@@ -36,9 +36,9 @@ and an identity session — and bind the digest through the revealed
 
 - REQ-PLAT-01:
   The Ceremony Client MUST select and retain one exact profile for the live
-  ceremony. It MUST NOT substitute another profile after authorization starts.
-  Necessity: changing profiles mid-ceremony would produce evidence the selected
-  verifier cannot check.
+  ceremony. The Ceremony Client MUST NOT substitute another profile after
+  authorization starts. Necessity: changing profiles mid-ceremony would produce
+  evidence the selected verifier cannot check.
 - REQ-PLAT-01A (upholds SP-BIND-01):
   The Verifier Governance Process MUST select an exact proof-verifier
   artifact for every eligible profile and an exact Notary Service for every
@@ -179,9 +179,9 @@ block an otherwise valid authority operation.
 
 ## 3. Google OIDC ceremony
 
-Google uses direct authentication-only OIDC. The ceremony has no token
-exchange, client secret, PKCE, token-exchange service, or server-side state.
-Identity evidence is the signed ID Token delivered in the redirect fragment.
+Google uses direct authentication-only OIDC and has no server-side token
+exchange. Identity evidence is the signed ID Token delivered in the redirect
+fragment.
 
 ### 3.1 Authorization request
 
@@ -608,13 +608,18 @@ belong in a proof.
 
 ## 6. GitHub ceremony
 
+GitHub Token Service: The deployment-owned confidential-client component that
+performs the GitHub token exchange inside a notarized TLS session and returns
+the bearer, its opening, and the resulting attestation through the fixed
+`/oauth/github/token` route.
+
 GitHub uses a confidential client, a deployment-owned token-exchange
 TLSNotary session, and a browser-owned `/user` TLSNotary session. The
 structure matches X exactly: two attestations, both verified by the Notary
 Service, one
 hidden bearer linking them, and one proof binding that link to the
 Authorization Digest. The exchange runs server-side because the client is
-confidential, which makes the Token-Exchange Service the notarized party for
+confidential, which makes the GitHub Token Service the notarized party for
 that session. It produces an attestation, not a proof.
 
 ### 6.1 Authorization request
@@ -681,9 +686,9 @@ revealed `client_id` something other than the credential GitHub authenticated.
   the Consumer Chain acts on them; the Ceremony Client MAY check them
   locally.
 
-### 6.3 Token-exchange service
+### 6.3 GitHub token service
 
-The Deployment exposes one stateless Token-Exchange Service at the fixed
+The Deployment exposes one stateless GitHub Token Service at the fixed
 `/oauth/github/token` route on the redirect origin.
 
 The prover sends `TokenRequest` as a UTF-8 JSON body in an exact `POST` with
@@ -720,14 +725,14 @@ interface TokenResponse {
   `MAX_GITHUB_TOKEN_RESPONSE_BYTES = 3 MiB`. Necessity: bounded parsing.
 - REQ-PLAT-40:
   The Implementation MUST reject duplicate, missing, additional, differently
-  typed, and malformed fields on both interfaces. The service MUST reject GET,
-  every method other than POST, a query, a non-JSON request media type, or a
-  malformed JSON body before starting token exchange. The prover MUST reject a
-  successful response with another status or media type.
+  typed, and malformed fields on both interfaces. The GitHub Token Service MUST
+  reject GET, every method other than POST, a query, a non-JSON request media
+  type, or a malformed JSON body before starting token exchange. The Ceremony
+  Client MUST reject a successful response with another status or media type.
   Necessity: cross-component interoperability, and neither the authorization
   code nor verifier belongs in a URL, request line, or ordinary cache key.
 - REQ-PLAT-54:
-  The Token-Exchange Service MUST return in `bearerOpening` the blinder that
+  The GitHub Token Service MUST return in `bearerOpening` the blinder that
   opens the committed bearer range of the attestation it returns in the same
   response. Necessity: the Proving Circuit opens that commitment under
   REQ-PLAT-52, and the blinder is prover-private material generated inside
@@ -742,32 +747,32 @@ interface TokenResponse {
   and the commitment together reveal the committed bearer, so a published
   opening publishes the credential its commitment exists to hide.
 - REQ-PLAT-41 (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST use only its compiled client identifier, client
-  secret, redirect URI, token endpoint, and notary configuration. The
-  Token-Exchange Service MUST NOT accept a caller-selected action, job, client,
-  redirect, endpoint, return URL, or operation.
+  The GitHub Token Service MUST use only its compiled client identifier, client
+  secret, redirect URI, token endpoint, and notary configuration. The GitHub
+  Token Service MUST NOT accept a caller-selected action, job, client, redirect,
+  endpoint, return URL, or operation.
 - REQ-PLAT-42:
-  The Token-Exchange Service MUST persist no code, verifier, bearer, proof,
-  result, or progress state. The Token-Exchange Service MUST expose no polling or
+  The GitHub Token Service MUST persist no code, verifier, bearer, proof,
+  result, or progress state. The GitHub Token Service MUST expose no polling or
   result route. Necessity: the service holds ceremony credentials, so retention
   creates a compromise target with no protocol purpose.
 - REQ-PLAT-43:
-  The Token-Exchange Service MUST accept only the registered redirect origin.
+  The GitHub Token Service MUST accept only the registered redirect origin.
   Necessity: limits accidental browser disclosure; it is not caller
   authentication.
 - REQ-PLAT-43A:
-  The Token-Exchange Service MUST answer the CORS preflight for that origin.
+  The GitHub Token Service MUST answer the CORS preflight for that origin.
   Necessity: cross-component interoperability with the Ceremony Client.
 - REQ-PLAT-43B:
-  The Token-Exchange Service MUST reject redirects. Necessity: a followed redirect
+  The GitHub Token Service MUST reject redirects. Necessity: a followed redirect
   would notarize a session other than the pinned token endpoint.
 - REQ-PLAT-43C:
-  The Token-Exchange Service MUST emit `Cache-Control: no-store`. Necessity: the
+  The GitHub Token Service MUST emit `Cache-Control: no-store`. Necessity: the
   response carries a bearer token.
 
 ### 6.4 Disclosure and verification
 
-The Token-Exchange Service, which holds the client secret, runs the exchange
+The GitHub Token Service, which holds the client secret, runs the exchange
 inside a notarized TLS session and returns the resulting attestation. The
 `client_secret` range stays redacted behind that attestation's range
 commitment, so the browser never receives the secret. The attestation is
@@ -811,11 +816,11 @@ data itself, which is why common REQ-COMMON-25 can forbid inferring it from a
 response header. Revealing more would widen exposure without adding a check.
 
 - REQ-PLAT-43D (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST reveal no range outside the seven rows
-  marked `yes` above. The Token-Exchange Service MUST commit the bearer range
+  The GitHub Token Service MUST reveal no range outside the seven rows
+  marked `yes` above. The GitHub Token Service MUST commit the bearer range
   rather than reveal it.
 - REQ-PLAT-58 (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST reveal the `"access_token":"` delimiter
+  The GitHub Token Service MUST reveal the `"access_token":"` delimiter
   bytes immediately preceding that committed range and the closing quote byte
   immediately following it. The Platform Verifier MUST reject a
   token-exchange attestation whose committed range is not framed by exactly
@@ -836,7 +841,7 @@ response header. Revealing more would widen exposure without adding a check.
   back before spending a `/user` session on it; the Notary Service decision
   the chain relies on is separate.
 - REQ-PLAT-45 (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST return an attestation carrying the
+  The GitHub Token Service MUST return an attestation carrying the
   configured notary's signature and revealing the token request's method and
   path. The Platform Verifier MUST compare those two revealed values with the
   `github/v1` profile. The Platform Verifier MUST compare the authority that
@@ -976,7 +981,7 @@ binds nothing on the Consumer Chain. The bearer is never disclosed by the
 proof.
 
 - REQ-PLAT-53:
-  The Token-Exchange Service MUST NOT promise idempotency or replay. The Ceremony
+  The GitHub Token Service MUST NOT promise idempotency or replay. The Ceremony
   Client MUST start a fresh ceremony when GitHub consumed the code but no
   response reached it. Necessity: the exchange is a single-use, non-recoverable
   step.
@@ -996,7 +1001,7 @@ behavior; and conformance vectors.
 
 ## 8. Conformance
 
-Roles: Ceremony Client, Token-Exchange Service, Proving Circuit,
+Roles: Ceremony Client, GitHub Token Service, Proving Circuit,
 Platform Verifier, Notary Service, Consumer.
 
 - TEST-PLAT-01 (exercises REQ-PLAT-10, REQ-PLAT-18):
@@ -1180,7 +1185,7 @@ reduce hidden request surface but do not replace that parser assumption.
 TEST-PLAT-19 exercises it continuously; a failed probe makes the affected
 profile ineligible for new ceremonies.
 
-A malicious Token-Exchange Service cannot rebind a ceremony to other
+A malicious GitHub Token Service cannot rebind a ceremony to other
 Authorized Transaction Data while ASM-PROV-07 holds, because the Authorization
 Digest fixes that data before the platform is contacted and the service cannot
 make GitHub redeem a `code_verifier` other than the one proven. Should
@@ -1197,8 +1202,8 @@ The notary key is a trust root for X and GitHub evidence. Its compromise
 mints fresh evidence until the key is removed, and does not revoke authority
 already committed.
 
-Google has no Token-Exchange Service or deployment-visible authorization
-response. Its signed ID Token reaches the redirect fragment, is cleared before
+Google has no server-side token exchange. Its signed ID Token reaches the
+redirect fragment, is cleared before
 other work, and is bound to the local ceremony by `state`, signed `nonce`, and
 signed `aud`. A deployment backend can withhold the static redirect document
 but cannot substitute an ID Token through a server exchange that does not

@@ -19,9 +19,9 @@ libID turns an identity-platform authorization into a proof that a Consumer
 applies to one proof-bound transaction:
 
 ```text
-User -> Identity Platform -> Canonical Runtime -> Proving Circuit -> Consumer
+User -> Identity Platform -> Ceremony Client -> Proving Circuit -> Consumer
                                   |                                     |
-                                  +-> Token-Exchange Service            v
+                                  +-> GitHub Token Service             v
                                       (GitHub only)              Proof Verifier
                                                                        |
                                                                  Platform Verifier
@@ -44,7 +44,7 @@ what that transaction means. [Common §5.1](ceremony-common.md#51-verification-p
 owns this path.
 
 The application operator controls its frontend, redirect deployment, OAuth
-clients, and any Token-Exchange Service, but is not trusted to choose identity
+clients, and its GitHub Token Service, but is not trusted to choose identity
 fields, change the proof-bound operation, or widen proof validity. The identity
 platform controls the authenticated account response. The notary authenticates
 X/GitHub transcripts and their creation times. Verifier governance selects
@@ -103,17 +103,16 @@ GitHub; the Proving Circuit proves only what cannot be read from that
 evidence, which is Google's signature relation and, on X and GitHub, that one
 hidden bearer opens both sessions' commitments. The Consumer enforces replay
 rejection by recording every Authorization Digest it accepts before applying
-an effect (REQ-COMMON-03, REQ-COMMON-03A). The Canonical Runtime
+an effect (REQ-COMMON-03, REQ-COMMON-03A). The Ceremony Client
 locally enforces the selected OAuth client and redirect profile. The protocol assumes the named identity-platform parser,
 PKCE, delivery, notary, browser, verifier-soundness, and chain behaviors. It
 does not enforce human understanding of a platform consent screen, prevent
 cross-deployment presentation of the same proof, or make mutable display
 metadata authoritative.
 
-Collusion sanity check — non-exhaustive: application plus Token-Exchange Service
-control can withhold but cannot retarget valid evidence; application plus a
-malicious identity-platform operator defeats identity authenticity for that
-platform but not Authorization Digest binding; any pair containing compromised
+Collusion sanity check — non-exhaustive: application plus a malicious
+identity-platform operator defeats identity authenticity for that platform but
+not Authorization Digest binding; any pair containing compromised
 Verifier governance, a selected verifier, or the applicable platform/notary
 trust root inherits that single-root compromise. This does not model adaptive or
 three-party compromise, shared key custody, browser supply-chain compromise, or

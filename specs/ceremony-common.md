@@ -110,10 +110,6 @@ Identity Platform: Google, X, GitHub, or a future source of authenticated
    identity evidence. "Provider" is reserved for the formal OIDC term and for
    the EIP-1193 wallet provider.
 
-Token-Exchange Service: The confidential-client component that performs a
-   token exchange requiring a client secret, inside a notarized TLS session,
-   and returns the resulting attestation.
-
 Ceremony Client: The immutable browser release that constructs
    Authorization Digests, performs the required local evidence checks, and
    builds proofs and claim previews.
@@ -198,10 +194,10 @@ Attestation Count: The number of entries in the closed attestation list a
 
 ## 4. Security properties
 
-The properties below survive a malicious application operator and, where
-present, a malicious Token-Exchange Service under their cited assumptions. They
-assume an unmodified Ceremony Client, the selected verifier artifact, the
-Consumer, and verifier configuration. Compromise of the applicable
+The properties below survive a malicious application operator under their
+cited assumptions. They assume an unmodified Ceremony Client, the selected
+verifier artifact, the Consumer, and verifier configuration. Compromise of the
+applicable
 identity-platform signing root, notary key, proof verifier, verifier governance,
 browser supply chain, or Consumer Chain invalidates the properties that depend
 on it.
@@ -1130,8 +1126,8 @@ Service.
 
 ## 11. Conformance
 
-Roles: Ceremony Client, Ceremony Popup, Token-Exchange Service, Proving
-Circuit, Proof Verifier, Platform Verifier, Notary Service, Consumer. The
+Roles: Ceremony Client, Ceremony Popup, Proving Circuit, Proof Verifier,
+Platform Verifier, Notary Service, Consumer. The
 Implementation claiming a role MUST pass the vectors covering
 the constructions that role implements.
 
