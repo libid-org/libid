@@ -50,16 +50,18 @@ and an identity session — and bind the digest through the revealed
   contains every fixed route it requires. Necessity: cross-component
   interoperability between runtime and deployment.
 - REQ-PLAT-03 (upholds SP-CLIENT-01):
-  The Canonical Runtime MUST construct the verified claim exclusively from the
-  Platform Profile's canonical authenticated source after locally verifying
-  the proof. For X and GitHub, the Canonical Runtime MUST parse the exact
-  revealed identity-response bytes that the Platform Verifier extracts, using
-  the same canonical extraction and normalization rules. The Canonical Runtime
-  MUST reject a detached proof output, sidecar value, or caller value that
-  supplies or overrides `userId`, handle, or `metadataObservedAt`.
+  The Canonical Runtime MUST construct the local claim preview exclusively from
+  the Platform Profile's canonical source in the exact Submission it returns.
+  The preview is not an authority decision; only the Consumer's acceptance of
+  that exact Submission is. For X and GitHub, the Canonical Runtime MUST parse
+  the exact revealed identity-response bytes that the Platform Verifier
+  extracts, using the same canonical extraction and normalization rules. The
+  Canonical Runtime MUST reject a detached proof output, sidecar value, or
+  caller value that supplies or overrides `userId`, handle, or
+  `metadataObservedAt`.
 
 This is a data-source invariant, not a browser-flow requirement. It defines the
-claim returned to callers and used by any composition-owned UI; it does not
+preview returned to callers and used by any composition-owned UI; it does not
 create a ceremony-owned confirmation page.
 
 ### 2.1 Canonical platform user identifiers
@@ -402,8 +404,9 @@ sessions.
 
 - REQ-PLAT-29 (upholds SP-EXCHANGE-01):
   The Implementation MUST reveal the token request's `code` range. The
-  Canonical Runtime MUST require that revealed code to equal the code consumed
-  at redirect ingress, byte for byte.
+  Canonical Runtime MUST require that revealed serialized value to equal the
+  canonical form serialization of the code consumed at redirect ingress,
+  byte for byte, under common REQ-COMMON-07.
 - REQ-PLAT-30 (upholds SP-BIND-01):
   The Proving Circuit MUST constrain the opened bearer range to nonempty
   printable ASCII of at most 4096 bytes. The carriage-return and line-feed
@@ -460,8 +463,9 @@ dependency.
   The Implementation MUST reveal the token request's `grant_type` and
   `redirect_uri` ranges in the notarized session, including in the
   attestation the Platform Verifier checks. The Canonical Runtime MUST
-  reject a transcript whose revealed `grant_type` or `redirect_uri` differs
-  from its immutable deployment profile. Neither value is a circuit
+  reject a transcript whose revealed serialized `grant_type` or `redirect_uri`
+  value differs from the canonical form serialization of its immutable
+  deployment-profile value. Neither value is a circuit
   constraint or a public proof input, and neither is a value the Consumer
   reads; the Platform Verifier compares the revealed `grant_type` itself
   under REQ-PLAT-56. Revealing them narrows the body a prover can compose
@@ -831,14 +835,21 @@ response header. Revealing more would widen exposure without adding a check.
   Necessity: the authority is never a revealed range,
   because the transcript carries it only in a prover-composed `Host` header.
 - REQ-PLAT-46 (upholds SP-EXCHANGE-01):
-  The Canonical Runtime MUST require the disclosed `code` to equal the code it
-  consumed at redirect ingress, byte for byte.
+  The Canonical Runtime MUST require the disclosed serialized `code` value to
+  equal the canonical form serialization of the code it consumed at redirect
+  ingress, byte for byte.
 - REQ-PLAT-47 (upholds SP-CLIENT-01):
   The Canonical Runtime MUST require the disclosed `client_id` to equal its
-  configured client.
+  configured client. Common REQ-COMMON-16B makes those bytes identical before
+  and after form serialization.
 - REQ-PLAT-48 (upholds SP-BIND-01):
   The Canonical Runtime MUST require the disclosed `code_verifier` to equal the
-  verifier it derived.
+  verifier it derived. Its base64url alphabet is byte-identical under form
+  serialization.
+- REQ-PLAT-48A (upholds SP-EXCHANGE-01):
+  The Canonical Runtime MUST require the disclosed serialized `redirect_uri`
+  value to equal the canonical form serialization of its immutable
+  deployment-profile value.
 - REQ-PLAT-49 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST require the returned bearer, under the returned
   `bearerOpening`, to open the bearer commitment of the token-exchange
@@ -1020,7 +1031,9 @@ Platform Verifier, Notary Service, Consumer.
   Google's JWKS endpoint, and every corresponding exponent is 65537.
 - TEST-PLAT-09 (exercises REQ-PLAT-29, REQ-PLAT-46):
   A transcript whose disclosed `code` differs from the code consumed at
-  redirect ingress is rejected on X and on GitHub.
+  redirect ingress is rejected on X and on GitHub. A code containing a
+  form-reserved byte matches only its canonical serialized value range, never
+  the unencoded bytes or a noncanonical alternative.
 - TEST-PLAT-09A (exercises REQ-PLAT-29A, REQ-PLAT-29B):
   An X attestation that does not reveal the token request's `client_id` is
   rejected; a proof exposing a client identifier public input is rejected; and
@@ -1031,7 +1044,9 @@ Platform Verifier, Notary Service, Consumer.
 - TEST-PLAT-09C (exercises REQ-PLAT-29C, REQ-PLAT-56):
   The Platform Verifier rejects an X attestation that hides the `grant_type`
   or `redirect_uri` range, and the Canonical Runtime rejects a revealed value
-  differing from its deployment profile. The Platform Verifier rejects an
+  differing from the canonical form serialization of its deployment profile.
+  A redirect URI containing `:` and `/` passes in that encoded form and fails
+  as literal unencoded bytes. The Platform Verifier rejects an
   attestation whose revealed `grant_type` is `refresh_token`, and one whose
   `grant_type` differs from `authorization_code` in any byte, even when every
   other revealed range and the proof itself check out.
@@ -1060,9 +1075,10 @@ Platform Verifier, Notary Service, Consumer.
   no-store`; an attestation revealing a range outside the seven marked rows,
   or revealing the bearer range instead of committing it, is rejected; and no proof exposes the bearer or a value it can be recovered
   from.
-- TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-49, REQ-PLAT-50):
+- TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-48A, REQ-PLAT-49, REQ-PLAT-50):
   A token-exchange attestation with a bad notary signature, a foreign
-  endpoint, a foreign client, a foreign `code_verifier`, or a bearer that does not
+  endpoint, a foreign client, a foreign `code_verifier`, a foreign serialized
+  `redirect_uri`, or a bearer that does not
   open the commitment under the returned `bearerOpening` is discarded in each
   case, and no resume record is written.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A, REQ-PLAT-52B):
@@ -1081,13 +1097,17 @@ Platform Verifier, Notary Service, Consumer.
 - TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-02, REQ-PLAT-03):
   A resume that substitutes a newer profile is rejected, an unlisted profile is
   ineligible, a profile missing its verifier artifact or, for a TLSNotary
-  profile, its Notary Service is ineligible, and no claim field originates
-  outside verified public inputs and verified revealed attestation bytes.
+  profile, its Notary Service is ineligible, and no preview field originates
+  outside proof public inputs and the exact revealed attestation bytes carried
+  by its Submission. Only the Consumer's acceptance of that exact Submission
+  makes the claim authoritative.
 - TEST-PLAT-17A (exercises REQ-PLAT-03, REQ-PLAT-31A, REQ-PLAT-51A):
   Pair authenticated X or GitHub identity-response bytes for account B with a
   detached `userId`, handle, or metadata value for account A. The runtime
   rejects the extra representation; without it, the runtime and the Platform
-  Verifier both derive account B byte for byte.
+  Verifier both derive account B byte for byte. Replacing the proof,
+  attestation, platform, or version after deriving the preview discards it and
+  requires rederivation from the replacement Submission.
 - TEST-PLAT-18 (exercises REQ-PLAT-25, REQ-PLAT-26, REQ-PLAT-27, REQ-PLAT-28, REQ-PLAT-28A):
   Launch uses Proxy mode, rejects application or request selection of Browser
   MPC, uses no application-controlled platform egress, and carries no partial
