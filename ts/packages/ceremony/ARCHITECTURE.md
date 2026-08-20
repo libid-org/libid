@@ -109,7 +109,7 @@ The package-facing API surface is:
 |---|---|
 | `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization construction, final-proof verification/public-input decoding, and `PopupProtocolVersion` |
 | `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `ServerConfig` fetch, and stateful `Ceremony` orchestration |
-| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(capture)` to the cleared redirect document |
+| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(capture, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts the closed Popup Protocol and its ServiceWorker branch owns warmup fetches |
 
 The API below and the Ceremony Popup Protocol records are the launch surface.
@@ -274,7 +274,6 @@ interface PlatformConfig {
 interface ServerConfig {
   schema: 1
   redirectUri: string
-  allowedAppOrigins: string[]
   platforms: Partial<Record<PlatformId, PlatformConfig>>
 }
 ```
@@ -283,12 +282,15 @@ The application-scoped client fetches this record once with native `fetch` and
 validates it through `@libid/ceremony/protocol`; there is no configuration
 module. The fetch requires an exact browser `Origin`. `redirectUri` is the registered HTTPS URL with
 path exactly `/oauth/redirect`, no credentials, query, or fragment. Loopback
-development may use HTTP. `allowedAppOrigins` is a nonempty server-controlled
-set of canonical origins. Each platform entry contains its public client ID and
+development may use HTTP. Each platform entry contains its public client ID and
 a nonempty, duplicate-free set of supported verifier versions. List order has
 no meaning: the client chooses the newest version according to its closed local
-implementation table from the intersection. Platform entries contain no
-credentials.
+implementation table from the intersection. Platform entries contain no credentials.
+
+`allowedAppOrigins` is deployment configuration, not a public `ServerConfig`
+field. The server uses the same canonical set for exact request-origin CORS and
+embeds it into every `/oauth/redirect` document. It is never derived from that
+request's `Origin` or `Referer`.
 
 The client freezes the selected platform, verifier version, client ID, and
 redirect URI in the live Ceremony. `PopupProve` carries those values; the popup
@@ -530,7 +532,8 @@ sending its initial Hello,
 the popup loads `/oauth/prove` and starts or joins the worker-owned warmup; Hello
 therefore also means that the asset single flights exist or warmup is known to
 be unavailable. The popup accepts the answering Hello only from `window.opener`
-after the redirect's server-controlled validation of the browser-reported app origin. That exchange binds
+after exact-matching the browser-reported app origin against its validated,
+server-embedded `allowedAppOrigins`. That exchange binds
 all later traffic to the exact source/origin pair. Messages are direct;
 unknown fields or types, wrong directions, stale order, source/origin changes,
 and replays change no state.
@@ -677,14 +680,17 @@ interface OAuthRedirectCapture {
   fragment: string
 }
 
-startPopup(capture)
+startPopup(capture, allowedAppOrigins: readonly string[])
 ```
 
 Empty query plus empty fragment is the scripted warmup launch. The bootstrap
 clears even malformed or oversized input before rendering. It performs no
 parsing, storage, network request, dynamic rendering, or error reporting before
-clearing. Redirect servers suppress query strings in access logs, traces,
-analytics, and errors.
+clearing. `startPopup` exact-validates and freezes the nonempty embedded list of
+canonical origins before using it; the list is deployment-generated and never
+comes from request `Origin`, `Referer`, query, fragment, or a client message.
+Redirect servers suppress query strings in access logs, traces, analytics, and
+errors.
 
 After loading, the popup authenticates the opener, parses the captured OAuth
 `state` as `ceremonyId` for live client
@@ -854,7 +860,7 @@ isolation, worker count, or verification. Warm state is never a checkpoint.
 | Response | Required policy |
 |---|---|
 | `/_libid/config` | exact `ServerConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
-| `/oauth/redirect` | top-level non-isolated static document; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
+| `/oauth/redirect` | top-level non-isolated deployment-generated document embedding the canonical allowed-origin set; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
 | `/oauth/prove` | the one warmup/proving document; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `COEP: require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
 | server platform routes | prover-only exact method, body, and origin; reject redirects; no-store; bounded time/size; credential log redaction |
 
