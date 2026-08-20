@@ -481,7 +481,6 @@ interface PopupHello {
 interface PopupOAuthResult {
   type: 'popup-oauth-result'
   ceremonyId: string
-  status: 'accepted' | 'denied'
   oauthResult: string
 }
 
@@ -548,16 +547,17 @@ After readiness, popup-to-application messages are `PopupOAuthResult`,
 Application-to-popup messages are `PopupProve` and parameterless
 `PopupAbort`. They are the two application responses to `PopupOAuthResult`;
 application-to-popup Abort may also stop a ceremony after `PopupProve`. Before
-`PopupProve`, Abort clears the OAuth result and attempts to close when the retained
-result is a valid denial; otherwise it renders restart. Afterwards it cancels
-reachable proving work and attempts to close. Popup-to-application Abort reports a
+`PopupProve`, every Abort identically clears the OAuth result and attempts to
+close; if closing fails, the popup renders one fixed fallback message. Afterwards
+it cancels reachable proving work and attempts to close. Popup-to-application Abort reports a
 technical terminal failure and rejects the live Ceremony. Direction supplies
 the meaning; Abort carries no reason and has no response. Warmup has no public
 message or input of its own.
 
-`PopupOAuthResult` parses the captured OAuth `state` into `ceremonyId`, classifies
-the closed top-level result as accepted or denied, and sends that ID, status,
-and bounded provider result to the authenticated application client. The application origin is trusted for
+`PopupOAuthResult` parses only the captured OAuth `state` into `ceremonyId` and
+sends that ID and the bounded raw provider result to the authenticated
+application client. The popup does not classify the platform-specific result.
+The application origin is trusted for
 both the transient `PopupProve` and provider result; the protocol does
 not attempt to isolate either value from other scripts executing in that
 origin. Exact `targetOrigin`, `MessageEvent.origin`, and `MessageEvent.source`
@@ -565,9 +565,11 @@ checks prevent unrelated origins from receiving or injecting this traffic.
 The application-scoped `CeremonyClient` uses its in-memory table to select one
 live `Ceremony`; it does not query IndexedDB or reveal the ID to the
 composition. For an unknown, stale, replayed, or post-reload state, the client
-sends `PopupAbort` and the popup renders restart. Otherwise, the client
-atomically claims the matching state and exact-validates the status and raw
-result against that Ceremony's platform profile. An invalid result rejects the
+sends `PopupAbort`, and the popup follows the same pre-prove cleanup path.
+Otherwise, the client
+atomically claims the matching state and uses that Ceremony's retained
+platform/version parser to exact-validate and classify the raw result. A
+malformed or mismatched result rejects the
 Ceremony and sends `PopupAbort`. A valid denial resolves with
 `{ status: 'denied' }` and sends `PopupAbort` for popup cleanup. A valid
 acceptance constructs `PopupProve` from the live Ceremony's ID, selected
@@ -616,23 +618,23 @@ sequenceDiagram
     P-->>C: Internally ready
     C->>A: PopupHello(version)
     A-->>C: PopupHello(version)
-    C->>A: PopupOAuthResult(ceremonyId, status, oauthResult)
+    C->>A: PopupOAuthResult(ceremonyId, oauthResult)
     alt No matching live Ceremony
         A-->>C: PopupAbort
-        C->>C: Render fixed restart
+        C->>C: Clear result, close, or render fixed fallback
     else Matching live Ceremony
         A->>A: Claim live Ceremony in memory
-        A->>A: Validate status and callback against Ceremony
+        A->>A: Parse and classify callback with Ceremony platform/version
 
         alt Invalid callback or setup
             A->>A: Reject Ceremony
             A-->>C: PopupAbort
-            C->>C: Clear result and render fixed restart
+            C->>C: Clear result, close, or render fixed fallback
         else Valid provider denial
             A->>A: Resolve IdentityResult(denied)
             A->>J: Retire Job
             A-->>C: PopupAbort
-            C->>C: Clear result and close
+            C->>C: Clear result, close, or render fixed fallback
         else Valid provider success
             A-->>C: PopupProve(minimal proving inputs)
             C->>C: Echo-check result and validate Prove
@@ -697,18 +699,19 @@ After loading, the popup authenticates the opener, parses the captured OAuth
 routing, and exact-validates the returned `PopupProve` ID, platform, verifier
 version, client ID, redirect URI, provider result, and PKCE shape before using
 the credential.
-It rejects a Google ID Token at or after its signed `exp`; mutable X/GitHub
-proof lifetimes are enforced only by the Platform Verifier. Google accepts a
-nonempty fragment and empty query; X and GitHub
-accept a nonempty query and empty fragment. Platform-specific exact parsing is
-owned by the selected platform version.
+The application client's selected platform/version parser classifies the raw
+result. It rejects a Google ID Token at or after its signed `exp`; mutable
+X/GitHub proof lifetimes are enforced only by the Platform Verifier. Google
+accepts a nonempty fragment and empty query; X and GitHub accept a nonempty
+query and empty fragment.
 
 An unsupported or invalid input discovered after `PopupProve`
 clears the return, sends popup-to-application `PopupAbort`, and renders
 **Application updated—return and try again**. An unknown state, malformed
 response, wrong origin, timeout, or internal failure sends application-to-popup
-`PopupAbort` after live binding and renders a fixed **Restart authorization**
-result. Failures before live binding send nothing and expose no callback value.
+`PopupAbort` after live binding; the popup clears the result, attempts to close,
+and renders one fixed fallback message if closing fails. Failures before live
+binding send nothing and expose no callback value.
 
 ## Popup/prover channel
 
