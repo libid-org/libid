@@ -59,7 +59,8 @@ Fee Payer: The principal economically charged for a transaction. It can differ
    from the Transaction Author.
 
 Transaction Submitter: The principal that delivers a transaction to the
-   Consumer Chain. Submission alone grants no transaction authority.
+   Consumer Chain. Delivering a transaction alone grants no transaction
+   authority.
 
 Chain ID: The 32-byte keccak256 of a Consumer Chain's canonical chain
    identifier. That identifier takes whatever form the chain gives it — a
@@ -73,15 +74,16 @@ Chain Profile: The normative mapping from one Consumer Chain to its Chain ID,
    Transaction Author authentication, Block Time, and Authorized Transaction
    Data encoding.
 
-Submission: The complete input a Consumer passes to the Proof Verifier for
+OAuth Proof: The complete input a Consumer passes to the Proof Verifier for
    one verification: the identity platform, the Platform Verifier Version, the
    operation domain, the Authorization Nonce, the Authorized Transaction Data,
    the proof, the platform's attestations, `pkceNonce` where the profile uses
    the PKCE construction of §7, and any further value the Platform Profile
-   requires the caller to supply.
+   requires the caller to supply. It is neither the Consumer-Chain transaction
+   nor the zero-knowledge proof alone.
 
 Platform Ceremony: The complete operation that turns one platform
-   authorization into a local claim preview and the exact Submission the
+   authorization into a local claim preview and the exact OAuth Proof the
    Consumer Chain verifies. The preview is not authority.
 
 Platform Profile: The immutable, independently versioned definition of one
@@ -95,9 +97,9 @@ Platform Profile: The immutable, independently versioned definition of one
 Proving Circuit: The zero-knowledge circuit whose proof a Platform Verifier
    checks. It proves only what cannot be read from authenticated evidence.
 
-Redirect Runtime: The immutable browser code served at a registered redirect
-   URI, which receives an authorization response and hands it to the Canonical
-   Runtime.
+Ceremony Popup: The immutable browser component served at a registered
+   redirect URI, which receives an authorization response and delivers it
+   across the application's live ceremony channel.
 
 Verifier Governance Process: The authority over the verification path: the
    Proof Verifier's Supported Version Set, each Platform Verifier's pinned
@@ -112,7 +114,7 @@ Token-Exchange Service: The confidential-client component that performs a
    token exchange requiring a client secret, inside a notarized TLS session,
    and returns the resulting attestation.
 
-Canonical Runtime: The immutable browser release that constructs
+Ceremony Client: The immutable browser release that constructs
    Authorization Digests, performs the required local evidence checks, and
    builds proofs and claim previews.
 
@@ -132,13 +134,13 @@ Notary Service: The role that observes a TLS session and signs the resulting
    signature is trusted for.
 
 Notary Fee: The fixed amount a Notary Service charges for one verification,
-   denominated in the Consumer Chain's native asset. One submission carries
+   denominated in the Consumer Chain's native asset. One OAuth Proof carries
    one such fee for each attestation its Platform Profile requires, and no
    fee where that profile requires no attestation.
 
 Attestation Count: The number of entries in the closed attestation list a
    Platform Profile fixes under REQ-COMMON-41 — the attestations the Platform
-   Verifier must have verified before it accepts a submission. It is derived
+   Verifier must have verified before it accepts an OAuth Proof. It is derived
    from that list and never stated beside it, so the two cannot disagree. It
    is zero where the platform's evidence is a signed platform token, and two
    for each launch TLSNotary profile.
@@ -191,14 +193,14 @@ Attestation Count: The number of entries in the closed attestation list a
   that profile's complete proof statement. Verifier governance does not
   replace an artifact without selecting a new profile or verifier revision.
 - ASM-BROWSER-01:
-  The Canonical Runtime executes unmodified, and the user agent enforces the
+  The Ceremony Client executes unmodified, and the user agent enforces the
   same-origin policy over authorization responses.
 
 ## 4. Security properties
 
 The properties below survive a malicious application operator and, where
 present, a malicious Token-Exchange Service under their cited assumptions. They
-assume an unmodified Canonical Runtime, the selected verifier artifact, the
+assume an unmodified Ceremony Client, the selected verifier artifact, the
 Consumer, and verifier configuration. Compromise of the applicable
 identity-platform signing root, notary key, proof verifier, verifier governance,
 browser supply chain, or Consumer Chain invalidates the properties that depend
@@ -212,10 +214,10 @@ on it.
   conformance tests (supporting, not proving) plus the collision resistance of
   SHA-256 and keccak256.
 - SP-CLIENT-01:
-  The Canonical Runtime rejects evidence issued to an OAuth client other than
+  The Ceremony Client rejects evidence issued to an OAuth client other than
   the one fixed by its immutable ceremony profile. Depends on ASM-PROV-04,
   ASM-PROV-05, ASM-PROV-07, ASM-NOTARY-01, ASM-PROOF-01, and ASM-BROWSER-01.
-  Evidence: checked invariant in the Canonical Runtime, plus conformance tests
+  Evidence: checked invariant in the Ceremony Client, plus conformance tests
   (supporting).
 - SP-DELIVERY-01:
   An authorization response for one OAuth client reaches only an origin
@@ -260,11 +262,11 @@ Every field but `transactionData` is fixed width, so the preimage is 102
 bytes plus the Authorized Transaction Data.
 
 - REQ-COMMON-01 (upholds SP-BIND-01):
-  The Canonical Runtime MUST construct every Authorization Digest as the
-  keccak256 of exactly the byte concatenation above. The Canonical Runtime
+  The Ceremony Client MUST construct every Authorization Digest as the
+  keccak256 of exactly the byte concatenation above. The Ceremony Client
   MUST encode `platformVerifierVersion` in exactly two bytes and the
   Authorized Transaction Data byte length in exactly four bytes, rejecting a
-  value which does not fit its field. The Canonical Runtime MUST encode
+  value which does not fit its field. The Ceremony Client MUST encode
   `operationDomain`, `chainId`, and `authorizationNonce` as exactly 32 bytes
   each, with no length prefix. Necessity: only `transactionData` varies in
   length, so every other field is at a fixed offset and the preimage cannot
@@ -285,7 +287,7 @@ bytes plus the Authorized Transaction Data.
 the selected Platform Verifier, including this Authorization Digest layout.
 
 - REQ-COMMON-01B (upholds SP-BIND-01):
-  The Proof Verifier MUST reject a submission whose identity platform and
+  The Proof Verifier MUST reject an OAuth Proof whose identity platform and
   `platformVerifierVersion` pair lies outside its Supported Version Set. A
   platform-proof change bumps that platform's version; a common Authorization
   Digest change bumps every affected platform's version. An implementation
@@ -302,18 +304,18 @@ the selected Platform Verifier, including this Authorization Digest layout.
   some too wide for 64 bits — so the digest commits a hash of the identifier
   rather than the identifier itself. The Chain Profile author MUST ensure
   those canonical bytes differ from every other Consumer Chain on which the
-  same operation domains may accept libID submissions. This specification
+  same operation domains may accept libID OAuth Proofs. This specification
   supplies no global chain-identifier registry; reusing the bytes forfeits
-  cross-chain replay separation. The Canonical Runtime MUST take the Chain
+  cross-chain replay separation. The Ceremony Client MUST take the Chain
   ID it commits in the Authorization Digest from the Chain Profile of the
   Consumer Chain the ceremony authorizes, sourcing it from its execution
   environment where that chain exposes a chain identity to a deployed program
   and from immutable deployment configuration where it does not. The Proof
   Verifier MUST take the Chain ID of its digest recomputation from that same
-  Chain Profile value, sourced the same way. The Canonical Runtime MUST NOT
+  Chain Profile value, sourced the same way. The Ceremony Client MUST NOT
   take the Chain ID from caller-controlled input. The Proof Verifier MUST NOT
   take the Chain ID from Authorized Transaction Data or any other
-  caller-controlled input. Necessity: the runtime constructs the digest and
+  caller-controlled input. Necessity: the Ceremony Client constructs the digest and
   the verifier recomputes it, so the two must read one value or the
   recomputation never matches; several Consumer Chains expose no chain
   identity at execution time, so environment-sourcing cannot be required
@@ -329,7 +331,7 @@ the selected Platform Verifier, including this Authorization Digest layout.
 its own replay nullifier.
 
 - REQ-COMMON-01E (upholds SP-REPLAY-01):
-  The Canonical Runtime MUST draw the 32-byte `authorizationNonce` freshly for
+  The Ceremony Client MUST draw the 32-byte `authorizationNonce` freshly for
   each ceremony from a cryptographically secure random source.
 
 `transactionData` carries one transaction's arguments as opaque canonical
@@ -359,7 +361,7 @@ compare there. Neither method is optional, and no profile uses both.
   The Proof Verifier MUST recompute the Authorization Digest from the
   caller-supplied operation domain and Platform Verifier Version, its observed
   Chain ID, and the `authorizationNonce` and Authorized Transaction Data
-  carried in the submission.
+  carried in the OAuth Proof.
 - REQ-COMMON-02A (upholds SP-BIND-01):
   Where a Platform Profile exposes the Authorization Digest as a public proof
   input, the Platform Verifier MUST reject a proof whose Authorization Digest
@@ -382,7 +384,7 @@ compare there. Neither method is optional, and no profile uses both.
   The Consumer MUST reject an Authorization Digest it has already recorded.
   Necessity: recording belongs to the party the operation authorizes.
   Recording at the Proof Verifier instead would let anyone observing a
-  submission call the Proof Verifier first, consume the digest, and leave the
+  OAuth Proof call the Proof Verifier first, consume the digest, and leave the
   Consumer nothing to apply — a denial of service costing the attacker only a
   fee. A digest is spendable once at each Consumer that accepts its operation
   domain, and REQ-COMMON-01A leaves domain choice with the Consumer that
@@ -426,7 +428,7 @@ Consumer          names the platform and version, pays the quoted fees,
    |
    v
 Proof Verifier    selects the Platform Verifier for that pair, recomputes the
-                  Authorization Digest, hands it and the submission down,
+                  Authorization Digest, hands it and the OAuth Proof down,
                   returns the result
    |
    v
@@ -451,11 +453,11 @@ The last hop is conditional. A Platform Profile whose evidence is a signed
 platform token reaches no Notary Service at all: Google's Attestation Count
 is zero, so its path stops at the Platform Verifier and costs nothing. X and
 GitHub each verify two attestations — a token or token-exchange session and
-an identity session — so one submission on either path pays two fees.
+an identity session — so one OAuth Proof on either path pays two fees.
 
 - REQ-COMMON-05:
   The Consumer MUST call the Proof Verifier with the identity platform, the
-  Platform Verifier Version, the submission, and the native value the
+  Platform Verifier Version, the OAuth Proof, and the native value the
   quotation of REQ-COMMON-06E returns. That value covers one Notary Fee of
   §9.1 for each attestation the selected profile requires, and is zero where
   its Attestation Count is zero. Necessity: cross-component interoperability
@@ -492,10 +494,10 @@ an identity session — so one submission on either path pays two fees.
   observation time are what the ceremony exists to produce, and the Consumer
   has no other authenticated source for them.
 - REQ-COMMON-45 (upholds SP-BIND-01, SP-EXCHANGE-01):
-  The Platform Verifier MUST verify the proof carried in the submission under
+  The Platform Verifier MUST verify the proof carried in the OAuth Proof under
   the exact verifier artifact the Verifier Governance Process selected for
   the submitted identity platform and Platform Verifier Version. The Platform
-  Verifier MUST reject a submission whose proof does not verify under that
+  Verifier MUST reject an OAuth Proof whose proof does not verify under that
   artifact. The Platform Verifier MUST NOT accept a caller-supplied artifact,
   verifying key, or externally computed verification result. Necessity:
   ASM-PROOF-01 states what an accepted proof means and presupposes that some
@@ -504,7 +506,7 @@ an identity session — so one submission on either path pays two fees.
   compare is then a number the caller wrote down.
 - REQ-COMMON-46 (upholds SP-BIND-01):
   The Proof Verifier MUST pass the digest it recomputed under REQ-COMMON-02,
-  together with the complete submission, to the Platform Verifier it
+  together with the complete OAuth Proof, to the Platform Verifier it
   selected. The Platform Verifier MUST take the digest that REQ-COMMON-02A
   and REQ-COMMON-15A compare against from that forwarded value and from
   nothing else. Necessity: both of those rules compare something against a
@@ -512,8 +514,8 @@ an identity session — so one submission on either path pays two fees.
   rebuild it or to receive it another way would compare against a digest the
   caller could choose.
 
-The operation domain travels in the submission and is authenticated by digest
-recomputation rather than trusted: a submission naming a domain other than
+The operation domain travels in the OAuth Proof and is authenticated by digest
+recomputation rather than trusted: an OAuth Proof naming a domain other than
 the one the ceremony committed produces a different digest, which fails
 whichever binding check of REQ-COMMON-02A and REQ-COMMON-02B its profile
 uses. The Proof Verifier therefore returns the domain it authenticated, and
@@ -535,14 +537,14 @@ the Consumer decides whether that domain is its own.
 - REQ-COMMON-06C (upholds SP-BIND-01):
   The Proof Verifier MUST take the Chain ID of the digest recomputation of
   REQ-COMMON-02 from the Chain ID it observes under ASM-CHAIN-02. The Proof
-  Verifier MUST NOT read a Chain ID from the submission. The Proof Verifier
-  MUST dispatch on the Platform Verifier Version the submission names.
+  Verifier MUST NOT read a Chain ID from the OAuth Proof. The Proof Verifier
+  MUST dispatch on the Platform Verifier Version the OAuth Proof names.
   Necessity: the chain the evidence was authorized for and the proof
   statement that verifies it are both bound in the digest, and recomputing
-  that digest is the whole check on either; the submission carries no Chain
+  that digest is the whole check on either; the OAuth Proof carries no Chain
   ID for anything to compare against, and the dispatched version cannot
   disagree with the submitted one because dispatch reads it from the
-  submission in the first place.
+  OAuth Proof in the first place.
 
 The Notary Fees of §9.1 are charged at the bottom of this path, so native
 value passes down it and stops where the work is done. A path with no
@@ -574,10 +576,10 @@ attestation to verify carries no value at all.
   `application/x-www-form-urlencoded` serializer, taking UTF-8 input, encoding
   space as `+`, and using uppercase hexadecimal percent escapes. Necessity:
   byte-exact request reproduction across implementations, without which the
-  fixed range layout of §9 does not hold. This is a runtime serialization
-  rule; no circuit re-verifies it. The Canonical Runtime MUST compare a
+  fixed range layout of §9 does not hold. This is a browser-side serialization
+  rule; no circuit re-verifies it. The Ceremony Client MUST compare a
   revealed raw form-value range with the exact value bytes this serializer
-  emits for the expected unencoded value. The Canonical Runtime MUST NOT
+  emits for the expected unencoded value. The Ceremony Client MUST NOT
   compare that range directly with the unencoded value or apply a second,
   permissive decoder.
 - REQ-COMMON-08:
@@ -599,10 +601,10 @@ attestation to verify carries no value at all.
   The Deployment MUST register with each Identity Platform only redirect URIs
   whose origins it controls.
 - REQ-COMMON-30 (upholds SP-DELIVERY-01):
-  The Canonical Runtime MUST forward an authorization response only to the
+  The Ceremony Client MUST forward an authorization response only to the
   compiled application origin.
 - REQ-COMMON-31 (upholds SP-DELIVERY-01):
-  The Canonical Runtime MUST ignore a forwarding target supplied in the
+  The Ceremony Client MUST ignore a forwarding target supplied in the
   redirect request.
 - REQ-COMMON-32 (upholds SP-BIND-01, SP-EXCHANGE-01):
   The Deployment MUST run recurring integration probes establishing
@@ -639,30 +641,30 @@ code_challenge = BASE64URL_NOPAD(SHA256(ASCII(code_verifier)))
 ```
 
 - REQ-COMMON-12 (upholds SP-BIND-01):
-  The Canonical Runtime MUST derive `code_verifier` from `PKCE_DOMAIN`, the
+  The Ceremony Client MUST derive `code_verifier` from `PKCE_DOMAIN`, the
   Authorization Digest, and `pkceNonce` as shown above. `PKCE_DOMAIN` carries
   no version: the Authorization Digest already binds
   `platformVerifierVersion`, and a change to this construction is a change to
   the proof statement, which bumps that version and its Platform Verifier.
 - REQ-COMMON-13 (upholds SP-BIND-01):
-  The Canonical Runtime MUST draw `pkceNonce` freshly per authorization
+  The Ceremony Client MUST draw `pkceNonce` freshly per authorization
   attempt from a cryptographically secure random source. Necessity: the nonce
-  becomes public at submission, so a nonce reused across attempts of one
+  becomes public in the OAuth Proof, so a nonce reused across attempts of one
   Authorization Digest would publish the verifier of an earlier attempt whose
   code may still be live.
 - REQ-COMMON-14 (upholds SP-BIND-01):
-  The Canonical Runtime MUST NOT emit `pkceNonce` before its token exchange
+  The Ceremony Client MUST NOT emit `pkceNonce` before its token exchange
   completes, as a platform parameter, a redirect value, or a log field.
   Necessity: until the code is redeemed, whoever learns the nonce can derive
   the verifier and redeem an intercepted code; afterwards the code is spent
   and the nonce protects nothing.
 - REQ-COMMON-15 (upholds SP-BIND-01):
   The Platform Profile MUST reveal the `code_verifier` range of its token
-  request. The Consumer MUST carry `pkceNonce` in the submission.
+  request. The Consumer MUST carry `pkceNonce` in the OAuth Proof.
 - REQ-COMMON-15A (upholds SP-BIND-01):
   The Platform Verifier MUST recompute `code_verifier` from the Authorization
   Digest and the submitted `pkceNonce`. The Platform Verifier MUST reject a
-  submission whose revealed verifier differs byte for byte. Necessity: this is what binds the
+  OAuth Proof whose revealed verifier differs byte for byte. Necessity: this is what binds the
   digest to the token exchange. Retargeting an attestation to another digest
   would require a second-preimage of the revealed verifier.
 
@@ -689,7 +691,7 @@ code_challenge = BhFqYIY1YnHafYOrrblUswFnjxFF97UvGjSgqugPQvA
 ## 8. Client binding
 
 The OAuth client that issued the evidence is authenticated evidence in its
-own right, and it reaches the Consumer through §5.1. The Canonical Runtime
+own right, and it reaches the Consumer through §5.1. The Ceremony Client
 also compares it against the exact client fixed by the immutable ceremony
 profile before returning a local claim preview. Client admission is
 permissionless: any OAuth application can produce acceptable evidence, and no
@@ -701,7 +703,7 @@ evidence differs.
 
 | Identity platform | Authenticated source | How the Platform Verifier authenticates the bytes |
 |---|---|---|
-| Google | signed ID-Token `aud` | the submission carries the bytes; the Platform Verifier hashes them and requires the digest to equal the proof's audience public input |
+| Google | signed ID-Token `aud` | the OAuth Proof carries the bytes; the Platform Verifier hashes them and requires the digest to equal the proof's audience public input |
 | X | `client_id` in the notarized token request | the bytes are a revealed range of an attestation the Notary Service accepted |
 | GitHub | `client_id` in the notarized token exchange | the bytes are a revealed range of an attestation the Notary Service accepted |
 
@@ -716,7 +718,7 @@ and returns the readable value rather than a digest of it.
   compare, key, and display the identifier without knowing which platform
   produced it.
 - REQ-COMMON-16A (upholds SP-CLIENT-01):
-  The Platform Verifier MUST reject a submission whose supplied client
+  The Platform Verifier MUST reject an OAuth Proof whose supplied client
   identifier bytes are not authenticated by that platform's evidence, by the
   method its row above fixes. Necessity: bytes a caller supplies and nothing
   checks are the caller's claim, not the platform's.
@@ -733,9 +735,9 @@ A Consumer that wants a fixed-size key derives one itself, as the keccak256 of
 the returned bytes. Deriving is cheap and lossless; returning only a digest is
 not, because the readable value cannot be recovered from it.
 - REQ-COMMON-17 (upholds SP-CLIENT-01):
-  The Canonical Runtime MUST reject a Submission whose authenticated client
-  identifier differs byte for byte from the client fixed by the selected
-  immutable ceremony profile.
+  The Ceremony Client MUST reject an OAuth Proof whose authenticated
+  client identifier differs byte for byte from the client fixed by the
+  selected immutable ceremony profile.
 - REQ-COMMON-17C (upholds SP-CLIENT-01):
   The Proof Verifier and the Platform Verifier MUST NOT require the exposed
   client identifier to belong to a registered set. The Consumer MAY read the exposed client identifier for its
@@ -753,13 +755,13 @@ A proof authenticates bytes, not fields, and three roles check fields in
 three disjoint places. The Proving Circuit checks the fields the profile needs
 inside evidence that stays hidden — and only those fields, never the whole
 template. The Platform Verifier checks the fields carried in revealed
-attestation bytes, which it reads for itself. The Canonical Runtime checks the
+attestation bytes, which it reads for itself. The Ceremony Client checks the
 ceremony state that exists only in the browser and reaches no proof and no
 chain. One role's extraction of each field is the authoritative one — the
 Proving Circuit's where the bytes stay hidden, the Platform Verifier's where
-they are revealed. The Canonical Runtime may repeat an authoritative
-extraction over the same bytes so the browser can preview what the exact
-Submission asks the Consumer Chain to bind, and nothing on chain depends on
+they are revealed. The Ceremony Client may repeat an authoritative
+extraction over the same bytes so the browser can preview what the exact OAuth
+Proof asks the Consumer Chain to bind, and nothing on chain depends on
 that repeat. A comparison on an
 already-extracted value may happen in a different role again. A JSON string check matches the full `"field":"` delimiter,
 the value, and its closing quote. JSON unsigned integers and booleans use the
@@ -931,25 +933,26 @@ and no `authorization` needle to count.
   is authoritative. The Platform Profile MUST make the Proving Circuit
   authoritative where those bytes stay hidden, and the Platform Verifier
   authoritative where they are revealed to the Consumer Chain. The Platform
-  Profile MUST make the Canonical Runtime authoritative only for a field no
-  proof statement and no Consumer Chain component reads. The Canonical Runtime
+  Profile MUST make the Ceremony Client authoritative only for a field no
+  proof statement and no Consumer Chain component reads. The Ceremony Client
   MAY repeat an extraction another role owns, over the same bytes by the same
-  algorithm, for display and local checks. The Canonical Runtime MUST return
-  that repeat only with the exact Submission whose bytes it read. The Canonical
-  Runtime MUST discard and rederive the preview if any proof, attestation,
-  identity platform, Platform Verifier Version, or other Submission field
-  changes. The Canonical Runtime MUST NOT label the preview verified before
-  the Consumer accepts that Submission; only the Consumer's result is
+  algorithm, for display and local checks. The Ceremony Client MUST return
+  that repeat only with the exact OAuth Proof whose bytes it read. The
+  Ceremony Client MUST discard and rederive the preview if any proof, attestation,
+  identity platform, Platform Verifier Version, or other OAuth Proof field
+  changes. The Ceremony Client MUST NOT label the preview verified before
+  the Consumer accepts that OAuth Proof; only the Consumer's result is
   authoritative.
   The Platform Profile MUST NOT let a
   proof statement or a Consumer Chain component depend on that repeat. A
   comparison performed on an already-extracted value is not an extraction, and
   the Platform Profile MAY assign it to a different role. Necessity: two
   authoritative extractions of one field are two answers, each side able to
-  assume the other checked it; the runtime's repeat is what lets the browser
-  preview the identity the exact Submission asks the Consumer Chain to bind,
-  so allowing the preview and Submission to diverge would reopen the gap where
-  the display names one account and the Submission binds another; and an
+  assume the other checked it; the Ceremony Client's repeat is what lets the browser
+  preview the identity the exact OAuth Proof asks the Consumer Chain to
+  bind, so allowing the preview and OAuth Proof to diverge would reopen
+  the gap where the display names one account and the OAuth Proof binds
+  another; and an
   authoritative extraction owned by a role that cannot see the
   bytes is a check nobody performs. The Google audience, extracted in circuit
   and compared on chain, is the ordinary case the comparison sentence allows.
@@ -1071,7 +1074,7 @@ below governs one attestation a profile does require.
   censorship of a permissionless service.
 - REQ-COMMON-34D:
   The Notary Service MUST expose its current fee for reading before a
-  submission is constructed. Necessity: a fee that cannot be read cannot be
+  OAuth Proof is constructed. Necessity: a fee that cannot be read cannot be
   bounded.
 - REQ-COMMON-34E:
   The Notary Service MUST reject a verification whose native value differs
@@ -1080,10 +1083,10 @@ below governs one attestation a profile does require.
   rejecting a mismatch fails the transaction visibly rather than silently
   overcharging the Fee Payer, and leaves no overpayment to refund.
 - REQ-COMMON-42:
-  The Platform Verifier MUST deliver the fees of one submission's attestation
+  The Platform Verifier MUST deliver the fees of one OAuth Proof's attestation
   verifications so that they all take effect together or none of them does.
   The Platform Verifier MUST leave no fee delivered once it rejects the
-  submission. The Chain Profile MUST define the mechanism by which a rejected
+  OAuth Proof. The Chain Profile MUST define the mechanism by which a rejected
   call leaves no value transferred and no state changed on its Consumer
   Chain. Necessity: a profile verifying two attestations pays the first
   before it asks for the second, so a rejection at the second would otherwise
@@ -1117,7 +1120,7 @@ Service.
 - REQ-COMMON-26 (upholds SP-FRESH-01):
   The Platform Verifier MUST derive `proofValidUntil` from the platform profile's
   authenticated validity input and any current protocol parameter that profile
-  names. The Platform Verifier MUST reject a submission where
+  names. The Platform Verifier MUST reject an OAuth Proof where
   `Block Time >= proofValidUntil`.
 - REQ-COMMON-27 (upholds SP-FRESH-01):
   The Platform Verifier MUST NOT accept a caller-supplied validity bound.
@@ -1127,7 +1130,7 @@ Service.
 
 ## 11. Conformance
 
-Roles: Canonical Runtime, Redirect Runtime, Token-Exchange Service, Proving
+Roles: Ceremony Client, Ceremony Popup, Token-Exchange Service, Proving
 Circuit, Proof Verifier, Platform Verifier, Notary Service, Consumer. The
 Implementation claiming a role MUST pass the vectors covering
 the constructions that role implements.
@@ -1135,13 +1138,13 @@ the constructions that role implements.
 - TEST-COMMON-01 (exercises REQ-COMMON-01, REQ-COMMON-01A, REQ-COMMON-01B, REQ-COMMON-01C, REQ-COMMON-01D, REQ-COMMON-01E, REQ-COMMON-01F, REQ-COMMON-02, REQ-COMMON-02A):
   The §5 digest vector reproduces `authorizationDigest` exactly.
 - TEST-COMMON-02 (exercises REQ-COMMON-01A, REQ-COMMON-01F):
-  A submission carrying a foreign operation domain, or Authorized Transaction
+  A OAuth Proof carrying a foreign operation domain, or Authorized Transaction
   Data with trailing bytes, a noncanonical encoding, or an argument shape
   other than the transaction kind's exact format, is rejected.
 - TEST-COMMON-02A (exercises REQ-COMMON-01C, REQ-COMMON-01D, REQ-COMMON-04):
   The Proof Verifier refuses an empty, malformed, or caller-substituted Chain
-  ID; a Canonical Runtime and Proof Verifier reading one Chain Profile agree
-  on the Chain ID, and a runtime committing any other value produces a digest
+  ID; a Ceremony Client and Proof Verifier reading one Chain Profile agree
+  on the Chain ID, and a Ceremony Client committing any other value produces a digest
   the recomputation rejects; two Chain Profiles which accept the same operation
   domains are ineligible when they reuse the same canonical identifier bytes;
   the Consumer rejects a
@@ -1161,18 +1164,18 @@ the constructions that role implements.
 - TEST-COMMON-07 (exercises REQ-COMMON-12, REQ-COMMON-13, REQ-COMMON-15, REQ-COMMON-15A):
   The §7 PKCE vector reproduces `code_verifier` and `code_challenge` exactly;
   a token attestation that hides its `code_verifier` range is rejected; and a
-  submission whose `pkceNonce` does not reproduce the revealed verifier from
+  OAuth Proof whose `pkceNonce` does not reproduce the revealed verifier from
   the Authorization Digest is rejected.
 - TEST-COMMON-08 (exercises REQ-COMMON-14):
   No artifact, log, or platform parameter emitted before the token exchange
   completes contains `pkceNonce`. Verification: inspection of the emitted
   artifacts.
 - TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-16A, REQ-COMMON-16B, REQ-COMMON-17, REQ-COMMON-17C, REQ-COMMON-22A):
-  The Canonical Runtime rejects a Submission carrying a client identifier other
-  than its immutable profile's client, while a proof carrying a client
+  The Ceremony Client rejects an OAuth Proof carrying a client identifier
+  other than its immutable profile's client, while a proof carrying a client
   identifier registered nowhere remains acceptable to the Platform Verifier.
   Every platform returns the identifier as exact bytes, never a digest, and a
-  submission whose supplied bytes its evidence does not authenticate is
+  OAuth Proof whose supplied bytes its evidence does not authenticate is
   rejected. X and GitHub reject an empty identifier and every identifier byte
   outside `[A-Za-z0-9*._-]` rather than returning a form serialization.
 - TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-18A, REQ-COMMON-19, REQ-COMMON-19A, REQ-COMMON-19B, REQ-COMMON-19C, REQ-COMMON-19E, REQ-COMMON-20, REQ-COMMON-22):
@@ -1185,11 +1188,11 @@ the constructions that role implements.
   prove; and a transcript whose ranges do not tile the profile layout is
   rejected. A profile naming two authoritative extractions of one field, or
   naming an authoritative extraction by a role that cannot see the bytes, is
-  ineligible; a profile whose Canonical Runtime repeats an extraction the
+  ineligible; a profile whose Ceremony Client repeats an extraction the
   Platform Verifier owns, and one extracting a field in one role and comparing
   it in another, both stay eligible. Replacing any field of the exact
-  Submission after deriving the local preview discards that preview and
-  requires derivation from the replacement Submission. A profile whose
+  OAuth Proof after deriving the local preview discards that preview and
+  requires derivation from the replacement OAuth Proof. A profile whose
   Attestation Count is nonzero and which pins no
   Notary Service or no attestation format is ineligible, while a profile
   whose Attestation Count is zero stays eligible pinning neither.
@@ -1203,7 +1206,7 @@ the constructions that role implements.
   an evidence time taken from an HTTP `Date` header or a local clock rather
   than the platform-profile value is rejected.
 - TEST-COMMON-13 (exercises REQ-COMMON-25A, REQ-COMMON-26, REQ-COMMON-27, REQ-COMMON-28):
-  A submission at or after `proofValidUntil` is rejected, a caller-supplied
+  A OAuth Proof at or after `proofValidUntil` is rejected, a caller-supplied
   validity bound has no effect, and reverse-order older or equal-conflicting
   metadata does not change the newer stored metadata or watermark while the
   otherwise valid authority operation succeeds.
@@ -1217,11 +1220,11 @@ the constructions that role implements.
 - TEST-COMMON-16 (exercises REQ-COMMON-05, REQ-COMMON-05A, REQ-COMMON-05B, REQ-COMMON-05C, REQ-COMMON-05D, REQ-COMMON-05E, REQ-COMMON-06, REQ-COMMON-06A, REQ-COMMON-06B, REQ-COMMON-06C, REQ-COMMON-06D, REQ-COMMON-06E):
   A platform and version pair outside the Supported Version Set is rejected;
   a caller-supplied verifier address has no effect; two supported versions of
-  one platform both verify; a submission naming an operation domain other
+  one platform both verify; an OAuth Proof naming an operation domain other
   than the one the ceremony committed fails digest recomputation; a Consumer
   receiving a domain it does not own rejects the result; the recomputation
   takes its Chain ID from the Proof Verifier's observed environment, so the
-  same submission presented on another chain fails it and no caller-supplied
+  same OAuth Proof presented on another chain fails it and no caller-supplied
   Chain ID reaches it; a rejected verification returns no transaction data;
   an accepted verification returns the client identifier; the quotation covers the whole path and quotes one
   Notary Fee for each attestation the selected profile requires; a profile
@@ -1232,7 +1235,7 @@ the constructions that role implements.
   An attestation carrying a foreign notary signature is rejected; a
   verification whose fee was not delivered is rejected; the charged fee is
   identical across differing attested content, authors, payers, and
-  submitters; the current fee is readable before submission; and a
+  submitters; the current fee is readable before the OAuth Proof is submitted; and a
   verification whose native value differs from the current fee is
   rejected.
 - TEST-COMMON-18 (exercises REQ-COMMON-35, REQ-COMMON-36, REQ-COMMON-39, REQ-COMMON-40, REQ-COMMON-43):
@@ -1260,28 +1263,28 @@ the constructions that role implements.
   independent-blinder rule.
 - TEST-COMMON-20 (exercises REQ-COMMON-02A, REQ-COMMON-02B, REQ-COMMON-02C):
   A Google proof whose Authorization Digest public input differs from the
-  recomputed digest is rejected; an X or GitHub submission binds the same
+  recomputed digest is rejected; an X or GitHub OAuth Proof binds the same
   digest through the revealed verifier of REQ-COMMON-15A while its proof
   carries no Authorization Digest public input, and a proof adding one is
   rejected; and a profile binding the digest by neither method is ineligible.
 - TEST-COMMON-21 (exercises REQ-COMMON-41, REQ-COMMON-42):
-  A profile publishing no attestation list is ineligible; a submission on a
+  A profile publishing no attestation list is ineligible; an OAuth Proof on a
   zero-count profile is quoted nothing, charged nothing, and reaches no
-  Notary Service; a submission on a two-count profile is quoted and charged
-  exactly two fees; and a submission whose second attestation verification
+  Notary Service; an OAuth Proof on a two-count profile is quoted and charged
+  exactly two fees; and an OAuth Proof whose second attestation verification
   rejects leaves no fee delivered for the first.
 - TEST-COMMON-22 (exercises REQ-COMMON-45):
-  A submission whose proof does not verify under the artifact selected for
+  A OAuth Proof whose proof does not verify under the artifact selected for
   its identity platform and Platform Verifier Version is rejected; a proof
   verifying only under another platform's or another version's artifact is
   rejected; and a caller-supplied artifact, verifying key, or precomputed
   verification result changes no decision.
 - TEST-COMMON-23 (exercises REQ-COMMON-46):
   The Platform Verifier receives the digest the Proof Verifier recomputed
-  together with the complete submission, and the comparisons of
+  together with the complete OAuth Proof, and the comparisons of
   REQ-COMMON-02A and REQ-COMMON-15A run against that forwarded digest; a
   Platform Verifier taking the digest from any other source rejects the
-  submission.
+  OAuth Proof.
 
 ## 12. Security Considerations
 
@@ -1300,7 +1303,7 @@ Transaction Author and the proof-bound Authorized Transaction Data. A copied
 proof creates no authority for a submitter that cannot satisfy that predicate.
 
 Client binding rejects evidence issued to a client other than the one whose
-ceremony the Canonical Runtime opened. The check is local because independent
+ceremony the Ceremony Client opened. The check is local because independent
 application deployments own different OAuth clients. The Consumer
 authenticates the proof-bound transaction and Transaction Author instead; it
 does not maintain an OAuth-client allowlist or admit applications on the
@@ -1333,7 +1336,7 @@ is already discoverable from the identity platform, so the protocol treats
 none of them as confidential. Only the bearer, the client secret, and the
 transcript bytes outside a profile's revealed ranges stay withheld for good.
 `pkceNonce` is withheld only until the token exchange completes, per
-REQ-COMMON-14; the submission publishes it afterwards, which is what lets the
+REQ-COMMON-14; the OAuth Proof publishes it afterwards, which is what lets the
 Platform Verifier recompute the revealed `code_verifier` for itself under
 REQ-COMMON-15A.
 

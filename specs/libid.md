@@ -81,7 +81,7 @@ Compromise of Verifier governance can change every accepted root and verifier.
 | Authorization Digest, PKCE, extraction, client binding, evidence time | [Common ceremony rules](ceremony-common.md) |
 | Chain ID, Transaction Author, Block Time, and transaction-data encoding | consumer protocol Chain Profile |
 | Platform endpoints, fields, trust roots, and proof projections | [Identity-platform ceremonies](platform-ceremonies.md) |
-| Redirect transport, persistence, resume, and UI control flow | browser protocol |
+| Redirect transport, interruption behavior, and UI control flow | browser architecture |
 | Transaction dispatch and author authentication | consumer protocol |
 | Verification dispatch, replay recording, trust roots, and version governance | [Common ceremony rules](ceremony-common.md) |
 
