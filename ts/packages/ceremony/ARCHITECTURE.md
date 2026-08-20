@@ -143,16 +143,14 @@ The public catalog and client types are:
 export type PlatformId = 'x' | 'github' | 'google'
 export declare const supportedPlatforms: readonly PlatformId[]
 
-type CanonicalBytes32 = `0x${string}`
-
 interface CeremonyClient {
   readonly enabledPlatforms: readonly PlatformId[]
   new: (
     ceremonyId: string,
     input: {
-      chainId: CanonicalBytes32
+      chainId: string
       platformId: PlatformId
-      operationDomain: CanonicalBytes32
+      operationDomain: string
       transactionData: Uint8Array
     },
   ) => Promise<Ceremony>
@@ -175,12 +173,14 @@ Neither array contains OAuth clients, verifier versions, server configuration,
 or display metadata.
 
 The composition selects a Chain Profile per ceremony and supplies its canonical
-`chainId` together with the canonical bounded `operationDomain` and
-`transactionData`. The client exact-validates both 32-byte values, otherwise
-treats all three as opaque, and requires the selected platform to be enabled
-by validated `ServerConfig`, chooses the newest locally preferred verifier
-version also advertised for that platform, generates a fresh 32-byte
-authorization nonce, computes the authorization digest, and constructs OAuth.
+identifier string together with a namespaced operation-domain string and bounded
+`transactionData`. During `new`, the client hashes the UTF-8 strings into their
+normative 32-byte fields, then treats `transactionData` as opaque. It requires
+the selected platform to be enabled by validated `ServerConfig`, chooses the
+newest locally preferred verifier version also advertised for that platform,
+generates a fresh 32-byte authorization nonce, computes the authorization
+digest, and freezes all of those values before constructing OAuth or allowing
+provider navigation.
 
 `CeremonyClient.new(ceremonyId, input)` accepts a plain string which must be a
 lowercase UUIDv4. A composition normally generates one value and calls it
@@ -300,13 +300,13 @@ interface OAuth {
 }
 
 interface CeremonyAuthorization {
-  chainId: CanonicalBytes32
+  chainId: Uint8Array
   platformId: PlatformId
-  operationDomain: CanonicalBytes32
+  operationDomain: Uint8Array
   transactionData: Uint8Array
   platformVerifierVersion: PlatformVerifierVersion
   authorizationNonce: Uint8Array
-  authorizationDigest: CanonicalBytes32
+  authorizationDigest: Uint8Array
 }
 
 interface CeremonyRequest extends CeremonyAuthorization {
@@ -321,7 +321,7 @@ interface Identity {
   userId: string
   handle: string
   metadataObservedAt: number
-  authorizationDigest: CanonicalBytes32
+  authorizationDigest: Uint8Array
 }
 
 type IdentityResult =
@@ -365,8 +365,8 @@ safe integer; fractions, infinities, `NaN`, and overflow fail. Ceremony IDs are
 lowercase RFC 4122 UUIDv4 values generated with `crypto.randomUUID()`. OAuth
 state and serialized PKCE nonces are independent 32-byte
 `crypto.getRandomValues()` outputs encoded as 43-character unpadded base64url.
-OAuth state encodes no ceremony or application identifier. Digests are exact
-lowercase 32-byte hex values. Unknown fields, aliases, coercions, and
+OAuth state encodes no ceremony or application identifier. Derived hashes are
+exact 32-byte `Uint8Array` values. Unknown fields, aliases, coercions, and
 noncanonical encodings fail before use.
 
 ## Browser architecture
