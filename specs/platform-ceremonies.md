@@ -27,6 +27,13 @@ Each platform ceremony has an independently versioned immutable profile:
 Verifier Version carried in its Authorization Digest and submission; launch
 profiles use `platformVerifierVersion = 1`.
 
+Each profile also fixes the Attestation Count of common REQ-COMMON-41 and the
+digest-binding method of common REQ-COMMON-02C. `google/v1` verifies no
+attestation and binds the digest as a public proof input; `x/v1` and
+`github/v1` each verify two attestations — a token or token-exchange session
+and an identity session — and bind the digest through the revealed
+`code_verifier` of common REQ-COMMON-15A.
+
 - REQ-PLAT-01:
   The Canonical Runtime MUST record in the ceremony state the exact profile it
   selected. The Canonical Runtime MUST NOT substitute another profile on
@@ -411,15 +418,26 @@ attestation format:
 
 | Range | Revealed | Why |
 |---|---|---|
-| endpoint authority, method, path | yes | the Platform Verifier compares them with its profile constants |
-| `grant_type` | yes | constant `authorization_code`; revealed for runtime/profile inspection |
+| request method and path | yes | the Platform Verifier compares them with its profile constants |
+| endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attested authority against its pinned constant per common REQ-COMMON-21A |
+| `grant_type` | yes | constant `authorization_code`; the Platform Verifier compares it byte for byte per REQ-PLAT-56 |
 | `client_id` | yes | the Platform Verifier reads and returns it |
 | `code` | yes | compared to the code consumed at redirect ingress |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile; no chain or circuit value |
 | `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
 | attestation timestamp | yes | derives the authenticated validity ceiling |
+| `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit |
 | everything else | no | headers, `scope`, `token_type`, other response fields |
+
+The authority is not a transcript range. It reaches the Platform Verifier as
+the TLS server identity the Notary Service authenticated under common
+REQ-COMMON-21, carried in the attested data: the transcript
+holds the authority only in a `Host` header this table hides, and a revealed
+`Host` header is prover-composed text that says nothing about which server
+answered. The two delimiter reveals are what anchor the committed range in the
+received direction, which would otherwise reveal no byte at all and leave that
+range indistinguishable from a `refresh_token` value.
 
 Those reveals and the in-circuit `code_verifier` opening of REQ-COMMON-15
 reduce the hidden request surface, but revealing a range does not reject a form
@@ -441,17 +459,41 @@ dependency.
   attestation the Platform Verifier checks. The Canonical Runtime MUST
   reject a transcript whose revealed `grant_type` or `redirect_uri` differs
   from its immutable deployment profile. Neither value is a circuit
-  constraint, a public proof input, or a value the Consumer reads. Revealing
-  them narrows the body a prover can compose without being observed; it does
+  constraint or a public proof input, and neither is a value the Consumer
+  reads; the Platform Verifier compares the revealed `grant_type` itself
+  under REQ-PLAT-56. Revealing them narrows the body a prover can compose
+  without being observed; it does
   not by itself exclude a duplicate field, which remains ASM-PROV-07. The
   Platform Verifier enforces the disclosure: an attestation hiding either
   range does not match the profile layout of common REQ-COMMON-17A and
   REQ-COMMON-18A and fails verification.
+- REQ-PLAT-56 (upholds SP-EXCHANGE-01):
+  The Platform Verifier MUST reject an X token attestation whose revealed
+  `grant_type` differs from the exact ASCII bytes `authorization_code`.
+  Necessity: the Canonical Runtime's comparison under REQ-PLAT-29C runs in
+  software the prover chooses whether to run, and `grant_type` is the one
+  revealed field that changes what X did with the request. A body sending
+  `grant_type=refresh_token` while still carrying a `code`, a `redirect_uri`,
+  and a digest-derived `code_verifier` is processed as a refresh: X ignores
+  the fields that grant does not use, returns a fresh bearer, and every
+  revealed range still checks out, so an application holding a user's refresh
+  token could mint identity proofs at arbitrary addresses indefinitely from a
+  single consent. The check is one byte comparison on the Consumer Chain and
+  adds nothing to the Proving Circuit.
 - REQ-PLAT-30A (upholds SP-EXCHANGE-01):
   The Implementation MUST commit the returned `access_token` range of the
   notarized token session as the attestation format's blinded hash
   commitment. The Implementation MUST keep the plaintext token bytes
   redacted.
+- REQ-PLAT-57 (upholds SP-EXCHANGE-01):
+  The Implementation MUST reveal the `"access_token":"` delimiter bytes
+  immediately preceding that committed range and the closing quote byte
+  immediately following it. The Platform Verifier MUST reject an X token
+  attestation whose committed range is not framed by exactly those revealed
+  bytes. Necessity: common REQ-COMMON-18A wants a revealed anchor on every
+  hidden range, and a received direction revealing nothing at all leaves the
+  committed range indistinguishable from a `refresh_token` value or any
+  other substring the prover chose to commit.
 
 ### 5.3 Identity request
 
@@ -472,6 +514,29 @@ The two ranges account for the request's signed transcript length exactly,
 with no gap and no overlap, per common REQ-COMMON-35 and REQ-COMMON-36, so
 the request leaves no byte undisclosed and uncommitted.
 
+The response direction reveals exactly these ranges; every other response
+byte stays behind a range commitment of the pinned attestation format:
+
+| Range | Revealed | Why |
+|---|---|---|
+| `"id":"`, the `data.id` value, and its closing quote | yes | the Platform Verifier extracts the canonical `userId` from these bytes per REQ-PLAT-31 |
+| `"username":"`, the `data.username` value, and its closing quote | yes | the Platform Verifier extracts the raw handle bytes from these bytes per REQ-PLAT-31 |
+| everything else | no | status line, headers, display name, and every other response field |
+
+Each revealed range carries its own full delimiter, so the value the Platform
+Verifier reads is that field's value rather than a substring of a neighboring
+one. Every committed range of this direction is bounded by a revealed
+delimiter on each side that faces one, and by the signed transcript boundary
+of common REQ-COMMON-36 at the two ends, which is the anchoring common
+REQ-COMMON-18A requires.
+
+- REQ-PLAT-59 (upholds SP-BIND-01):
+  The Implementation MUST reveal the full `"id":"` and `"username":"`
+  delimiters, their values, and their closing quotes in the `/2/users/me`
+  response. The Implementation MUST redact every other response byte behind
+  a range commitment. Necessity: REQ-PLAT-31 reads both fields out of
+  revealed response bytes, and a session revealing no response range at all
+  leaves it nothing to read.
 - REQ-PLAT-31 (upholds SP-BIND-01):
   The Platform Verifier MUST extract `id` and `username` from the revealed
   response bytes by their full `"field":"` delimiters, rejecting a transcript
@@ -484,8 +549,11 @@ the request leaves no byte undisclosed and uncommitted.
   MUST NOT expose a second independently supplied representation of either
   identity field.
 - REQ-PLAT-32 (upholds SP-EXCHANGE-01):
-  The Proving Circuit MUST assert the same bearer commitment across the token
-  transcript and the identity transcript.
+  The Proving Circuit MUST assert that one private bearer value opens the
+  bearer commitment of the token attestation and the `Authorization` bearer
+  commitment of the `/2/users/me` attestation. The two commitment values
+  differ, because common REQ-COMMON-44 draws an independent blinder for each
+  notarized session.
 - REQ-PLAT-32A (upholds SP-EXCHANGE-01):
   The Implementation MUST commit the `Authorization` bearer range of the
   notarized identity session as the attestation format's blinded hash
@@ -516,10 +584,12 @@ the request leaves no byte undisclosed and uncommitted.
 The circuit proves exactly one thing: one hidden bearer opens both
 attestations' blinded commitments. Everything else is checked where it can be
 seen — the Platform Verifier binds the Authorization Digest by recomputing
-the verifier under common REQ-COMMON-15A, and reads the client identifier,
-evidence timestamp, endpoint triples and identity fields from revealed
-attestation bytes. The circuit carries no copy of any of them, because a fact
-that can be checked in the open does not belong in a proof.
+the verifier under common REQ-COMMON-15A, reads the client identifier,
+evidence timestamp, request method, path, and identity fields from revealed
+attestation bytes, and takes each session's authority from the TLS server
+identity that session's attestation authenticates. The circuit carries no
+copy of any of them, because a fact that can be checked in the open does not
+belong in a proof.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
   The Canonical Runtime MUST complete the token request within X's
@@ -617,6 +687,7 @@ interface TokenExchangeResponseV1 {
   schema: 1
   accessToken: string
   tokenAttestation: string // canonical unpadded base64url
+  bearerOpening: string // canonical unpadded base64url; private witness
 }
 ```
 
@@ -629,13 +700,29 @@ interface TokenExchangeResponseV1 {
   Necessity: cross-component interoperability with the PKCE construction.
 - REQ-PLAT-39:
   The Implementation MUST reject an `accessToken` exceeding
-  `MAX_GITHUB_ACCESS_TOKEN_BYTES = 4096`, a decoded token attestation exceeding
+  `MAX_GITHUB_ACCESS_TOKEN_BYTES = 4096`, a decoded `bearerOpening` exceeding
+  `MAX_GITHUB_BEARER_OPENING_BYTES = 256`, a decoded token attestation exceeding
   `MAX_GITHUB_TOKEN_ATTESTATION_BYTES = 2 MiB`, and a response body exceeding
   `MAX_GITHUB_TOKEN_EXCHANGE_RESPONSE_BYTES = 3 MiB`. Necessity: bounded parsing.
 - REQ-PLAT-40:
   The Implementation MUST reject duplicate, missing, additional, differently
   typed, and malformed fields on both interfaces. Necessity: cross-component
   interoperability.
+- REQ-PLAT-54:
+  The Token-Exchange Service MUST return in `bearerOpening` the blinder that
+  opens the committed bearer range of the attestation it returns in the same
+  response. Necessity: the Proving Circuit opens that commitment under
+  REQ-PLAT-52, and the blinder is prover-private material generated inside
+  the notarized session this service alone ran, so a browser holding the
+  attestation and the bearer can neither derive the blinder nor build the
+  GitHub proof without it.
+- REQ-PLAT-55 (upholds SP-CLIENT-01):
+  The Canonical Runtime MUST treat `bearerOpening` as private witness
+  material for the Proving Circuit. The Canonical Runtime MUST NOT place
+  `bearerOpening` in a submission. The Canonical Runtime MUST NOT publish it,
+  log it, or transmit it anywhere outside the browser. Necessity: the opening
+  and the commitment together reveal the committed bearer, so a published
+  opening publishes the credential its commitment exists to hide.
 - REQ-PLAT-41 (upholds SP-EXCHANGE-01):
   The Token-Exchange Service MUST use only its compiled client identifier, client
   secret, redirect URI, token endpoint, and notary configuration. The
@@ -671,7 +758,10 @@ as the `/user` attestation is.
 
 The token-exchange attestation reveals exactly the ranges needed to bind it to
 the local ceremony and to the later `/user` attestation. The separately
-returned `accessToken` is the only additional response value.
+returned `accessToken` and the `bearerOpening` of REQ-PLAT-54 are the only
+additional response values. Both stay inside the browser: the opening is
+witness material for the circuit, and REQ-PLAT-55 keeps it out of every
+submission and every published artifact.
 
 | Range | Revealed | Why |
 |---|---|---|
@@ -679,22 +769,39 @@ returned `accessToken` is the only additional response value.
 | `code` | yes | the Canonical Runtime compares it to the code it consumed |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile |
 | `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
+| `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit to link this attestation to `/user` |
 | attestation timestamp | yes | derives the authenticated validity ceiling |
-| token endpoint authority | yes | the Platform Verifier checks its profile endpoint |
+| token endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attested authority against its pinned constant per common REQ-COMMON-21A |
 | token request method | yes | the Platform Verifier checks its profile method |
 | token request path | yes | the Platform Verifier checks its profile path |
 | `client_secret` | no | never revealed, per REQ-PLAT-35A |
 | everything else | no | headers, status line, `scope`, `token_type`, other response fields |
 
 Every unrevealed range stays behind the pinned attestation format's range
-commitment, bounded by revealed anchor bytes. Revealing more would widen
-exposure without adding a check.
+commitment. The delimiter row is what anchors the committed bearer range in
+the received direction, which would otherwise carry no revealed byte and
+leave that range indistinguishable from a `refresh_token` value. The
+authority is not a transcript range at all: it reaches the Platform Verifier
+as the TLS server identity the Notary Service authenticated under common
+REQ-COMMON-21, carried in the attested data, because the
+transcript holds the authority only in a `Host` header this table hides and a
+revealed `Host` header is prover-composed text that says nothing about which
+server answered. Revealing more would widen exposure without adding a check.
 
 - REQ-PLAT-43D (upholds SP-EXCHANGE-01):
   The Token-Exchange Service MUST reveal no range outside the eight rows
   marked `yes` above. The Token-Exchange Service MUST commit the bearer range
   rather than reveal it.
+- REQ-PLAT-58 (upholds SP-EXCHANGE-01):
+  The Token-Exchange Service MUST reveal the `"access_token":"` delimiter
+  bytes immediately preceding that committed range and the closing quote byte
+  immediately following it. The Platform Verifier MUST reject a
+  token-exchange attestation whose committed range is not framed by exactly
+  those revealed bytes. Necessity: the exchange response reveals no other
+  byte, so without this anchor nothing distinguishes the committed range from
+  a `refresh_token` value, and the revealed bound common REQ-COMMON-18A wants
+  on every hidden range is absent.
 - REQ-PLAT-43E (upholds SP-CLIENT-01):
   The Proving Circuit MUST NOT expose the bearer, or any value from which the
   bearer can be recovered, as a public proof input. The bearer commitments
@@ -709,10 +816,12 @@ exposure without adding a check.
   the chain relies on is separate.
 - REQ-PLAT-45 (upholds SP-EXCHANGE-01):
   The Token-Exchange Service MUST return an attestation carrying the
-  configured notary's signature and revealing the token-endpoint authority,
-  method, and path. The Platform Verifier MUST compare those revealed values
-  with the
-  `github/v1` profile.
+  configured notary's signature and revealing the token request's method and
+  path. The Platform Verifier MUST compare those two revealed values with the
+  `github/v1` profile. The Platform Verifier MUST compare the authority that
+  attestation authenticates with the same profile, per common REQ-COMMON-21A.
+  Necessity: the authority is never a revealed range,
+  because the transcript carries it only in a prover-composed `Host` header.
 - REQ-PLAT-46 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST require the disclosed `code` to equal the code it
   consumed at redirect ingress, byte for byte.
@@ -723,8 +832,9 @@ exposure without adding a check.
   The Canonical Runtime MUST require the disclosed `code_verifier` to equal the
   verifier it derived.
 - REQ-PLAT-49 (upholds SP-EXCHANGE-01):
-  The Canonical Runtime MUST require the returned bearer to open the bearer
-  commitment of the token-exchange attestation.
+  The Canonical Runtime MUST require the returned bearer, under the returned
+  `bearerOpening`, to open the bearer commitment of the token-exchange
+  attestation.
 - REQ-PLAT-50 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST discard the response and start neither `/user` nor
   a resume record when any check in REQ-PLAT-44 through REQ-PLAT-49 fails.
@@ -761,6 +871,30 @@ The two ranges account for the request's signed transcript length exactly,
 with no gap and no overlap, per common REQ-COMMON-35 and REQ-COMMON-36, so
 the request leaves no byte undisclosed and uncommitted.
 
+The response direction reveals exactly these ranges; every other response
+byte stays behind a range commitment of the pinned attestation format:
+
+| Range | Revealed | Why |
+|---|---|---|
+| `"id":`, the `id` integer token, and the structural byte after it | yes | the Platform Verifier extracts the canonical `userId` from these bytes per REQ-PLAT-51 |
+| `"login":"`, the `login` value, and its closing quote | yes | the Platform Verifier extracts the raw handle bytes from these bytes per REQ-PLAT-51 |
+| everything else | no | status line, headers, and every other response field |
+
+Each revealed range carries its own full delimiter, so the value the Platform
+Verifier reads is that field's value rather than a substring of a neighboring
+one. Every committed range of this direction is bounded by a revealed
+delimiter on each side that faces one, and by the signed transcript boundary
+of common REQ-COMMON-36 at the two ends, which is the anchoring common
+REQ-COMMON-18A requires.
+
+- REQ-PLAT-60 (upholds SP-BIND-01):
+  The Implementation MUST reveal the full `"id":` delimiter, its integer
+  token, and the structural byte after it, together with the full
+  `"login":"` delimiter, its value, and its closing quote, in the `/user`
+  response. The Implementation MUST redact every other response byte behind
+  a range commitment. Necessity: REQ-PLAT-51 reads both fields out of
+  revealed response bytes, and a session revealing no response range at all
+  leaves it nothing to read.
 - REQ-PLAT-51 (upholds SP-BIND-01):
   The Platform Verifier MUST extract `id` and `login` from the revealed
   response bytes by their full field delimiters, rejecting a transcript in
@@ -776,8 +910,8 @@ the request leaves no byte undisclosed and uncommitted.
   The Proving Circuit MUST assert that one private bearer value opens the
   bearer commitment of the token-exchange attestation and the
   `Authorization` bearer commitment of the `/user` attestation. The Platform
-  Verifier MUST compare the endpoint triple revealed in each attestation with
-  the `github/v1` profile.
+  Verifier MUST compare the method and path revealed in each attestation, and
+  the authority each attestation authenticates, with the `github/v1` profile.
 
 - REQ-PLAT-52A (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST expose exactly these two GitHub public inputs:
@@ -800,8 +934,10 @@ the request leaves no byte undisclosed and uncommitted.
   ones submitted.
 
 Changing the pinned API version is a profile and verifier revision, not
-runtime configuration. The granted scope is enforced by the Proving Circuit over the token-exchange attestation
-but is not a public proof input. The bearer is never disclosed by the
+runtime configuration. The granted scope is no proof property at all:
+REQ-PLAT-36 leaves the exchange response unverified beyond the opened bearer
+range, and the Canonical Runtime's local reading of `scope` and `token_type`
+binds nothing on the Consumer Chain. The bearer is never disclosed by the
 proof.
 
 - REQ-PLAT-53:
@@ -877,10 +1013,13 @@ Platform Verifier, Notary Service, Consumer.
 - TEST-PLAT-09B (exercises REQ-PLAT-30A, REQ-PLAT-32A):
   An X transcript that reveals plaintext `access_token` bytes in either
   session, or omits the bearer hash commitment, is rejected.
-- TEST-PLAT-09C (exercises REQ-PLAT-29C):
+- TEST-PLAT-09C (exercises REQ-PLAT-29C, REQ-PLAT-56):
   The Platform Verifier rejects an X attestation that hides the `grant_type`
   or `redirect_uri` range, and the Canonical Runtime rejects a revealed value
-  differing from its deployment profile.
+  differing from its deployment profile. The Platform Verifier rejects an
+  attestation whose revealed `grant_type` is `refresh_token`, and one whose
+  `grant_type` differs from `authorization_code` in any byte, even when every
+  other revealed range and the proof itself check out.
 - TEST-PLAT-10 (exercises REQ-PLAT-30, REQ-PLAT-31, REQ-PLAT-32, REQ-PLAT-36, REQ-PLAT-51, REQ-PLAT-52):
   An opened bearer range that is empty, over 4096 bytes, or outside printable
   ASCII fails to prove; a revealed identity response missing `id` or the
@@ -909,8 +1048,8 @@ Platform Verifier, Notary Service, Consumer.
 - TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-49, REQ-PLAT-50):
   A token-exchange attestation with a bad notary signature, a foreign
   endpoint, a foreign client, a foreign `code_verifier`, or a bearer that does not
-  open the commitment is discarded in each case, and no resume record is
-  written.
+  open the commitment under the returned `bearerOpening` is discarded in each
+  case, and no resume record is written.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A, REQ-PLAT-52B):
   A GitHub proof whose bearer commitment public input differs from the
   commitment in either submitted attestation is rejected; substituting one
@@ -947,6 +1086,21 @@ Platform Verifier, Notary Service, Consumer.
   equivalent field names, and send the otherwise valid request under alternate
   media types. The production endpoint rejects every probe and issues no
   bearer.
+- TEST-PLAT-21 (exercises REQ-PLAT-54, REQ-PLAT-55):
+  A token-exchange response carrying a valid `bearerOpening` lets the browser
+  open the committed bearer range and build the GitHub proof; a response
+  omitting that field, or carrying an opening that does not open the
+  attestation's bearer commitment, is discarded and no proof is built; and no
+  submission, log, or published artifact contains the opening. Verification:
+  inspection of the submission fields and the emitted artifacts for the
+  disclosure rule.
+- TEST-PLAT-22 (exercises REQ-PLAT-57, REQ-PLAT-58, REQ-PLAT-59, REQ-PLAT-60):
+  An X token attestation and a GitHub token-exchange attestation whose
+  committed bearer range is not framed by the revealed `"access_token":"`
+  delimiter and closing quote are each rejected, including one committing a
+  `refresh_token` value instead; and an X `/2/users/me` or GitHub `/user`
+  attestation revealing no `id`, `username`, or `login` range, or revealing
+  a value without its full delimiter, is rejected.
 
 ## 9. Security Considerations
 

@@ -27,12 +27,17 @@ User -> Identity Platform -> Canonical Runtime -> Proving Circuit -> Consumer
                                                                  Platform Verifier
                                                                        |
                                                                  Notary Service
+                                                                 (X and GitHub,
+                                                                  once per
+                                                                  attestation)
 ```
 
 The Consumer never verifies evidence itself. It calls the Proof
 Verifier, which selects the Platform Verifier registered for the named
 identity platform and Platform Verifier Version, which in turn obtains
-attestation authenticity from the Notary Service. The result travels
+attestation authenticity from the Notary Service once for each attestation
+that profile carries. Google carries none, so its path reaches no Notary
+Service and pays no fee; X and GitHub carry two each. The result travels
 back as an accept-or-reject decision plus the authenticated operation domain,
 Authorized Transaction Data, and client identifier, and the Consumer decides
 what that transaction means. [Common §5.1](ceremony-common.md#51-verification-path)
@@ -86,9 +91,17 @@ Process.
 
 ## Enforceable guarantees and accepted boundaries
 
-The Proving Circuit enforces proof-field provenance and the proof-bound
-operation, the Proof Verifier enforces replay rejection across its chain, and
-the Platform Verifier enforces authenticated freshness. The Canonical Runtime
+The Platform Verifier enforces the proof-bound operation — comparing the
+Authorization Digest public input on Google, recomputing the revealed
+`code_verifier` on X and GitHub (REQ-COMMON-02A, REQ-COMMON-15A) — verifies
+the proof under the artifact selected for the submitted platform and version
+(REQ-COMMON-45), and enforces authenticated freshness. Proof-field provenance
+is the signed ID Token on Google and the revealed attestation bytes on X and
+GitHub; the Proving Circuit proves only what cannot be read from that
+evidence, which is Google's signature relation and, on X and GitHub, that one
+hidden bearer opens both sessions' commitments. The Consumer enforces replay
+rejection by recording every Authorization Digest it accepts before applying
+an effect (REQ-COMMON-03, REQ-COMMON-03A). The Canonical Runtime
 locally enforces the selected OAuth client and redirect profile. The protocol assumes the named identity-platform parser,
 PKCE, delivery, notary, browser, verifier-soundness, and chain behaviors. It
 does not enforce human understanding of a platform consent screen, prevent

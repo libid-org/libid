@@ -32,7 +32,9 @@ Proof Verifier: The component on the Consumer Chain that every Consumer calls
 
 Platform Verifier: The component on the Consumer Chain registered for one
    identity platform and one Platform Verifier Version. It checks that platform's
-   fields and obtains attestation authenticity from the Notary Service.
+   fields and obtains attestation authenticity from the Notary Service for
+   each attestation its Platform Profile requires, which is no attestation at
+   all where that profile carries none.
 
 Platform Verifier Version: The unsigned 16-bit version of one identity
    platform's proof statement. It is not a version of the ceremony process or
@@ -83,10 +85,11 @@ Platform Ceremony: The complete operation that turns one platform
 
 Platform Profile: The immutable, independently versioned definition of one
    identity platform's ceremony: its endpoints, ordered request fields,
-   revealed ranges, authenticated response locations, pinned Notary Service
-   and attestation format, and proof-validity inputs. Its constants are fixed
-   in the Platform Verifier registered for that platform and version, not in
-   the Consumer.
+   revealed ranges, authenticated response locations, proof-validity inputs,
+   and, where its Attestation Count is nonzero, its pinned Notary Service and
+   attestation format. A profile whose Attestation Count is zero pins neither
+   of those two. Its constants are fixed in the Platform Verifier registered
+   for that platform and version, not in the Consumer.
 
 Proving Circuit: The zero-knowledge circuit whose proof a Platform Verifier
    checks. It proves only what cannot be read from authenticated evidence.
@@ -113,17 +116,28 @@ Canonical Runtime: The immutable browser release that constructs
 
 Notary Service: The role that observes a TLS session and signs the resulting
    attestation, and that answers whether an attestation is authentic. Its
-   answer is a single accept-or-reject decision covering its own signature,
-   the transcript commitment, and whether the revealed bytes and range
-   openings match that transcript, and it charges the Notary Fee for giving
-   one. It knows nothing of any Platform Profile: which ranges a profile
-   expects, and what the revealed bytes must contain, are proof-specific and
-   belong to the Platform Verifier. A Platform Profile pins the exact Notary
-   Service and the attestation format it accepts. ASM-NOTARY-01 fixes what
-   its signature is trusted for.
+   answer is a single accept-or-reject decision covering its own signature
+   over the data it attested, and it charges the Notary Fee for giving
+   one. It holds no transcript when it answers: the attested data carries
+   the transcript lengths, the revealed ranges, and the range commitments
+   inside the bytes it signed, so that signature is what binds them to the
+   session it observed. It knows nothing of any Platform Profile: which
+   ranges a profile expects, and what the revealed bytes must contain, are
+   proof-specific and belong to the Platform Verifier. A Platform Profile
+   whose Attestation Count is nonzero pins the exact Notary Service and the
+   attestation format it accepts; a profile whose Attestation Count is zero
+   reaches no Notary Service and pins neither. ASM-NOTARY-01 fixes what its
+   signature is trusted for.
 
 Notary Fee: The fixed amount a Notary Service charges for one verification,
-   denominated in the Consumer Chain's native asset.
+   denominated in the Consumer Chain's native asset. One submission carries
+   one such fee for each attestation its Platform Profile requires, and no
+   fee where that profile requires no attestation.
+
+Attestation Count: The number of attestations one Platform Profile requires
+   the Platform Verifier to have verified before it accepts a submission. It
+   is zero or more: zero where the platform's evidence is a signed platform
+   token, and two for each launch TLSNotary profile.
 
 ## 3. Assumptions
 
@@ -222,8 +236,9 @@ on it.
 ## 5. Authorization digest
 
 The Authorization Digest is the single value binding one authorization to the
-transaction that will consume it. `U16BE` and `U32BE` are fixed-width unsigned
-big-endian encodings. `UTF8` emits the exact UTF-8 bytes of a string.
+transaction that will consume it. `U16BE`, `U32BE`, and `U64BE` are
+fixed-width unsigned big-endian encodings. `UTF8` emits the exact UTF-8 bytes
+of a string.
 
 ```text
 authorizationPreimage =
@@ -312,14 +327,40 @@ bytes.
   decode `transactionData` into that format and reject trailing bytes,
   noncanonical encodings, and any other argument shape.
 
+Each Platform Profile binds that recomputed digest to its evidence by one of
+two methods, chosen by what the platform's authorization can carry:
+
+| Identity platform | Where the Authorization Digest is bound | Who compares it |
+|---|---|---|
+| Google | Authorization Digest public proof input, carried by the signed OIDC `nonce` | the Platform Verifier, against the digest recomputed under REQ-COMMON-02 |
+| X | revealed `code_verifier` of the notarized token request | the Platform Verifier, by recomputing that verifier under REQ-COMMON-15A |
+| GitHub | revealed `code_verifier` of the notarized token exchange | the Platform Verifier, by recomputing that verifier under REQ-COMMON-15A |
+
+The X and GitHub circuits expose no Authorization Digest public input, so a
+requirement to compare one is unsatisfiable on those paths; Google carries no
+`code_verifier`, so the recomputation of REQ-COMMON-15A has nothing to
+compare there. Neither method is optional, and no profile uses both.
+
 - REQ-COMMON-02 (upholds SP-BIND-01):
   The Proof Verifier MUST recompute the Authorization Digest from the
   caller-supplied operation domain and Platform Verifier Version, its observed
   Chain ID, and the `authorizationNonce` and Authorized Transaction Data
   carried in the submission.
 - REQ-COMMON-02A (upholds SP-BIND-01):
-  The Proof Verifier MUST reject a proof whose Authorization Digest public
-  input differs from the digest it recomputed.
+  Where a Platform Profile exposes the Authorization Digest as a public proof
+  input, the Platform Verifier MUST reject a proof whose Authorization Digest
+  public input differs from the digest recomputed under REQ-COMMON-02.
+- REQ-COMMON-02B (upholds SP-BIND-01):
+  Where a Platform Profile carries the Authorization Digest through the PKCE
+  construction of §7 instead, the Platform Verifier MUST bind that digest by
+  the verifier recomputation of REQ-COMMON-15A. The Proving Circuit of such a
+  profile MUST NOT expose an Authorization Digest public input.
+- REQ-COMMON-02C (upholds SP-BIND-01):
+  The Platform Profile MUST bind the Authorization Digest by exactly one of
+  the two methods of the table above, never by both and never by neither.
+  Necessity: the two methods are complete alternatives, so a profile using
+  neither carries evidence nothing has tied to the transaction it was
+  authorized for.
 - REQ-COMMON-03 (upholds SP-REPLAY-01):
   The Consumer MUST record every Authorization Digest it accepts, before
   applying any authoritative effect.
@@ -366,18 +407,23 @@ A Consumer never verifies a libID proof itself. Verification is four roles
 on the Consumer Chain, each answering to the one above it:
 
 ```text
-Consumer          names the platform and version, pays any fee, records the
-                  digest, authorizes the transaction it decodes
+Consumer          names the platform and version, pays the quoted fees,
+                  records the digest, authorizes the transaction it decodes
    |
    v
 Proof Verifier    selects the Platform Verifier for that pair, recomputes the
-                  Authorization Digest, returns the result
+                  Authorization Digest, hands it and the submission down,
+                  returns the result
    |
    v
-Platform Verifier checks that platform's fields and the proof statement
+Platform Verifier checks that platform's fields, verifies the proof under the
+                  artifact selected for that pair, then calls the Notary
+                  Service once per attestation its profile requires — zero
+                  times for a profile carrying none
    |
    v
-Notary Service    authenticates the notary signature and charges the fee
+Notary Service    authenticates one notary signature and charges one fee
+                  (X and GitHub only)
 ```
 
 Only the Consumer knows what the transaction means; only the Notary Service
@@ -387,11 +433,19 @@ every platform constant — endpoints, revealed ranges, trust roots, parameters
 — lives in the Platform Verifier registered for that platform and version.
 The Consumer holds none of them.
 
+The last hop is conditional. A Platform Profile whose evidence is a signed
+platform token reaches no Notary Service at all: Google's Attestation Count
+is zero, so its path stops at the Platform Verifier and costs nothing. X and
+GitHub each verify two attestations — a token or token-exchange session and
+an identity session — so one submission on either path pays two fees.
+
 - REQ-COMMON-05:
   The Consumer MUST call the Proof Verifier with the identity platform, the
-  Platform Verifier Version, the submission, and the Notary Fee of §9.1.
-  Necessity: cross-component interoperability of one verification entry point
-  serving every Consumer.
+  Platform Verifier Version, the submission, and the native value the
+  quotation of REQ-COMMON-06E returns. That value covers one Notary Fee of
+  §9.1 for each attestation the selected profile requires, and is zero where
+  its Attestation Count is zero. Necessity: cross-component interoperability
+  of one verification entry point serving every Consumer.
 - REQ-COMMON-05A:
   The Proof Verifier MUST select the Platform Verifier its Supported Version
   Set registers for that pair. The Proof Verifier MUST NOT accept a
@@ -407,21 +461,44 @@ The Consumer holds none of them.
   the chain accepts, so it is authority, not configuration.
 - REQ-COMMON-05D (upholds SP-EXCHANGE-01):
   The Platform Verifier MUST check every field its Platform Profile requires.
-  The Platform Verifier MUST obtain attestation authenticity from the
-  Notary Service. The Platform Verifier MUST treat that decision as
-  final.
+  The Platform Verifier MUST obtain attestation authenticity from the Notary
+  Service once for each attestation its Platform Profile requires. The
+  Platform Verifier MUST treat each of those decisions as final. The Platform
+  Verifier MUST NOT call the Notary Service where its Platform Profile
+  requires no attestation.
 - REQ-COMMON-05E (upholds SP-CLIENT-01):
   The Platform Verifier MUST return its verified fields: the client
   identifier, the canonical `userId`, the raw handle bytes, and
   `metadataObservedAt`. Necessity: an authenticated `userId`, handle, and
   observation time are what the ceremony exists to produce, and the Consumer
   has no other authenticated source for them.
+- REQ-COMMON-45 (upholds SP-BIND-01, SP-EXCHANGE-01):
+  The Platform Verifier MUST verify the proof carried in the submission under
+  the exact verifier artifact the Verifier Governance Process selected for
+  the submitted identity platform and Platform Verifier Version. The Platform
+  Verifier MUST reject a submission whose proof does not verify under that
+  artifact. The Platform Verifier MUST NOT accept a caller-supplied artifact,
+  verifying key, or externally computed verification result. Necessity:
+  ASM-PROOF-01 states what an accepted proof means and presupposes that some
+  role performed the acceptance; with no rule placing that work anywhere, no
+  role is obliged to run it, and every public input the surrounding rules
+  compare is then a number the caller wrote down.
+- REQ-COMMON-46 (upholds SP-BIND-01):
+  The Proof Verifier MUST pass the digest it recomputed under REQ-COMMON-02,
+  together with the complete submission, to the Platform Verifier it
+  selected. The Platform Verifier MUST take the digest that REQ-COMMON-02A
+  and REQ-COMMON-15A compare against from that forwarded value and from
+  nothing else. Necessity: both of those rules compare something against a
+  digest recomputed one hop above them, and a Platform Verifier left to
+  rebuild it or to receive it another way would compare against a digest the
+  caller could choose.
 
 The operation domain travels in the submission and is authenticated by digest
 recomputation rather than trusted: a submission naming a domain other than
-the one the ceremony committed produces a different digest and fails
-REQ-COMMON-02A. The Proof Verifier therefore returns the domain it
-authenticated, and the Consumer decides whether that domain is its own.
+the one the ceremony committed produces a different digest, which fails
+whichever binding check of REQ-COMMON-02A and REQ-COMMON-02B its profile
+uses. The Proof Verifier therefore returns the domain it authenticated, and
+the Consumer decides whether that domain is its own.
 
 - REQ-COMMON-06 (upholds SP-BIND-01):
   The Proof Verifier MUST return the authenticated operation domain, the
@@ -437,27 +514,39 @@ authenticated, and the Consumer decides whether that domain is its own.
   Transaction Data. Necessity: transaction semantics belong to the Consumer
   that fixed the operation domain.
 - REQ-COMMON-06C (upholds SP-BIND-01):
-  The Proof Verifier MUST reject a submission whose Chain ID differs from the
-  one it observes, or whose Platform Verifier Version differs from the one it
-  dispatched on. Necessity: both are bound in the digest, so a mismatch means
-  the evidence was authorized for another chain or another proof statement.
+  The Proof Verifier MUST take the Chain ID of the digest recomputation of
+  REQ-COMMON-02 from the Chain ID it observes under ASM-CHAIN-02. The Proof
+  Verifier MUST NOT read a Chain ID from the submission. The Proof Verifier
+  MUST dispatch on the Platform Verifier Version the submission names.
+  Necessity: the chain the evidence was authorized for and the proof
+  statement that verifies it are both bound in the digest, and recomputing
+  that digest is the whole check on either; the submission carries no Chain
+  ID for anything to compare against, and the dispatched version cannot
+  disagree with the submitted one because dispatch reads it from the
+  submission in the first place.
 
-The Notary Fee of §9.1 is charged at the bottom of this
-path, so native value passes down it and any excess returns to the Consumer.
+The Notary Fees of §9.1 are charged at the bottom of this path, so native
+value passes down it and stops where the work is done. A path with no
+attestation to verify carries no value at all.
 
 - REQ-COMMON-06D:
   The Proof Verifier and the Platform Verifier MUST each reject a call whose
   native value differs from the value that role currently requires, read from
-  the quotation of REQ-COMMON-06E before forwarding. The Proof Verifier and
-  the Platform Verifier MUST each forward exactly the value the role they
-  invoke requires. Necessity: exact value at every hop
+  the quotation of REQ-COMMON-06E before forwarding. The Proof Verifier MUST
+  forward exactly the value the Platform Verifier requires. The Platform
+  Verifier MUST deliver exactly one Notary Fee with each attestation
+  verification its Platform Profile requires, and no value at all where that
+  profile requires none. Necessity: exact value at every hop
   needs no refund path, so no partial-failure or reentrancy rule is required
   and no value can be captured in transit.
 - REQ-COMMON-06E:
   The Proof Verifier MUST expose a fee quotation for an identity platform and
-  Platform Verifier Version covering the whole verification path. Necessity: a
-  Consumer cannot attach a correct fee if quoting requires knowing the path's
-  internal topology.
+  Platform Verifier Version covering the whole verification path, quoting one
+  Notary Fee for each attestation that pair's Platform Profile requires and
+  zero where it requires none. Necessity: a Consumer cannot attach a correct
+  fee if quoting requires knowing the path's internal topology, and a profile
+  verifying two attestations costs two fees while one verifying none costs
+  nothing.
 
 ## 6. Canonical OAuth serialization
 
@@ -639,7 +728,20 @@ Because the authenticated parser outputs satisfy ASM-PROV-06 and ASM-PROV-07,
 these local checks provide the required field meaning without the impractical
 proving cost of a complete JSON or form parser. Hidden ranges stay behind the
 pinned attestation format's range commitments; the circuit links transcripts
-through those commitments and binds the Authorization Digest.
+through those commitments, and the Authorization Digest is bound by whichever
+method of §5 the profile uses.
+
+That limit is deliberate, and is stated here so no reader infers otherwise:
+nothing in this specification proves or parses a complete HTTP request
+grammar, a complete HTTP response grammar, or a complete JSON document
+grammar. A JSON field is matched by its exact delimiter template at an offset
+the prover supplies (REQ-COMMON-19, REQ-COMMON-19D), a form field by its own
+boundary template (REQ-COMMON-19C), and each committed response range is
+anchored by the delimiters its Platform Profile fixes (REQ-COMMON-18A).
+Uniqueness of a field inside an authenticated response is ASM-PROV-06 rather
+than a scan the Proving Circuit performs; the only duplicate scan in the
+protocol is the one REQ-COMMON-19A gives the Platform Verifier over bytes it
+can read.
 
 Disclosure and verification are two separate layers. The Platform Profile
 fixes a minimal set of revealed ranges; every other byte stays behind a range
@@ -654,11 +756,13 @@ exposes a minimal set of public inputs, which never includes a credential.
   The Implementation MUST redact every byte outside the ranges its profile
   lists.
 - REQ-COMMON-18 (upholds SP-EXCHANGE-01):
-  The Platform Profile MUST pin the exact Notary Service and the attestation
-  format it accepts. The Implementation MUST use that format's native
-  commitment for every hidden range. The Proving Circuit MUST open each hidden
-  range whose value the profile checks. A profile pinning neither is
-  ineligible.
+  The Platform Profile whose Attestation Count is nonzero MUST pin the exact
+  Notary Service and the attestation format it accepts. The Implementation
+  MUST use that format's native commitment for every hidden range of such a
+  profile. The Proving Circuit MUST open each hidden range whose value that
+  profile checks. Such a profile pinning neither is ineligible. A profile
+  whose Attestation Count is zero verifies no attestation, so it pins
+  neither and this rule does not reach it.
 - REQ-COMMON-38:
   The Platform Profile MUST pin the hash algorithm of every range commitment
   its pinned attestation format carries. The Platform Verifier MUST reject an
@@ -666,6 +770,15 @@ exposes a minimal set of public inputs, which never includes a credential.
   profiles pin SHA-256. Necessity: the notarization library's default commit
   algorithm is BLAKE3 while the Proving Circuit computes SHA-256, so a prover
   left on library defaults produces commitments the circuit cannot open.
+- REQ-COMMON-44:
+  The Implementation MUST draw the blinder of every range commitment
+  independently for each notarized session, from a cryptographically secure
+  random source. Necessity: one credential committed in two sessions
+  therefore has two different commitment values, which is the whole reason
+  REQ-PLAT-32 and REQ-PLAT-52 state the circuit's job as opening two
+  commitments to one hidden value; a shared blinder would make the two
+  commitments equal, make that statement vacuous, and publish a stable
+  identifier for the credential.
 - REQ-COMMON-18A (upholds SP-EXCHANGE-01):
   The Platform Verifier MUST check that the revealed ranges and hidden-range
   commitments tile the transcript in the exact layout its profile fixes, with
@@ -674,32 +787,45 @@ exposes a minimal set of public inputs, which never includes a credential.
   signature over what it observed.
 
 Tiling accounts for the ranges a layout lists; it cannot see bytes the
-layout never mentions. A notarized request that commits a credential range
-therefore carries a signed transcript length, covers that length exactly,
-and admits exactly one anchored occurrence of the credential header. The
-committed range is then the only region the Platform Verifier cannot read,
-and its offset and length follow from the revealed ranges around it.
+layout never mentions. The three rules that follow govern one case only: a
+notarized request that commits a credential carried in an HTTP
+`Authorization` header. At launch that is the identity session of each
+TLSNotary profile, and nothing else — X's `/2/users/me` request and GitHub's
+`/user` request. Such a request carries a signed transcript length, covers
+that length exactly, and admits exactly one anchored occurrence of the
+credential header. The committed range is then the only region the Platform
+Verifier cannot read, and its offset and length follow from the revealed
+ranges around it.
+
+A credential committed in a request body is a different case and keeps its
+own rules: the profile orders it last under REQ-COMMON-22 and constrains its
+charset to exclude a form delimiter, as REQ-PLAT-35 does for GitHub's
+`client_secret` in the token exchange. The coverage, uniqueness, and framing
+rules below do not reach it, because a form body has no header line to frame
+and no `authorization` needle to count.
 
 - REQ-COMMON-35 (upholds SP-EXCHANGE-01):
-  For a notarized request whose Platform Profile commits a credential
-  range, the Platform Verifier MUST require the revealed ranges plus the
-  committed range to account for exactly the signed transcript length of
-  the request direction, with no gap and no overlap. Necessity: a check
+  For an identity-session request that commits a credential inside an HTTP
+  `Authorization` header, the Platform Verifier MUST require the revealed
+  ranges plus the committed range to account for exactly the signed
+  transcript length of the request direction, with no gap and no overlap.
+  Necessity: a check
   anchored on what a revealed prefix starts and ends with leaves the
   remainder of the request invisible; exact coverage leaves the committed
   range as the only unseen region and makes its offset and length
   derivable from the ranges around it.
 - REQ-COMMON-36 (upholds SP-EXCHANGE-01):
-  The Notary Service MUST sign, in each attestation, the total transcript
-  length of each direction of the session it observed. The Platform Verifier
-  MUST take the transcript length used for the coverage check of
-  REQ-COMMON-35 from that signed value and from nothing else. Necessity:
-  without a signed length, bytes past the last revealed range are
+  The Notary Service MUST carry the total transcript length of each direction
+  of the session it observed in the data it signs. The Platform Verifier MUST
+  take the transcript length used for the coverage check of REQ-COMMON-35
+  from those signed lengths and from nothing else.
+  Necessity: without a signed length, bytes past the last revealed range are
   invisible, which is what makes a planted-header request pass every
   substring-anchored check.
 - REQ-COMMON-39 (upholds SP-EXCHANGE-01):
-  The Platform Verifier MUST normalize the revealed request bytes by
-  ASCII-lowercasing them and removing every space and horizontal tab. The
+  For that same identity-session request, the Platform Verifier MUST
+  normalize the revealed request bytes by ASCII-lowercasing them and
+  removing every space and horizontal tab. The
   Platform Verifier MUST leave carriage-return and line-feed bytes in
   place. The Platform
   Verifier MUST require exactly one occurrence of the normalized,
@@ -714,14 +840,24 @@ and its offset and length follow from the revealed ranges around it.
   second genuine `authorization` header is rejected whatever the Identity
   Platform would have done with it.
 - REQ-COMMON-40 (upholds SP-EXCHANGE-01):
-  The Platform Verifier MUST require the raw transcript bytes immediately
-  before the committed range to be exactly `\r\nauthorization: Bearer `,
+  For that same identity-session request, the Platform Verifier MUST require
+  the raw transcript bytes immediately before the committed range to be
+  exactly `\r\nauthorization: Bearer `,
   and the raw transcript bytes immediately after it to be exactly `\r\n`.
   Necessity: this frames the committed range as one header line's value by
   construction, so the credential literal cannot be hidden inside another
   header's value, and a request with one honest `authorization` header
   cannot commit a range positioned somewhere else. Two fixed comparisons
   at known offsets replace a derived one.
+- REQ-COMMON-43 (upholds SP-EXCHANGE-01):
+  The Platform Verifier MUST NOT apply REQ-COMMON-35, REQ-COMMON-39, or
+  REQ-COMMON-40 to a credential its Platform Profile commits in a request
+  body. The Platform Profile MUST instead order such a credential last under
+  REQ-COMMON-22 and constrain its charset to exclude a form delimiter.
+  Necessity: GitHub's token exchange commits `client_secret` in a form body,
+  so a verifier reading the three rules above as universal would demand a
+  CRLF-framed `authorization: Bearer ` prefix around that body range and
+  reject every valid exchange.
 - REQ-COMMON-19 (upholds SP-EXCHANGE-01):
   The Proving Circuit extracting a JSON string field MUST receive the field's
   offset as a private input supplied by the prover; the circuit performs no
@@ -818,14 +954,24 @@ for every form-encoded token request.
 An attestation is authenticated on the Consumer Chain, not inside the Proving
 Circuit. The Notary Service takes attested data and its notary
 signature and answers one question: is this attestation authentic. Verifying
-is a metered service and carries a fixed fee.
+is a metered service and carries a fixed fee. A Platform Profile whose
+Attestation Count is zero performs none of this and pays nothing; every rule
+below governs one attestation a profile does require.
 
+- REQ-COMMON-41:
+  The Platform Profile MUST fix its Attestation Count as an exact number of
+  zero or more attestations. Necessity: the number of Notary Service calls
+  and the fee quotation of REQ-COMMON-06E both count attestations, and a
+  profile leaving that number open fixes neither.
 - REQ-COMMON-33 (upholds SP-EXCHANGE-01):
-  The Notary Service MUST take attested data and its notary signature and
-  return exactly one accept-or-reject decision covering that signature, the
-  transcript commitment, and whether the revealed bytes and range openings
-  match the transcript. The Notary Service MUST NOT decide anything
-  profile-specific.
+  The Notary Service MUST take the attested data and its notary
+  signature and return exactly one accept-or-reject decision covering that
+  signature over exactly those bytes. The Notary Service MUST NOT decide
+  anything profile-specific. Necessity: the attested data carries the
+  transcript lengths, the revealed ranges, and the range commitments inside
+  the bytes the notary signed, so the signature is the whole binding to the
+  session the notary observed; the verifying side holds no transcript and
+  can compare the attested data against nothing.
 - REQ-COMMON-33A (upholds SP-EXCHANGE-01):
   The Notary Service MUST reject a signature outside the notary keys it
   currently holds as trusted.
@@ -835,7 +981,8 @@ is a metered service and carries a fixed fee.
   whose fee was not delivered. Necessity: verification is a metered service,
   and an unpaid verification is unmetered.
 - REQ-COMMON-34A:
-  The Consumer MUST deliver that fee in the Consumer Chain's native asset
+  The Consumer MUST deliver every fee the quotation of REQ-COMMON-06E returns
+  in the Consumer Chain's native asset
   over the native value-transfer path its Chain Profile fixes. Necessity:
   cross-component interoperability without naming one execution environment's
   transfer mechanism.
@@ -857,6 +1004,15 @@ is a metered service and carries a fixed fee.
   that can change between constructing a transaction and including it;
   rejecting a mismatch fails the transaction visibly rather than silently
   overcharging the Fee Payer, and leaves no overpayment to refund.
+- REQ-COMMON-42:
+  The Platform Verifier MUST deliver the fees of one submission's attestation
+  verifications so that they all take effect together or none of them does.
+  The Platform Verifier MUST leave no fee delivered once it rejects the
+  submission. The Chain Profile MUST define the mechanism by which a rejected
+  call leaves no value transferred and no state changed on its Consumer
+  Chain. Necessity: a profile verifying two attestations pays the first
+  before it asks for the second, so a rejection at the second would otherwise
+  keep a fee for work the Fee Payer never received.
 
 Fee changes are a liveness dependency, not a soundness one: a raised fee
 cannot forge or retarget evidence, but a fee raised without bound stops every
@@ -946,8 +1102,9 @@ the constructions that role implements.
   placed in padding past the payload length, fails to prove; a form-field match
   not bounded by the body start or `&` and the next `&` or body end fails to
   prove; and a transcript whose ranges do not tile the profile layout is
-  rejected. A profile that pins no Notary Service or no attestation format is
-  ineligible.
+  rejected. A profile whose Attestation Count is nonzero and which pins no
+  Notary Service or no attestation format is ineligible, while a profile
+  whose Attestation Count is zero stays eligible pinning neither.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
   The Platform Verifier rejects an authenticated foreign authority, method,
   or path. The request constructor refuses a media type or `redirect_uri`
@@ -974,12 +1131,15 @@ the constructions that role implements.
   a caller-supplied verifier address has no effect; two supported versions of
   one platform both verify; a submission naming an operation domain other
   than the one the ceremony committed fails digest recomputation; a Consumer
-  receiving a domain it does not own rejects the result; a foreign Chain ID
-  and a version other than the dispatched one are each rejected; a rejected
-  verification returns no transaction data; an accepted verification returns
-  the client identifier; the quotation covers the whole path; and a call
-  whose native value differs from the quoted value is rejected at every
-  hop.
+  receiving a domain it does not own rejects the result; the recomputation
+  takes its Chain ID from the Proof Verifier's observed environment, so the
+  same submission presented on another chain fails it and no caller-supplied
+  Chain ID reaches it; a rejected verification returns no transaction data;
+  an accepted verification returns the client identifier; the quotation covers the whole path and quotes one
+  Notary Fee for each attestation the selected profile requires; a profile
+  whose Attestation Count is zero quotes zero, reaches no Notary Service, and
+  moves no value; and a call whose native value differs from the quoted value
+  is rejected at every hop.
 - TEST-COMMON-17 (exercises REQ-COMMON-33, REQ-COMMON-34B, REQ-COMMON-33A, REQ-COMMON-34, REQ-COMMON-34A, REQ-COMMON-34C, REQ-COMMON-34D, REQ-COMMON-34E):
   An attestation carrying a foreign notary signature is rejected; a
   verification whose fee was not delivered is rejected; the charged fee is
@@ -987,7 +1147,7 @@ the constructions that role implements.
   submitters; the current fee is readable before submission; and a
   verification whose native value differs from the current fee is
   rejected.
-- TEST-COMMON-18 (exercises REQ-COMMON-35, REQ-COMMON-36, REQ-COMMON-39, REQ-COMMON-40):
+- TEST-COMMON-18 (exercises REQ-COMMON-35, REQ-COMMON-36, REQ-COMMON-39, REQ-COMMON-40, REQ-COMMON-43):
   An identity attestation whose ranges do not sum to the signed request
   transcript length, or whose ranges leave a gap or an overlap, is
   rejected; an attestation carrying no signed total transcript length for
@@ -998,11 +1158,42 @@ the constructions that role implements.
   occurrence inside another header's value is not counted, because the
   needle is line-anchored; and an attestation whose committed range is not
   immediately preceded by `\r\nauthorization: Bearer ` and immediately
-  followed by `\r\n` in the raw bytes is rejected.
-- TEST-COMMON-19 (exercises REQ-COMMON-37, REQ-COMMON-38):
+  followed by `\r\n` in the raw bytes is rejected. Every case above runs on
+  an identity-session attestation. A GitHub token-exchange attestation, whose
+  only committed credential is the `client_secret` in its form body, passes
+  verification with no coverage, needle, or framing check applied to that
+  range.
+- TEST-COMMON-19 (exercises REQ-COMMON-37, REQ-COMMON-38, REQ-COMMON-44):
   An opened bearer containing a carriage-return or line-feed byte fails to
   prove, and an attestation whose range commitments use an algorithm other
-  than the profile's pinned SHA-256 is rejected.
+  than the profile's pinned SHA-256 is rejected. The two notarized sessions
+  of one ceremony carry different commitment values for the one bearer they
+  both commit. Verification: inspection of the emitted attestations for the
+  independent-blinder rule.
+- TEST-COMMON-20 (exercises REQ-COMMON-02A, REQ-COMMON-02B, REQ-COMMON-02C):
+  A Google proof whose Authorization Digest public input differs from the
+  recomputed digest is rejected; an X or GitHub submission binds the same
+  digest through the revealed verifier of REQ-COMMON-15A while its proof
+  carries no Authorization Digest public input, and a proof adding one is
+  rejected; and a profile binding the digest by neither method is ineligible.
+- TEST-COMMON-21 (exercises REQ-COMMON-41, REQ-COMMON-42):
+  A profile publishing no Attestation Count is ineligible; a submission on a
+  zero-count profile is quoted nothing, charged nothing, and reaches no
+  Notary Service; a submission on a two-count profile is quoted and charged
+  exactly two fees; and a submission whose second attestation verification
+  rejects leaves no fee delivered for the first.
+- TEST-COMMON-22 (exercises REQ-COMMON-45):
+  A submission whose proof does not verify under the artifact selected for
+  its identity platform and Platform Verifier Version is rejected; a proof
+  verifying only under another platform's or another version's artifact is
+  rejected; and a caller-supplied artifact, verifying key, or precomputed
+  verification result changes no decision.
+- TEST-COMMON-23 (exercises REQ-COMMON-46):
+  The Platform Verifier receives the digest the Proof Verifier recomputed
+  together with the complete submission, and the comparisons of
+  REQ-COMMON-02A and REQ-COMMON-15A run against that forwarded digest; a
+  Platform Verifier taking the digest from any other source rejects the
+  submission.
 
 ## 12. Security Considerations
 
@@ -1041,16 +1232,20 @@ without rechecking them, so a compromised Proof Verifier authorizes arbitrary
 transactions at every Consumer at once; a compromised Platform Verifier does
 the same for one platform and version; a compromised Notary Service accepts
 attestations no notary signed. Their selection is verifier governance, which
-is therefore a trust root rather than configuration. The Notary Fee is a
-liveness dependency only: it cannot forge evidence, but an unbounded fee stops
-every ceremony for that platform.
+is therefore a trust root rather than configuration. The Notary Fees are a
+liveness dependency only: they cannot forge evidence, but an unbounded fee
+stops every ceremony for the platforms whose profiles carry attestations, and
+leaves a profile with no attestation unaffected.
 
 The handle, the platform user identifier, and the client identifier are
 published deliberately. A binding exists to be read, and each of these values
 is already discoverable from the identity platform, so the protocol treats
-none of them as confidential. Only the bearer, the client secret,
-`pkceNonce`, and the transcript bytes outside a profile's revealed ranges are
-withheld.
+none of them as confidential. Only the bearer, the client secret, and the
+transcript bytes outside a profile's revealed ranges stay withheld for good.
+`pkceNonce` is withheld only until the token exchange completes, per
+REQ-COMMON-14; the submission publishes it afterwards, which is what lets the
+Platform Verifier recompute the revealed `code_verifier` for itself under
+REQ-COMMON-15A.
 
 Input validation, denial of service, trust-anchor lifecycle, and browser
 origin, storage, and credential boundaries are owned by the browser
