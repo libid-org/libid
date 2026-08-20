@@ -207,7 +207,6 @@ interface CeremonyLaunch {
 }
 
 interface Ceremony {
-  readonly authorization: CeremonyAuthorization
   readonly launch: CeremonyLaunch
 
   onEvent(listener: (event: CeremonyEvent) => void): () => void
