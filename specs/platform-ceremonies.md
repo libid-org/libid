@@ -425,17 +425,20 @@ attestation format:
 | `code` | yes | compared to the code consumed at redirect ingress |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile; no chain or circuit value |
 | `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
-| attestation timestamp | yes | derives the authenticated validity ceiling |
+| attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit |
 | everything else | no | headers, `scope`, `token_type`, other response fields |
 
-The authority is not a transcript range. It reaches the Platform Verifier as
+Neither the authority nor the attestation timestamp is a transcript range.
+The authority reaches the Platform Verifier as
 the TLS server identity the Notary Service authenticated under common
 REQ-COMMON-21, carried in the attested data: the transcript
 holds the authority only in a `Host` header this table hides, and a revealed
 `Host` header is prover-composed text that says nothing about which server
-answered. The two delimiter reveals are what anchor the committed range in the
+answered. The timestamp is the signed creation time of the attested data
+itself, which is why common REQ-COMMON-25 can forbid inferring it from a
+response header. The two delimiter reveals are what anchor the committed range in the
 received direction, which would otherwise reveal no byte at all and leave that
 range indistinguishable from a `refresh_token` value.
 
@@ -771,7 +774,7 @@ submission and every published artifact.
 | `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit to link this attestation to `/user` |
-| attestation timestamp | yes | derives the authenticated validity ceiling |
+| attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
 | token endpoint authority | not a range | the Notary Service authenticated the TLS server identity, and the Platform Verifier compares the attested authority against its pinned constant per common REQ-COMMON-21A |
 | token request method | yes | the Platform Verifier checks its profile method |
 | token request path | yes | the Platform Verifier checks its profile path |
@@ -781,16 +784,19 @@ submission and every published artifact.
 Every unrevealed range stays behind the pinned attestation format's range
 commitment. The delimiter row is what anchors the committed bearer range in
 the received direction, which would otherwise carry no revealed byte and
-leave that range indistinguishable from a `refresh_token` value. The
-authority is not a transcript range at all: it reaches the Platform Verifier
+leave that range indistinguishable from a `refresh_token` value. Neither the
+authority nor the attestation timestamp is a transcript range at all. The
+authority reaches the Platform Verifier
 as the TLS server identity the Notary Service authenticated under common
 REQ-COMMON-21, carried in the attested data, because the
 transcript holds the authority only in a `Host` header this table hides and a
 revealed `Host` header is prover-composed text that says nothing about which
-server answered. Revealing more would widen exposure without adding a check.
+server answered. The timestamp is the signed creation time of the attested
+data itself, which is why common REQ-COMMON-25 can forbid inferring it from a
+response header. Revealing more would widen exposure without adding a check.
 
 - REQ-PLAT-43D (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST reveal no range outside the eight rows
+  The Token-Exchange Service MUST reveal no range outside the seven rows
   marked `yes` above. The Token-Exchange Service MUST commit the bearer range
   rather than reveal it.
 - REQ-PLAT-58 (upholds SP-EXCHANGE-01):
@@ -1042,7 +1048,7 @@ Platform Verifier, Notary Service, Consumer.
   A request selecting an endpoint, client, or return URL is rejected; no state
   survives the call; a foreign origin is refused; the CORS preflight for the
   compiled origin is answered; every response carries `Cache-Control:
-  no-store`; an attestation revealing a range outside the eight marked rows,
+  no-store`; an attestation revealing a range outside the seven marked rows,
   or revealing the bearer range instead of committing it, is rejected; and no proof exposes the bearer or a value it can be recovered
   from.
 - TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-49, REQ-PLAT-50):

@@ -62,11 +62,13 @@ and Block Time.
 
 The principal trust roots are Google's active signing moduli, the active
 X/GitHub notary keys, the selected proof-verifier artifacts, the Proof
-Verifier that dispatches to them, Verifier governance, and Consumer Chain
-consensus. The Proof Verifier is the most concentrated of these: every
+Verifier that dispatches to them, the Platform Verifiers it selects, Verifier
+governance, and Consumer Chain consensus. The Proof Verifier is the most concentrated of these: every
 Consumer takes its accept-or-reject decision, operation domain, and
 Authorized Transaction Data from that one component, so its compromise
-authorizes arbitrary transactions at every Consumer at once. Replacing or retiring a root stops future
+authorizes arbitrary transactions at every Consumer at once. A compromised
+Platform Verifier does the same for one platform and version, because it is
+the role that verifies the proof and binds the digest. Replacing or retiring a root stops future
 acceptance after the change takes effect; it does not undo bindings or sessions
 already committed. Loss of an application deployment is a liveness failure.
 Compromise of the browser release or its supply chain defeats local client and

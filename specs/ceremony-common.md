@@ -145,9 +145,9 @@ Attestation Count: The number of attestations one Platform Profile requires
   The Consumer Chain authenticates the Transaction Author and supplies Block
   Time within tolerance of real time.
 - ASM-CHAIN-02:
-  The Consumer obtains exactly one canonical Chain ID: from its execution
-  environment where the Consumer Chain exposes one, and from immutable
-  deployment configuration where it does not.
+  The Proof Verifier obtains exactly one canonical Chain ID: from its
+  execution environment where the Consumer Chain exposes one, and from
+  immutable deployment configuration where it does not.
 - ASM-PROV-01:
   An Identity Platform delivers an authorization response only to a redirect
   URI registered against the requesting client.
@@ -296,11 +296,11 @@ the selected Platform Verifier, including this Authorization Digest layout.
   wide whatever form the identifier took. Necessity: chains identify themselves
   incompatibly — a number here, a string there, a genesis hash elsewhere, and
   some too wide for 64 bits — so the digest commits a hash of the identifier
-  rather than the identifier itself. The Consumer MUST obtain that
+  rather than the identifier itself. The Proof Verifier MUST obtain that
   Chain ID from its execution environment where the Consumer Chain exposes a
   chain identity to a deployed program, and from immutable deployment
-  configuration where it does not. The Consumer MUST NOT take the Chain ID
-  from Authorized Transaction Data or any other caller-controlled input.
+  configuration where it does not. The Proof Verifier MUST NOT take the Chain
+  ID from Authorized Transaction Data or any other caller-controlled input.
   Necessity: several Consumer Chains expose no chain identity at execution
   time, so environment-sourcing cannot be required universally; what must hold
   everywhere is that a caller cannot choose it.
@@ -782,9 +782,12 @@ exposes a minimal set of public inputs, which never includes a credential.
 - REQ-COMMON-18A (upholds SP-EXCHANGE-01):
   The Platform Verifier MUST check that the revealed ranges and hidden-range
   commitments tile the transcript in the exact layout its profile fixes, with
-  each hidden range bounded by revealed anchor bytes. Necessity: the layout is
+  each hidden range bounded by revealed anchor bytes, or, where a hidden range
+  reaches an end of the transcript, by the signed transcript length of
+  REQ-COMMON-36. Necessity: the layout is
   a profile constant, and the Notary Service answers only for its own
-  signature over what it observed.
+  signature over what it observed; a leading or trailing hidden range has no
+  revealed byte on one side and the signed length is what closes it.
 
 Tiling accounts for the ranges a layout lists; it cannot see bytes the
 layout never mentions. The three rules that follow govern one case only: a
@@ -918,7 +921,9 @@ constant.
 
 - REQ-COMMON-21 (upholds SP-BIND-01):
   The Notary Service MUST authenticate the TLS server identity of the
-  session it verifies.
+  session it observes. Necessity: the authentication happens where the notary
+  holds the session, which is at observation; the verifying side holds no
+  transcript.
 - REQ-COMMON-21A (upholds SP-BIND-01):
   The Platform Verifier MUST compare the authenticated authority, and the
   method and path revealed in the request, byte for byte with the profile
@@ -1064,7 +1069,8 @@ the constructions that role implements.
   Data with trailing bytes, a noncanonical encoding, or an argument shape
   other than the transaction kind's exact format, is rejected.
 - TEST-COMMON-02A (exercises REQ-COMMON-01C, REQ-COMMON-01D, REQ-COMMON-04):
-  The Consumer rejects an empty, malformed, or caller-substituted Chain ID; a
+  The Proof Verifier refuses an empty, malformed, or caller-substituted Chain
+  ID; the Consumer rejects a
   caller-substituted Block Time; and a Transaction Submitter that cannot satisfy
   the transaction kind's Transaction Author predicate.
 - TEST-COMMON-03 (exercises REQ-COMMON-03, REQ-COMMON-03A):
