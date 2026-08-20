@@ -27,7 +27,7 @@ Each platform ceremony has an independently versioned immutable profile:
 Verifier Version carried in its Authorization Digest and submission; launch
 profiles use `platformVerifierVersion = 1`.
 
-Each profile also fixes the Attestation Count of common REQ-COMMON-41 and the
+Each profile also fixes the attestation list of common REQ-COMMON-41 and the
 digest-binding method of common REQ-COMMON-02C. `google/v1` verifies no
 attestation and binds the digest as a public proof input; `x/v1` and
 `github/v1` each verify two attestations — a token or token-exchange session
@@ -882,7 +882,7 @@ byte stays behind a range commitment of the pinned attestation format:
 
 | Range | Revealed | Why |
 |---|---|---|
-| `"id":`, the `id` integer token, and the structural byte after it | yes | the Platform Verifier extracts the canonical `userId` from these bytes per REQ-PLAT-51 |
+| `"id":`, the `id` integer token, and the structural byte after it, which is `,` or `}` | yes | the Platform Verifier extracts the canonical `userId` from these bytes per REQ-PLAT-51 |
 | `"login":"`, the `login` value, and its closing quote | yes | the Platform Verifier extracts the raw handle bytes from these bytes per REQ-PLAT-51 |
 | everything else | no | status line, headers, and every other response field |
 
@@ -906,7 +906,12 @@ REQ-COMMON-18A requires.
   response bytes by their full field delimiters, rejecting a transcript in
   which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. The Platform Verifier MUST reject a noncanonical `id`
-  encoding.
+  encoding. The `github/v1` profile fixes the structural byte following the
+  `id` integer token, which common REQ-COMMON-19D leaves to the profile, as
+  `,` or `}` and no other byte. The Platform Verifier MUST reject any other
+  following byte. Necessity: the terminator is what proves the revealed digits
+  are the whole number rather than a prefix of a longer one, and JSON member
+  order does not guarantee which of the two closes it.
 - REQ-PLAT-51A (upholds SP-BIND-01):
   The Canonical Runtime MUST derive the GitHub `userId` and normalized handle
   from those same revealed `id` and `login` bytes. The Proving Circuit

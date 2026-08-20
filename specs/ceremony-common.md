@@ -134,10 +134,12 @@ Notary Fee: The fixed amount a Notary Service charges for one verification,
    one such fee for each attestation its Platform Profile requires, and no
    fee where that profile requires no attestation.
 
-Attestation Count: The number of attestations one Platform Profile requires
-   the Platform Verifier to have verified before it accepts a submission. It
-   is zero or more: zero where the platform's evidence is a signed platform
-   token, and two for each launch TLSNotary profile.
+Attestation Count: The number of entries in the closed attestation list a
+   Platform Profile fixes under REQ-COMMON-41 — the attestations the Platform
+   Verifier must have verified before it accepts a submission. It is derived
+   from that list and never stated beside it, so the two cannot disagree. It
+   is zero where the platform's evidence is a signed platform token, and two
+   for each launch TLSNotary profile.
 
 ## 3. Assumptions
 
@@ -296,14 +298,20 @@ the selected Platform Verifier, including this Authorization Digest layout.
   wide whatever form the identifier took. Necessity: chains identify themselves
   incompatibly — a number here, a string there, a genesis hash elsewhere, and
   some too wide for 64 bits — so the digest commits a hash of the identifier
-  rather than the identifier itself. The Proof Verifier MUST obtain that
-  Chain ID from its execution environment where the Consumer Chain exposes a
-  chain identity to a deployed program, and from immutable deployment
-  configuration where it does not. The Proof Verifier MUST NOT take the Chain
-  ID from Authorized Transaction Data or any other caller-controlled input.
-  Necessity: several Consumer Chains expose no chain identity at execution
-  time, so environment-sourcing cannot be required universally; what must hold
-  everywhere is that a caller cannot choose it.
+  rather than the identifier itself. The Canonical Runtime MUST take the Chain
+  ID it commits in the Authorization Digest from the Chain Profile of the
+  Consumer Chain the ceremony authorizes, sourcing it from its execution
+  environment where that chain exposes a chain identity to a deployed program
+  and from immutable deployment configuration where it does not. The Proof
+  Verifier MUST take the Chain ID of its digest recomputation from that same
+  Chain Profile value, sourced the same way. The Canonical Runtime MUST NOT
+  take the Chain ID from caller-controlled input. The Proof Verifier MUST NOT
+  take the Chain ID from Authorized Transaction Data or any other
+  caller-controlled input. Necessity: the runtime constructs the digest and
+  the verifier recomputes it, so the two must read one value or the
+  recomputation never matches; several Consumer Chains expose no chain
+  identity at execution time, so environment-sourcing cannot be required
+  universally; what must hold everywhere is that a caller cannot choose it.
 - REQ-COMMON-01D (upholds SP-BIND-01, SP-FRESH-01):
   The Chain Profile MUST define how the Consumer Chain authenticates the
   Transaction Author and supplies Block Time. The Consumer MUST obtain both
@@ -453,14 +461,21 @@ an identity session — so one submission on either path pays two fees.
   verifies nothing.
 - REQ-COMMON-05B:
   The Proof Verifier MUST support more than one Platform Verifier Version of
-  one identity platform concurrently. Necessity: a version migration must not
-  strand outstanding ceremonies or halt claiming.
+  one identity platform concurrently. The Verifier Governance Process MUST
+  keep a version it is replacing in the Supported Version Set until every
+  ceremony that could have begun under it has passed its `proofValidUntil`.
+  The Verifier Governance Process MAY remove a version before then where that
+  version is unsafe, stranding the ceremonies that depend on it. Necessity:
+  concurrent support alone permits retiring the outgoing version the moment
+  its replacement activates, which strands every ceremony already in flight;
+  the emergency case is the one where stranding is the point.
 - REQ-COMMON-05C:
   The Verifier Governance Process MUST own every addition to and removal from
   the Supported Version Set. Necessity: the set decides which proof statements
   the chain accepts, so it is authority, not configuration.
 - REQ-COMMON-05D (upholds SP-EXCHANGE-01):
-  The Platform Verifier MUST check every field its Platform Profile requires.
+  The Platform Verifier MUST check every field its Platform Profile assigns to
+  it under REQ-COMMON-19E.
   The Platform Verifier MUST obtain attestation authenticity from the Notary
   Service once for each attestation its Platform Profile requires. The
   Platform Verifier MUST treat each of those decisions as final. The Platform
@@ -718,9 +733,14 @@ browser-local and produce no Consumer-Chain effect.
 
 ## 9. Notarized transcripts and attestation verification
 
-A proof authenticates bytes, not fields. The Proving Circuit is responsible
-for checking the fields the profile needs — and only those fields, never the
-whole template. A JSON string check matches the full `"field":"` delimiter,
+A proof authenticates bytes, not fields, and three roles check fields in
+three disjoint places. The Proving Circuit checks the fields the profile needs
+inside evidence that stays hidden — and only those fields, never the whole
+template. The Platform Verifier checks the fields carried in revealed
+attestation bytes, which it reads for itself. The Canonical Runtime checks the
+ceremony state that exists only in the browser and reaches no proof and no
+chain. The extraction of each field the profile needs happens in exactly one
+of the three; a comparison on the extracted value may happen in another. A JSON string check matches the full `"field":"` delimiter,
 the value, and its closing quote. JSON unsigned integers and booleans use the
 typed local matches of REQ-COMMON-19D. A form-field check asserts a field
 boundary, the exact ASCII name and `=`, the value, and the next `&` or body end.
@@ -883,6 +903,20 @@ and no `authorization` needle to count.
   following structural byte. The Proving Circuit MUST keep both matches inside
   the authenticated payload length and reject quoted, signed, fractional,
   exponent, leading-zero, padded, or wrong-type alternatives.
+- REQ-COMMON-19E (upholds SP-BIND-01):
+  The Platform Profile MUST assign the extraction of each field it requires —
+  the check that a range of authenticated bytes is that field's value — to
+  exactly one of the Proving Circuit, the Platform Verifier, and the Canonical
+  Runtime. The Platform Profile MUST assign an extraction to the Proving
+  Circuit only where the bytes carrying the field stay hidden, to the Platform
+  Verifier only where they are revealed, and to the Canonical Runtime only
+  where no proof statement and no Consumer Chain component reads the value. A
+  comparison performed on an already-extracted value is not an extraction, and
+  the Platform Profile MAY assign it to a different role. Necessity: an
+  extraction named as two roles' work is one each can assume the other
+  performed, and an extraction assigned to a role that cannot see the bytes is
+  a check nobody performs; the Google audience, extracted in circuit and
+  compared on chain, is the ordinary case the second sentence allows.
 - REQ-COMMON-19C (upholds SP-BIND-01, SP-EXCHANGE-01):
   The Proving Circuit extracting a field from an
   `application/x-www-form-urlencoded` request MUST assert that the match begins
@@ -964,10 +998,10 @@ Attestation Count is zero performs none of this and pays nothing; every rule
 below governs one attestation a profile does require.
 
 - REQ-COMMON-41:
-  The Platform Profile MUST fix its Attestation Count as an exact number of
-  zero or more attestations. Necessity: the number of Notary Service calls
-  and the fee quotation of REQ-COMMON-06E both count attestations, and a
-  profile leaving that number open fixes neither.
+  The Platform Profile MUST fix the closed list of attestations it requires,
+  naming each by the session it covers. Necessity: the number of Notary
+  Service calls and the fee quotation of REQ-COMMON-06E both count
+  attestations, and a profile leaving that list open fixes neither.
 - REQ-COMMON-33 (upholds SP-EXCHANGE-01):
   The Notary Service MUST take the attested data and its notary
   signature and return exactly one accept-or-reject decision covering that
@@ -1100,7 +1134,7 @@ the constructions that role implements.
   Every platform returns the identifier as exact bytes, never a digest, and a
   submission whose supplied bytes its evidence does not authenticate is
   rejected.
-- TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-18A, REQ-COMMON-19, REQ-COMMON-19A, REQ-COMMON-19B, REQ-COMMON-19C, REQ-COMMON-20, REQ-COMMON-22):
+- TEST-COMMON-10 (exercises REQ-COMMON-17A, REQ-COMMON-17B, REQ-COMMON-18, REQ-COMMON-18A, REQ-COMMON-19, REQ-COMMON-19A, REQ-COMMON-19B, REQ-COMMON-19C, REQ-COMMON-19E, REQ-COMMON-20, REQ-COMMON-22):
   An authenticated JSON response carrying a second copy of a templated field
   in its revealed bytes is rejected; a transcript whose
   extraction delimiter matches at two positions in the revealed bytes is
@@ -1108,7 +1142,10 @@ the constructions that role implements.
   placed in padding past the payload length, fails to prove; a form-field match
   not bounded by the body start or `&` and the next `&` or body end fails to
   prove; and a transcript whose ranges do not tile the profile layout is
-  rejected. A profile whose Attestation Count is nonzero and which pins no
+  rejected. A profile assigning one field's extraction to two roles, or
+  assigning an extraction to a role that cannot see the bytes, is ineligible,
+  while a profile extracting a field in one role and comparing it in another
+  stays eligible. A profile whose Attestation Count is nonzero and which pins no
   Notary Service or no attestation format is ineligible, while a profile
   whose Attestation Count is zero stays eligible pinning neither.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
@@ -1183,7 +1220,7 @@ the constructions that role implements.
   carries no Authorization Digest public input, and a proof adding one is
   rejected; and a profile binding the digest by neither method is ineligible.
 - TEST-COMMON-21 (exercises REQ-COMMON-41, REQ-COMMON-42):
-  A profile publishing no Attestation Count is ineligible; a submission on a
+  A profile publishing no attestation list is ineligible; a submission on a
   zero-count profile is quoted nothing, charged nothing, and reaches no
   Notary Service; a submission on a two-count profile is quoted and charged
   exactly two fees; and a submission whose second attestation verification
