@@ -196,18 +196,18 @@ correlation rather than a nonce.
 nonce, derives the code verifier by the normative PKCE construction where
 required, and constructs the authorization request with
 `state=ceremonyId`, registers that ID to this live `Ceremony`, and returns only
-after its launch descriptor is ready. OAuth `state` is a provider-facing
+after its navigation data is ready. OAuth `state` is a provider-facing
 serialization of `ceremonyId`, not a second identifier:
 
 ```ts
-interface CeremonyLaunch {
-  href: string       // provider URL used by the real-anchor fallback
-  popupHref: string  // fixed empty /oauth/redirect used for scripted warmup
+interface CeremonyNavigation {
+  authorizationHref: string // provider URL used by the real-anchor fallback
+  bootstrapHref: string     // fixed empty /oauth/redirect used for scripted warmup
   target: string
 }
 
 interface Ceremony {
-  readonly launch: CeremonyLaunch
+  readonly navigation: CeremonyNavigation
 
   onEvent(listener: (event: CeremonyEvent) => void): () => void
   proveUserIdentity(options?: { popup: WindowProxy | null }): Promise<IdentityResult>
@@ -216,11 +216,12 @@ interface Ceremony {
 ```
 
 When the options object is omitted, `proveUserIdentity()` synchronously opens
-`launch.popupHref`
-with `launch.target` before its first asynchronous step. This is the concise API for
+`navigation.bootstrapHref`
+with `navigation.target` before its first asynchronous step. This is the concise API for
 scripted-popup integrations. For the reliable native-link fallback, the caller
-renders a real anchor from `launch.href` and `launch.target`, calls
-`window.open(launch.popupHref, launch.target)` synchronously, prevents native
+renders a real anchor from `navigation.authorizationHref` and
+`navigation.target`, calls
+`window.open(navigation.bootstrapHref, navigation.target)` synchronously, prevents native
 navigation only if it receives a usable handle, and passes the resulting handle
 or `null` once to `proveUserIdentity({ popup })`. An explicit `null` means native anchor
 navigation is already proceeding and forbids a second scripted open. The
@@ -230,8 +231,8 @@ which becomes the retained handle. There is no mutable `setPopup` API.
 ```ts
 function activate(event: MouseEvent) {
   const popup = window.open(
-    ceremony.launch.popupHref,
-    ceremony.launch.target,
+    ceremony.navigation.bootstrapHref,
+    ceremony.navigation.target,
   )
   if (popup) event.preventDefault()
   void ceremony.proveUserIdentity({ popup })
