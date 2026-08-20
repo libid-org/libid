@@ -674,8 +674,10 @@ analytics, and errors.
 After loading, the popup fetches same-origin `ServerConfig`, authenticates
 the opener, returns the captured OAuth state for live client routing, and
 exact-matches state, platform, client ID,
-redirect URI, verifier version, authorization, and lifetime before using the
-credential. Google accepts a nonempty fragment and empty query; X and GitHub
+redirect URI, verifier version, and authorization before using the credential.
+It rejects a Google ID Token at or after its signed `exp`; mutable X/GitHub
+proof lifetimes are enforced only by the Platform Verifier. Google accepts a
+nonempty fragment and empty query; X and GitHub
 accept a nonempty query and empty fragment. Platform-specific exact parsing is
 owned by the selected platform version.
 
