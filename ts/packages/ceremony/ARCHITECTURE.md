@@ -335,9 +335,10 @@ returns `Identity` with the same `OAuthProof`. The client constructs it from
 those retained fields and the proof and attestations returned by the prover.
 The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
-resolving `proveUserIdentity()`. `status: 'accepted'` means the provider result
-and local checks succeeded; only Consumer acceptance makes Identity
-authoritative. Callers cannot supply or override Identity fields.
+resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
+classified the capture as success and local checks succeeded; only Consumer
+acceptance makes Identity authoritative. Callers cannot supply or override
+Identity fields.
 
 The live `Ceremony` privately retains its ID, copied operation inputs, selected
 platform and verifier version, authorization nonce and digest, OAuth client and
@@ -470,10 +471,15 @@ interface PopupHello {
   type: 'popup-hello'
 }
 
+interface OAuthRedirectCapture {
+  query: string
+  fragment: string
+}
+
 interface PopupOAuthResult {
   type: 'popup-oauth-result'
   ceremonyId: string
-  oauthResult: string
+  capture: OAuthRedirectCapture
 }
 
 interface PopupProve {
@@ -483,7 +489,7 @@ interface PopupProve {
   platformVerifierVersion: PlatformVerifierVersion
   clientId: string
   redirectUri: string
-  oauthResult: string
+  capture: OAuthRedirectCapture
   codeVerifier: string | null
 }
 
@@ -539,18 +545,21 @@ After readiness, popup-to-application messages are `PopupOAuthResult`,
 Application-to-popup messages are `PopupProve` and parameterless
 `PopupAbort`. They are the two application responses to `PopupOAuthResult`;
 application-to-popup Abort may also stop a ceremony after `PopupProve`. Before
-`PopupProve`, every Abort identically clears the OAuth result and attempts to
+`PopupProve`, every Abort identically clears the OAuth capture and attempts to
 close; if closing fails, the popup renders one fixed fallback message. Afterwards
 it cancels reachable proving work and attempts to close. Popup-to-application Abort reports a
 technical terminal failure and rejects the live Ceremony. Direction supplies
 the meaning; Abort carries no reason and has no response. Warmup has no public
 message or input of its own.
 
-`PopupOAuthResult` parses only the captured OAuth `state` into `ceremonyId` and
-sends that ID and the bounded raw provider result to the authenticated
-application client. The popup does not classify the platform-specific result.
+For a nonempty capture, the popup extracts exactly one syntactically valid
+`state` across `query` and `fragment` as `ceremonyId`; an absent, malformed, or
+duplicate state changes no live state. `PopupOAuthResult` sends that ID and the
+unchanged bounded `OAuthRedirectCapture` to the authenticated application
+client. The popup does not select a transport or classify the platform-specific
+result.
 The application origin is trusted for
-both the transient `PopupProve` and provider result; the protocol does
+both the transient `PopupProve` and provider capture; the protocol does
 not attempt to isolate either value from other scripts executing in that
 origin. Exact `targetOrigin`, `MessageEvent.origin`, and `MessageEvent.source`
 checks prevent unrelated origins from receiving or injecting this traffic.
@@ -560,14 +569,16 @@ composition. For an unknown, stale, replayed, or post-reload state, the client
 sends `PopupAbort`, and the popup follows the same pre-prove cleanup path.
 Otherwise, the client
 atomically claims the matching state and uses that Ceremony's retained
-platform/version parser to exact-validate and classify the raw result. A
-malformed or mismatched result rejects the
+platform/version parser to exact-validate the capture's transport and fields
+and classify its outcome. A
+malformed or mismatched capture rejects the
 Ceremony and sends `PopupAbort`. A valid denial resolves with
 `{ status: 'denied' }` and sends `PopupAbort` for popup cleanup. A valid
 acceptance constructs `PopupProve` from the live Ceremony's ID, selected
 platform/version, frozen client and redirect, derived code verifier, and
-received `oauthResult`.
-The popup exact-matches the echoed result to its retained capture, validates
+received `capture`.
+The popup byte-matches both components of the echoed capture to its retained
+capture, validates
 the `PopupProve` shape and closed platform/version dispatch, and forwards that exact
 message to the qualified prover without another app roundtrip. The claimed map entry,
 single-use Ceremony instance, and one-shot popup state machine prevent duplicate
@@ -610,26 +621,26 @@ sequenceDiagram
     P-->>C: Internally ready
     C->>A: PopupHello(version)
     A-->>C: PopupHello(version)
-    C->>A: PopupOAuthResult(ceremonyId, oauthResult)
+    C->>A: PopupOAuthResult(ceremonyId, capture)
     alt No matching live Ceremony
         A-->>C: PopupAbort
-        C->>C: Clear result, close, or render fixed fallback
+        C->>C: Clear capture, close, or render fixed fallback
     else Matching live Ceremony
         A->>A: Claim live Ceremony in memory
-        A->>A: Parse and classify callback with Ceremony platform/version
+        A->>A: Validate transport and classify capture with platform/version
 
         alt Invalid callback or setup
             A->>A: Reject Ceremony
             A-->>C: PopupAbort
-            C->>C: Clear result, close, or render fixed fallback
+            C->>C: Clear capture, close, or render fixed fallback
         else Valid provider denial
             A->>A: Resolve IdentityResult(denied)
             A->>J: Retire Job
             A-->>C: PopupAbort
-            C->>C: Clear result, close, or render fixed fallback
+            C->>C: Clear capture, close, or render fixed fallback
         else Valid provider success
             A-->>C: PopupProve(minimal proving inputs)
-            C->>C: Echo-check result and validate Prove
+            C->>C: Echo-check capture and validate Prove
             P-->>C: PopupHello from qualified iframe or popup
             C->>P: Forward PopupProve unchanged
             P-->>C: PopupNotifyEvent(platform step)
@@ -669,11 +680,6 @@ both with `history.replaceState`, and only then integrity-loads
 `libid-ceremony-popup.js` and calls:
 
 ```ts
-interface OAuthRedirectCapture {
-  query: string
-  fragment: string
-}
-
 declare function startPopup(
   capture: OAuthRedirectCapture,
   allowedAppOrigins: readonly string[],
@@ -691,13 +697,14 @@ comes from request `Origin`, `Referer`, query, fragment, or a client message.
 Redirect servers suppress query strings in access logs, traces, analytics, and
 errors.
 
-After loading, the popup authenticates the opener, parses the captured OAuth
-`state` as `ceremonyId` for live client
-routing, and exact-validates the returned `PopupProve` ID, platform, verifier
-version, client ID, redirect URI, provider result, and PKCE shape before using
-the credential.
-The application client's selected platform/version parser classifies the raw
-result. It rejects a Google ID Token at or after its signed `exp`; mutable
+`OAuthRedirectCapture.query` and `.fragment` are the exact captured
+`location.search` and `location.hash` strings, including a leading delimiter
+when nonempty. After loading, the popup authenticates the opener, extracts the
+single routing state across that capture, and exact-validates the returned
+`PopupProve` ID, platform, verifier version, client ID, redirect URI, unchanged
+capture, and PKCE shape before using the credential.
+The application client's selected platform/version parser classifies the
+capture. It rejects a Google ID Token at or after its signed `exp`; mutable
 X/GitHub proof lifetimes are enforced only by the Platform Verifier. Google
 accepts a nonempty fragment and empty query; X and GitHub accept a nonempty
 query and empty fragment.
@@ -705,7 +712,7 @@ query and empty fragment.
 An unsupported or invalid input discovered after `PopupProve`
 clears the return, sends popup-to-application `PopupAbort`, and renders
 **Application updated—return and try again**. After live binding, an unknown or
-stale ceremony ID or a raw result rejected by the selected platform/version
+stale ceremony ID or a capture rejected by the selected platform/version
 parser makes the application send `PopupAbort`; the popup clears the result,
 attempts to close, and renders one fixed fallback message if closing fails. A
 wrong opener origin, handshake timeout, or redirect capture without a valid
@@ -717,12 +724,14 @@ callback value.
 The popup/prover boundary reuses the closed `PopupMessage` union. The isolated
 prover sends `PopupHello` after binding its channel and passing the isolation
 checks. The popup then forwards exactly the `PopupProve` received from
-the application. Its bounded `oauthResult` is the provider-returned callback
-value; `platformId` and `platformVerifierVersion` select its exact parser and
-implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
+the application. Its bounded `capture` preserves the provider-returned query
+and fragment unchanged; `platformId` and `platformVerifierVersion` select its
+exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
 verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
 the Ceremony Client from its validated `ServerConfig`. The popup and prover
-both exact-validate the record.
+both exact-validate the record. Client classification and prover credential
+extraction use the same closed platform/version parser; the prover admits no
+second interpretation of the capture.
 
 The prover does not receive the expected Authorization Digest. Google exposes
 the signed token nonce as a proof public input; X and GitHub expose the
