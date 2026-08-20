@@ -428,7 +428,7 @@ attestation format:
 | `client_id` | yes | the Platform Verifier reads and returns it |
 | `code` | yes | compared to the code consumed at redirect ingress |
 | `redirect_uri` | yes | the Ceremony Client compares its immutable profile; no chain or circuit value |
-| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
+| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `authorizationNonce` per common REQ-COMMON-15A |
 | attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit |
@@ -794,7 +794,7 @@ OAuth Proof and every published artifact.
 | `client_id` | yes | the Platform Verifier reads and returns it; the Ceremony Client checks its profile |
 | `code` | yes | the Ceremony Client compares it to the code it consumed |
 | `redirect_uri` | yes | the Ceremony Client compares its immutable profile |
-| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
+| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `authorizationNonce` per common REQ-COMMON-15A |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit to link this attestation to `/user` |
 | attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |

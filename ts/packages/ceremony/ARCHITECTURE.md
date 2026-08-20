@@ -188,10 +188,11 @@ lowercase UUIDv4. A composition normally generates one value and calls it
 composition invariant, not a shared branded type, and the identifier is public
 correlation rather than a nonce.
 
-`new` chooses the platform verifier version, generates independent OAuth state,
-PKCE and authorization nonces, constructs the authorization request, registers
-the OAuth state to this live `Ceremony`, and returns only after its launch
-descriptor is ready:
+`new` chooses the platform verifier version, generates independent OAuth state
+and authorization nonce, derives PKCE from that authorization nonce where the
+profile requires it, constructs the authorization request, registers the OAuth
+state to this live `Ceremony`, and returns only after its launch descriptor is
+ready:
 
 ```ts
 interface CeremonyLaunch {
@@ -296,7 +297,6 @@ interface OAuth {
   redirectUri: string
   clientId: string
   oauthState: string
-  pkceNonce: string | null
 }
 
 interface CeremonyAuthorization {
@@ -332,13 +332,14 @@ type IdentityResult =
 
 `PlatformVerifierVersion` is an unsigned 16-bit integer selected by the ceremony client
 from the versions advertised in server configuration, never by the caller.
-`authorizationNonce` is exactly 32
-cryptographically random bytes. Exact authorization encoding is delegated to
-the normative ceremony specification.
+`authorizationNonce` is exactly 32 cryptographically random bytes. For X and
+GitHub it also supplies the secret input to PKCE and is not exposed before the
+token exchange completes. Exact authorization encoding is delegated to the
+normative ceremony specification.
 
-`OAuthProof` is the exact closed normative record: proof, attestations,
-PKCE material where required, and the public authorization fields the Consumer
-will verify. Its platform-specific shape is not redefined here.
+`OAuthProof` is the exact closed normative record: proof, attestations, and the
+authorization fields the Consumer will verify. Its platform-specific shape is
+not redefined here.
 `@libid/ceremony/protocol`
 checks that exact `OAuthProof` against `CeremonyAuthorization`, derives
 the identity preview only from locally verified proof inputs and authenticated
@@ -350,9 +351,12 @@ and local checks succeeded; only Consumer acceptance makes Identity
 authoritative. Callers cannot supply or override Identity fields.
 
 `CeremonyRequest` is private to the live application/popup/prover protocol;
-the durable Job stores only its `jobId`, the public
-`CeremonyAuthorization`, and composition-owned state. In particular, no Job or
-IndexedDB index stores OAuth state or PKCE material.
+the durable Job stores only its `jobId`, `CeremonyAuthorization`, and
+composition-owned state. In particular, no Job or IndexedDB index stores OAuth
+state, provider credentials, or private witness material. For X and GitHub,
+the app-owned authorization nonce temporarily also acts as the PKCE secret; it
+is never sent to server storage or another untrusted destination before token
+exchange completes.
 
 The ceremony receives no action kind, job revision, chain RPC, Registry client,
 wallet key, threshold, fee, connector, transaction submitter, database,
@@ -362,9 +366,10 @@ submission capability.
 
 All records are exact-shape validated. `metadataObservedAt` is a nonnegative
 safe integer; fractions, infinities, `NaN`, and overflow fail. Ceremony IDs are
-lowercase RFC 4122 UUIDv4 values generated with `crypto.randomUUID()`. OAuth
-state and serialized PKCE nonces are independent 32-byte
-`crypto.getRandomValues()` outputs encoded as 43-character unpadded base64url.
+lowercase RFC 4122 UUIDv4 values generated with `crypto.randomUUID()`.
+Authorization nonce and OAuth state are independent 32-byte
+`crypto.getRandomValues()` outputs; OAuth state is encoded as 43-character
+unpadded base64url.
 OAuth state encodes no ceremony or application identifier. Derived hashes are
 exact 32-byte `Uint8Array` values. Unknown fields, aliases, coercions, and
 noncanonical encodings fail before use.

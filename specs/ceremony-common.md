@@ -77,10 +77,9 @@ Chain Profile: The normative mapping from one Consumer Chain to its Chain ID,
 OAuth Proof: The complete input a Consumer passes to the Proof Verifier for
    one verification: the identity platform, the Platform Verifier Version, the
    operation domain, the Authorization Nonce, the Authorized Transaction Data,
-   the proof, the platform's attestations, `pkceNonce` where the profile uses
-   the PKCE construction of §7, and any further value the Platform Profile
-   requires the caller to supply. It is neither the Consumer-Chain transaction
-   nor the zero-knowledge proof alone.
+   the proof, the platform's attestations, and any further value the Platform
+   Profile requires the caller to supply. It is neither the Consumer-Chain
+   transaction nor the zero-knowledge proof alone.
 
 Platform Ceremony: The complete operation that turns one platform
    authorization into a local claim preview and the exact OAuth Proof the
@@ -631,7 +630,7 @@ X and GitHub bind the Authorization Digest through S256 PKCE.
 
 ```text
 PKCE_DOMAIN    = keccak256("libid.identity.pkce")
-pkceBinding    = PKCE_DOMAIN || authorizationDigest || pkceNonce
+pkceBinding    = PKCE_DOMAIN || authorizationDigest || authorizationNonce
 verifierHash   = SHA256(pkceBinding)
 code_verifier  = BASE64URL_NOPAD(verifierHash)
 code_challenge = BASE64URL_NOPAD(SHA256(ASCII(code_verifier)))
@@ -639,50 +638,47 @@ code_challenge = BASE64URL_NOPAD(SHA256(ASCII(code_verifier)))
 
 - REQ-COMMON-12 (upholds SP-BIND-01):
   The Ceremony Client MUST derive `code_verifier` from `PKCE_DOMAIN`, the
-  Authorization Digest, and `pkceNonce` as shown above. `PKCE_DOMAIN` carries
-  no version: the Authorization Digest already binds
-  `platformVerifierVersion`, and a change to this construction is a change to
-  the proof statement, which bumps that version and its Platform Verifier.
-- REQ-COMMON-13 (upholds SP-BIND-01):
-  The Ceremony Client MUST draw `pkceNonce` freshly per authorization
-  attempt from a cryptographically secure random source. Necessity: the nonce
-  becomes public in the OAuth Proof, so a nonce reused across attempts of one
-  Authorization Digest would publish the verifier of an earlier attempt whose
-  code may still be live.
+  Authorization Digest, and the same `authorizationNonce` committed by that
+  digest, as shown above. `PKCE_DOMAIN` carries no version: the Authorization
+  Digest already binds `platformVerifierVersion`, and a change to this
+  construction is a change to the proof statement, which bumps that version
+  and its Platform Verifier.
 - REQ-COMMON-14 (upholds SP-BIND-01):
-  The Ceremony Client MUST NOT emit `pkceNonce` before its token exchange
-  completes, as a platform parameter, a redirect value, or a log field.
-  Necessity: until the code is redeemed, whoever learns the nonce can derive
-  the verifier and redeem an intercepted code; afterwards the code is spent
-  and the nonce protects nothing.
+  For a PKCE profile, the Ceremony Client MUST NOT emit the raw
+  `authorizationNonce` before its token exchange completes, as a platform
+  parameter, a redirect value, or a log field. Necessity: until the code is
+  redeemed, whoever learns the nonce can derive the verifier and redeem an
+  intercepted code; afterwards the code is spent and the nonce protects
+  nothing.
 - REQ-COMMON-15 (upholds SP-BIND-01):
   The Platform Profile MUST reveal the `code_verifier` range of its token
-  request. The Consumer MUST carry `pkceNonce` in the OAuth Proof.
+  request.
 - REQ-COMMON-15A (upholds SP-BIND-01):
   The Platform Verifier MUST recompute `code_verifier` from the Authorization
-  Digest and the submitted `pkceNonce`. The Platform Verifier MUST reject a
-  OAuth Proof whose revealed verifier differs byte for byte. Necessity: this is what binds the
-  digest to the token exchange. Retargeting an attestation to another digest
-  would require a second-preimage of the revealed verifier.
+  Digest and the submitted `authorizationNonce`. The Platform Verifier MUST
+  reject an OAuth Proof whose revealed verifier differs byte for byte.
+  Necessity: this is what binds the digest to the token exchange. Retargeting
+  an attestation to another digest would require a second-preimage of the
+  revealed verifier.
 
-A fresh `pkceNonce` per attempt gives a retry of the same Authorization Digest
-a distinct verifier, and keeps `code_verifier` unpredictable to anyone holding
-only the public digest for as long as that matters — until the code is
-redeemed. The verifier and the nonce are published afterwards, which is what
-lets the Platform Verifier check this binding itself instead of trusting a
-proof statement about values it cannot see. Both verifier and challenge are exactly 43 unpadded
+The fresh `authorizationNonce` gives each ceremony both a unique Authorization
+Digest and an unpredictable `code_verifier`. A new OAuth attempt is a new
+ceremony and therefore receives a new nonce, digest, and verifier. The verifier
+and nonce are published after the exchange, which is what lets the Platform
+Verifier check this binding itself instead of trusting a proof statement about
+values it cannot see. Both verifier and challenge are exactly 43 unpadded
 base64url characters. `PKCE_DOMAIN` separates this hash from any other
 construction over the same digest; it costs nothing, because a 64-byte and a
 96-byte preimage both occupy two SHA-256 blocks.
 
-Conformance vector, for the Authorization Digest of §5 and
-`pkceNonce = 0x4444444444444444444444444444444444444444444444444444444444444444`:
+Conformance vector, using the Authorization Digest of §5 and
+`authorizationNonce = 0x5555555555555555555555555555555555555555555555555555555555555555`:
 
 ```text
 PKCE_DOMAIN    = 0x3961dfe56cd0f2d94e72a15b96df889fbb46968cdb37518830fc0077b0730a01
-verifierHash   = 0x88c493361ea0424467046958d5cd0c50eb03ecc08ee06f02ee9875fe0219b392
-code_verifier  = iMSTNh6gQkRnBGlY1c0MUOsD7MCO4G8C7ph1_gIZs5I
-code_challenge = BhFqYIY1YnHafYOrrblUswFnjxFF97UvGjSgqugPQvA
+verifierHash   = 0xb5ccdbb6994f7cd23da74e19134255a61f785a1ffbbea175f4dc2e21397dd771
+code_verifier  = tczbtplPfNI9p04ZE0JVph94Wh_7vqF19NwuITl913E
+code_challenge = 5CAnexNhszDxUl7byiNzxx-9LAsILzjJ4rApSu4OTBU
 ```
 
 ## 8. Client binding
@@ -1159,15 +1155,15 @@ the constructions that role implements.
 - TEST-COMMON-06 (exercises REQ-COMMON-09, REQ-COMMON-11):
   A request carrying an appended caller parameter is rejected, and a redirected
   notarized request is abandoned.
-- TEST-COMMON-07 (exercises REQ-COMMON-12, REQ-COMMON-13, REQ-COMMON-15, REQ-COMMON-15A):
+- TEST-COMMON-07 (exercises REQ-COMMON-12, REQ-COMMON-15, REQ-COMMON-15A):
   The §7 PKCE vector reproduces `code_verifier` and `code_challenge` exactly;
   a token attestation that hides its `code_verifier` range is rejected; and a
-  OAuth Proof whose `pkceNonce` does not reproduce the revealed verifier from
-  the Authorization Digest is rejected.
+  OAuth Proof whose `authorizationNonce` does not reproduce the revealed
+  verifier from the Authorization Digest is rejected.
 - TEST-COMMON-08 (exercises REQ-COMMON-14):
   No artifact, log, or platform parameter emitted before the token exchange
-  completes contains `pkceNonce`. Verification: inspection of the emitted
-  artifacts.
+  completes contains the raw `authorizationNonce` of a PKCE profile.
+  Verification: inspection of the emitted artifacts.
 - TEST-COMMON-09 (exercises REQ-COMMON-16, REQ-COMMON-16A, REQ-COMMON-16B, REQ-COMMON-17, REQ-COMMON-17C, REQ-COMMON-22A):
   The Ceremony Client rejects an OAuth Proof carrying a client identifier
   other than its immutable profile's client, while a proof carrying a client
@@ -1334,10 +1330,11 @@ published deliberately. A binding exists to be read, and each of these values
 is already discoverable from the identity platform, so the protocol treats
 none of them as confidential. Only the bearer, the client secret, and the
 transcript bytes outside a profile's revealed ranges stay withheld for good.
-`pkceNonce` is withheld only until the token exchange completes, per
-REQ-COMMON-14; the OAuth Proof publishes it afterwards, which is what lets the
-Platform Verifier recompute the revealed `code_verifier` for itself under
-REQ-COMMON-15A.
+For a PKCE profile, the raw `authorizationNonce` is withheld until the token
+exchange completes, per REQ-COMMON-14. The OAuth Proof publishes it afterwards
+as the same nonce already required to recompute the Authorization Digest,
+which also lets the Platform Verifier recompute the revealed `code_verifier`
+under REQ-COMMON-15A.
 
 Input validation, denial of service, trust-anchor lifecycle, and browser
 origin, storage, and credential boundaries are owned by the browser
