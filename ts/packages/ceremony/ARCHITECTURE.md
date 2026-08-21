@@ -210,32 +210,37 @@ interface Ceremony {
   readonly navigation: CeremonyNavigation
 
   onEvent(listener: (event: CeremonyEvent) => void): () => void
-  proveUserIdentity(options?: { popup: WindowProxy | null }): Promise<IdentityResult>
+  proveUserIdentity(options?: { expectedPopup: WindowProxy }): Promise<IdentityResult>
   cancel(): Promise<void>
 }
 ```
 
-When the options object is omitted, `proveUserIdentity()` synchronously opens
-`navigation.bootstrapHref`
-with `navigation.target` before its first asynchronous step. This is the concise API for
-scripted-popup integrations. For the reliable native-link fallback, the caller
-renders a real anchor from `navigation.authorizationHref` and
-`navigation.target`, calls
-`window.open(navigation.bootstrapHref, navigation.target)` synchronously, prevents native
-navigation only if it receives a usable handle, and passes the resulting handle
-or `null` once to `proveUserIdentity({ popup })`. An explicit `null` means native anchor
-navigation is already proceeding and forbids a second scripted open. The
-returning popup's hello supplies its browser-stamped `MessageEvent.source`,
-which becomes the retained handle. There is no mutable `setPopup` API.
+The caller owns launch UI and invokes `window.open`; the ceremony package never
+renders an anchor or chooses between launch paths. The caller renders a real
+anchor from `navigation.authorizationHref` and `navigation.target`, attempts
+`window.open(navigation.bootstrapHref, navigation.target)` synchronously, and
+prevents native navigation only if it receives a usable handle. It passes that
+handle once as `expectedPopup`. If no handle is returned, it omits
+`expectedPopup` and leaves the real-anchor navigation untouched.
+
+`expectedPopup` is a channel-authority input, not UI configuration. When
+present, the client exact-matches messages against that `WindowProxy` and
+navigates it after warmup. When absent, the package opens nothing and binds the
+returning popup's browser-stamped `MessageEvent.source` during the callback
+handshake. This known-source-versus-late-binding rule remains in the ceremony
+contract even though the launch decision lives outside it. There is no nullable
+popup value or mutable `setPopup` API.
 
 ```ts
 function activate(event: MouseEvent) {
-  const popup = window.open(
+  const expectedPopup = window.open(
     ceremony.navigation.bootstrapHref,
     ceremony.navigation.target,
   )
-  if (popup) event.preventDefault()
-  void ceremony.proveUserIdentity({ popup })
+  if (expectedPopup) event.preventDefault()
+  void ceremony.proveUserIdentity(
+    expectedPopup ? { expectedPopup } : undefined,
+  )
 }
 ```
 
@@ -410,9 +415,18 @@ same target and suppresses anchor navigation only if a usable handle is
 returned. If scripted opening is blocked, the same tap's native target
 navigation proceeds. Both paths preserve `window.opener`; `noopener` and
 `noreferrer` are forbidden. A non-null result is retained immediately. On the
-native fallback, the application instead binds and retains the returning
+real-anchor fallback, the Ceremony Client instead binds and retains the returning
 popup's browser-stamped `MessageEvent.source` during the bidirectional Hello exchange.
 Presentation as a window or tab is a browser choice, not a protocol mode.
+
+The scripted open is the primary, PoC-qualified launch path; the qualified
+mobile browsers did not reject it. The real anchor remains a low-cost hedge
+against an unqualified browser or embedding policy returning `null`, not a
+claim that a launch target is known to require it. Because that fallback goes
+directly to the provider, it has neither consent-overlapped warmup nor a known
+`WindowProxy` before callback. The caller therefore cannot use `popup.closed`
+as an early retry hint on that path. Both paths converge at the authenticated
+callback and use the same proving protocol.
 
 The redirect runs the prover in one qualified placement for its lifetime:
 
@@ -618,9 +632,9 @@ sequenceDiagram
         P-->>C: PopupWarmupReady(version)
         C-->>A: PopupWarmupReady(version)
         A->>O: Navigate retained popup to provider
-    else Native-link fallback
+    else Real-anchor fallback
         U->>A: Start identification
-        A->>O: Open provider in retained popup
+        A->>O: Let anchor navigate its named context to provider
     end
     O->>C: Return to /oauth/redirect
     Note right of C: Bound capture, then clear URL before module load or later requests
