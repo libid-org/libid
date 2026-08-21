@@ -1,5 +1,6 @@
-// PKCE / OAuth helpers, parent-side. Extracted from dyaka's client flight
-// machinery — these four are the whole of what a claim flow needs.
+// PKCE / OAuth helpers, parent-side. Extracted from the original
+// monorepo's client flight machinery — these four are the whole of what a
+// claim flow needs.
 
 export function b64url(bytes: Uint8Array): string {
   let str = ''
