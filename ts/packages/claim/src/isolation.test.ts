@@ -1,8 +1,9 @@
-// The isolation guard, ported from dyaka's idea: this library was extracted
-// from a wallet product, and the one way that extraction rots is a stray
-// import reaching back into it. Nothing in src/ may import anything from
-// the @webwallet or @dyaka namespaces (or dyaka's internal aliases), and
-// runtime imports must stay inside the small allowed set.
+// The isolation guard, an idea ported from the original monorepo: this
+// library was extracted from a wallet product, and the one way that
+// extraction rots is a stray import reaching back into it. Nothing in src/
+// may import anything from the upstream monorepo's namespaces or internal
+// aliases (the forbidden patterns below), and runtime imports must stay
+// inside the small allowed set.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -41,7 +42,7 @@ describe('wallet-product isolation', () => {
     expect(files.length).toBeGreaterThan(10)
   })
 
-  it('imports nothing from @webwallet / @dyaka / dyaka aliases', () => {
+  it('imports nothing from the upstream monorepo namespaces or aliases', () => {
     const forbidden = /^(@webwallet|@dyaka|@identity|dyaka)([/-]|$)/
     for (const file of files) {
       for (const spec of importsOf(file)) {

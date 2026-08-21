@@ -19,7 +19,8 @@ deploying, and `apply` never rewrites the file — so the harness applies it
 straight off its read-only mount and there is no regeneration step, ever.
 
 Automation of the click-through itself (captured-credentials driving a real
-browser — dyaka has prior art with chromiumoxide) is the next phase; today
+browser — the original monorepo has prior art with chromiumoxide) is the
+next phase; today
 the harness boots the stack and a human clicks. The `integration-smoke` CI
 job already automates everything up to the consent screen: stack boot, the
 declarative-deploy convergence check, the keeper's real JWKS rotation, and
