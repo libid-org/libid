@@ -36,7 +36,7 @@
     "test": "vitest run"
   },
   "libid": {
-    "notaryRelease": "v0.1.0",
+    "notaryRelease": "v0.2.0",
     "circuitsRelease": "v0.2.0"
   },
   "dependencies": {
