@@ -608,7 +608,7 @@ sequenceDiagram
         A->>O: Open provider in retained popup
     end
     O->>C: Return to /oauth/redirect
-    Note right of C: Bound capture; clear URL before module load or later requests
+    Note right of C: Bound capture, then clear URL before module load or later requests
     C->>P: Load /oauth/prove and start or join warmup
     C->>A: PopupHello(version)
     A-->>C: PopupHello(version)
