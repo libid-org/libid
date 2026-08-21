@@ -51,7 +51,7 @@ services:
       anvil:
         condition: service_healthy
     environment:
-      LIBID_DEPLOY_VERSION: "0.4.0"
+      LIBID_DEPLOY_VERSION: "0.6.0"
       # anvil #0 — canonical public test key, the deployer.
       DEPLOYER_KEY: ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
     volumes:
@@ -60,7 +60,7 @@ services:
     entrypoint: ["bash", "/deploy.sh"]
 
   notary:
-    image: ghcr.io/libid-org/notary:0.1.0
+    image: ghcr.io/libid-org/notary:0.2.0
     depends_on:
       deploy:
         condition: service_completed_successfully
@@ -91,7 +91,7 @@ services:
   # For a long-lived local rotation loop, run instead:
   #   docker compose run --rm keeper --config /input/keeper.toml run
   keeper:
-    image: ghcr.io/libid-org/keeper:0.1.0
+    image: ghcr.io/libid-org/keeper:0.2.0
     depends_on:
       deploy:
         condition: service_completed_successfully
@@ -103,7 +103,7 @@ services:
     command: ["--config", "/input/keeper.toml", "once"]
 
   libid-server-rs:
-    image: ghcr.io/libid-org/libid-server-rs:0.2.1
+    image: ghcr.io/libid-org/libid-server-rs:0.2.2
     depends_on:
       deploy:
         condition: service_completed_successfully
