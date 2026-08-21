@@ -426,13 +426,14 @@ ceremony ID in its initial fragment, clears it before other work, and uses a
 same-origin `BroadcastChannel` derived from that ID. The ceremony ID routes the
 live same-origin channel; it is not a separate confidentiality boundary.
 
-Every redirect handshake first loads `/oauth/prove` in a same-origin iframe.
+Every redirect document first loads `/oauth/prove` in a same-origin iframe.
 That document may warm assets without isolation or credentials. Its
 `libid-ceremony-prover.js` Window branch registers the same module URL as a
 module service worker and asks it to start the deployment-fixed asset single
-flights. The popup reports readiness only after those flights are installed or
-the bounded startup attempt determines that warmup is unavailable; it never
-waits for download completion. On a provider return, a qualified DIP iframe
+flights. The prover sends `PopupWarmupReady` after those flights exist or the
+bounded startup attempt determines that warmup is unavailable; it never waits
+for download completion. The empty launch popup forwards that readiness to the
+application. On a provider return, a qualified DIP iframe
 continues from that same document into proving. Without DIP, the unisolated
 iframe receives no credential and the user-opened top-level `/oauth/prove`
 popup performs proving instead.
@@ -443,7 +444,8 @@ partition the service-worker registration, Cache Storage, or the same-origin
 channel. Consequently the COOP-isolated popup fallback joins the same in-flight
 fetches as the warmup iframe. The prover requests dependencies normally; the
 worker returns the existing single-flight promise or cached response, so no
-document-level completion protocol exists.
+artifact-download completion message exists. `PopupWarmupReady` marks only the
+bounded startup barrier.
 
 The prover sends `PopupHello` only after confirming `crossOriginIsolated` and
 `SharedArrayBuffer`. The popup forwards `PopupProve` only after that Hello.
@@ -461,14 +463,19 @@ type PopupProtocolVersion = 1
 ```
 
 `PopupProtocolVersion` versions the complete `PopupMessage` union shared by the
-application/popup and popup/prover boundaries. It appears only in the
-handshake; individual messages do not repeat it and no version negotiation
-occurs.
+application/popup and popup/prover boundaries. It appears in the bootstrap
+readiness message and channel handshake; ceremony-data messages do not repeat
+it and no version negotiation occurs.
 
 ```ts
 interface PopupHello {
   popupProtocolVersion: PopupProtocolVersion
   type: 'popup-hello'
+}
+
+interface PopupWarmupReady {
+  popupProtocolVersion: PopupProtocolVersion
+  type: 'popup-warmup-ready'
 }
 
 interface OAuthRedirectCapture {
@@ -512,6 +519,7 @@ interface PopupDeliverProof {
 
 type PopupMessage =
   | PopupHello
+  | PopupWarmupReady
   | PopupOAuthResult
   | PopupProve
   | PopupAbort
@@ -519,23 +527,30 @@ type PopupMessage =
   | PopupDeliverProof
 ```
 
-After clearing its URL, the popup sends the
-non-sensitive `PopupHello` to `window.opener`. It does not know the
+For an empty scripted launch, the popup forwards `PopupWarmupReady` to
+`window.opener` after the prover's bounded startup attempt. It accepts the
+message only from its exact `/oauth/prove` child and browser-stamped origin; if
+that child stays silent, the popup emits the same readiness message when the
+bounded startup attempt expires. It sends only to the server-embedded allowed
+origins. The application accepts it only from its
+retained popup at the exact configured redirect origin, exact-validates the
+fixed protocol version, and navigates that popup to the provider. No reply,
+channel binding, ceremony ID, or warmup status is involved.
+
+After clearing a nonempty callback URL, the popup sends the non-sensitive
+`PopupHello` to `window.opener`. It does not know the
 opener's origin yet, so this one discovery message may use `*`; it contains only
 the fixed protocol version. The application client accepts it only from a
 source whose browser-stamped origin is the exact configured redirect origin and
-answers with the same `PopupHello` directly to that source and origin. Before
-sending its initial Hello,
-the popup loads `/oauth/prove` and starts or joins the worker-owned warmup; Hello
-therefore also means that the asset single flights exist or warmup is known to
-be unavailable. The popup accepts the answering Hello only from `window.opener`
+answers with the same `PopupHello` directly to that source and origin. The popup
+accepts the answering Hello only from `window.opener`
 after exact-matching the browser-reported app origin against its validated,
 server-embedded `allowedAppOrigins`. That exchange binds
 all later traffic to the exact source/origin pair. Messages are direct;
 unknown fields or types, wrong directions, stale order, source/origin changes,
 and replays change no state.
 
-If no valid answering Hello arrives within
+If a nonempty callback receives no valid answering Hello within
 `REDIRECT_OPENER_TIMEOUT_MS = 30_000`, the popup clears its in-memory capture,
 severs the opener, and renders the same fixed unapproved-application result as
 an invalid opener origin. No callback value is rendered or used for navigation.
@@ -550,7 +565,7 @@ close; if closing fails, the popup renders one fixed fallback message. Afterward
 it cancels reachable proving work and attempts to close. Popup-to-application Abort reports a
 technical terminal failure and rejects the live Ceremony. Direction supplies
 the meaning; Abort carries no reason and has no response. Warmup has no public
-message or input of its own.
+input and exposes only `PopupWarmupReady`.
 
 For a nonempty capture, the popup extracts exactly one syntactically valid
 `state` across `query` and `fragment` as `ceremonyId`; an absent, malformed, or
@@ -600,8 +615,8 @@ sequenceDiagram
         U->>A: Start identification
         A->>C: Open empty /oauth/redirect
         C->>P: Embed /oauth/prove, which starts warmup
-        C->>A: PopupHello(version)
-        A-->>C: PopupHello(version)
+        P-->>C: PopupWarmupReady(version)
+        C-->>A: PopupWarmupReady(version)
         A->>O: Navigate retained popup to provider
     else Native-link fallback
         U->>A: Start identification
@@ -821,21 +836,21 @@ Popup closure alone is never success, failure, denial, or cancellation.
 ## Prover warmup
 
 Every ceremony attempts consent-overlapped prover warmup. It is fixed behavior,
-not configuration, action input, or a separate protocol. Before the ordinary
-bidirectional `PopupHello` handshake, the popup loads `/oauth/prove`. The
-prover Window branch registers its own deployed
+not configuration or action input. The empty launch popup loads `/oauth/prove`.
+The prover Window branch registers its own deployed
 `libid-ceremony-prover.js` module URL as a module service worker and asks it to
 start the fixed asset-set single flights. This reuses the same route, artifact,
 and prover implementation used later for proving; there is no warmup route,
-artifact, URL flag, or public warmup message.
+artifact, or URL flag.
 
 The service-worker branch contains no OAuth or application state and fetches
 only the deployment-fixed worker, WASM, and whole-response CRS assets.
 It owns every asset fetch from the first byte and extends the initiating worker
-event through completion. The popup sends `PopupHello` as soon as the single
-flights exist or the bounded startup attempt fails, without waiting for download
-completion; the application proceeds to the provider after answering with
-`PopupHello`. A later `/oauth/prove` document
+event through completion. The prover sends `PopupWarmupReady` as soon as the
+single flights exist or its bounded startup attempt fails, without waiting for
+download completion. A silent child reaches the same readiness barrier through
+the popup's bounded timeout. The popup forwards or emits the message, and the
+application proceeds to the provider without replying. A later `/oauth/prove` document
 requests dependencies normally; the worker makes each request join its
 in-flight fetch or read its completed cache entry. Navigation through OAuth
 therefore does not restart the work.
