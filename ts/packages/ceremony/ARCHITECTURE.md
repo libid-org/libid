@@ -597,14 +597,14 @@ sequenceDiagram
     participant P as libid-ceremony-prover.js
 
     alt Scripted launch
-        U->>A: Authorize
+        U->>A: Start identification
         A->>C: Open empty /oauth/redirect
         C->>P: Start prover warmup
         C->>A: PopupHello(version)
         A-->>C: PopupHello(version)
         A->>O: Navigate retained popup to provider
     else Native-link fallback
-        U->>A: Authorize
+        U->>A: Start identification
         A->>O: Open provider in retained popup
     end
     O->>C: Return to /oauth/redirect
