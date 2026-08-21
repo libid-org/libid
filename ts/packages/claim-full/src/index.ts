@@ -3,7 +3,7 @@
 /// default same-origin URLs expect once copied into a static root:
 ///
 ///   tlsn_wasm.js, tlsn_wasm_bg.wasm, spawn.js   → /tlsn_wasm.js …
-///   circuits/dyaka_noir_token.json (X)          → /circuits/dyaka_noir_token.json
+///   circuits/x_token.json (X)                   → /circuits/x_token.json
 ///   circuits/jwt_email.json (Google)            → /circuits/jwt_email.json
 ///   wasm/acvm_js_bg.wasm, noirc_abi_wasm_bg.wasm → /wasm/…
 ///

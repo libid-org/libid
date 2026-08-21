@@ -1,6 +1,6 @@
 {
   "name": "@libid/claim",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Browser library for the libID OAuth handle-claim flows (GitHub, X, Google): drive the consent popup, prove control of the account, and encode a bind-ready proof for IdentityNames.",
   "license": "(MIT OR Apache-2.0)",
   "repository": {

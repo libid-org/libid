@@ -15,7 +15,7 @@ serves exactly the layout `@libid/claim`'s default same-origin URLs expect:
 | staged path | consumer |
 |---|---|
 | `/tlsn_wasm.js`, `/tlsn_wasm_bg.wasm`, `/spawn.js` | X flow's MPC-TLS prover (libid-org/notary release) |
-| `/circuits/dyaka_noir_token.json` | X token circuit (libid-org/libid-circuits release) |
+| `/circuits/x_token.json` | X token circuit (libid-org/libid-circuits release) |
 | `/circuits/jwt_email.json` | Google OIDC circuit (libid-org/libid-circuits release) |
 | `/circuits/manifest.json` | the circuits release manifest (provenance) |
 | `/wasm/acvm_js_bg.wasm`, `/wasm/noirc_abi_wasm_bg.wasm` | noir witness generation (@noir-lang pins) |

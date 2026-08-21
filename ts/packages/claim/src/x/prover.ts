@@ -144,7 +144,7 @@ export interface XProverOptions {
   /** 20-byte wallet address to bind the proof to (msg.sender on chain). */
   walletAddress: `0x${string}`
   /** Same-origin URL of the compiled token circuit JSON. Defaults to
-   *  `${origin}/circuits/dyaka_noir_token.json` (libid-claim-assets stages it
+   *  `${origin}/circuits/x_token.json` (libid-claim-assets stages it
    *  there; see libid-org/libid-circuits releases). */
   circuitUrl?: string
   onStatus?: (s: ProverStatus, msg?: string) => void
@@ -186,7 +186,7 @@ export async function runXProver(opts: XProverOptions): Promise<XProofResult> {
 
   // ── Phase 1: TLSN sessions + bb.js preload in parallel ──
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const xCircuit = opts.circuitUrl ?? `${origin}/circuits/dyaka_noir_token.json`
+  const xCircuit = opts.circuitUrl ?? `${origin}/circuits/x_token.json`
 
   // Spawn the worker prover up front: it boots noir + bb.js in a worker
   // (off the main thread) while the TLSN sessions run, so proving neither

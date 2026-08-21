@@ -3,7 +3,7 @@
 // the published tarball never run it — the assets ship inside the tarball.
 //
 //   assets/tlsn_wasm.js, tlsn_wasm_bg.wasm, spawn.js   ← libid-org/notary release
-//   assets/circuits/dyaka_noir_token.json (X)          ← libid-org/libid-circuits
+//   assets/circuits/x_token.json          (X)          ← libid-org/libid-circuits
 //   assets/circuits/jwt_email.json        (Google)     ← libid-org/libid-circuits
 //   assets/circuits/manifest.json                      ← the release manifest (provenance)
 //   assets/wasm/acvm_js_bg.wasm, noirc_abi_wasm_bg.wasm ← @noir-lang/* in node_modules
@@ -176,7 +176,7 @@ try {
     writeFileSync(join(assets, 'circuits', jsonName), fileBytes)
     console.log(`staged assets/circuits/${jsonName} (from ${tarName})`)
   }
-  await stageCircuit('dyaka-noir-token', 'dyaka_noir_token.json')
+  await stageCircuit('x-token', 'x_token.json')
   await stageCircuit('jwt_email', 'jwt_email.json')
   writeFileSync(join(assets, 'circuits', 'manifest.json'), JSON.stringify(manifest, null, 2))
 
