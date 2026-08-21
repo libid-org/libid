@@ -591,21 +591,15 @@ or connector crosses the public API.
 ```mermaid
 sequenceDiagram
     actor U as User
-    participant A as Application + composition
-    participant J as App-origin Job store
+    participant A as App / Ceremony Client
     participant C as libid-ceremony-popup.js
     participant O as OAuth provider
     participant P as libid-ceremony-prover.js
-    participant W as Prover service worker
 
-    Note over A,J: Prepared Job is awaiting-oauth
     alt Scripted launch
         U->>A: Authorize
         A->>C: Open empty /oauth/redirect
-        C->>P: Load /oauth/prove for warmup
-        P->>W: Start or join fixed asset fetches
-        W-->>P: Single flights installed or cold fallback
-        P-->>C: Internally ready
+        C->>P: Start prover warmup
         C->>A: PopupHello(version)
         A-->>C: PopupHello(version)
         A->>O: Navigate retained popup to provider
@@ -614,47 +608,39 @@ sequenceDiagram
         A->>O: Open provider in retained popup
     end
     O->>C: Return to /oauth/redirect
-    Note right of C: Copy and bound callback bytes, then clear URL before module or network
+    Note right of C: Bound capture; clear URL before module load or later requests
     C->>P: Load /oauth/prove and start or join warmup
-    P->>W: Join in-flight fetches or read cache
-    W-->>P: Dependencies available now or on demand
-    P-->>C: Internally ready
     C->>A: PopupHello(version)
     A-->>C: PopupHello(version)
     C->>A: PopupOAuthResult(ceremonyId, capture)
+    Note over A,C: Before PopupProve, PopupAbort always clears the capture and closes or renders the fixed fallback
     alt No matching live Ceremony
         A-->>C: PopupAbort
-        C->>C: Clear capture, close, or render fixed fallback
     else Matching live Ceremony
-        A->>A: Claim live Ceremony in memory
-        A->>A: Validate transport and classify capture with platform/version
+        A->>A: Claim Ceremony and classify the validated capture
 
         alt Invalid callback or setup
             A->>A: Reject Ceremony
             A-->>C: PopupAbort
-            C->>C: Clear capture, close, or render fixed fallback
         else Valid provider denial
             A->>A: Resolve IdentityResult(denied)
-            A->>J: Retire Job
             A-->>C: PopupAbort
-            C->>C: Clear capture, close, or render fixed fallback
         else Valid provider success
-            A-->>C: PopupProve(minimal proving inputs)
-            C->>C: Echo-check capture and validate Prove
-            P-->>C: PopupHello from qualified iframe or popup
-            C->>P: Forward PopupProve unchanged
-            P-->>C: PopupNotifyEvent(platform step)
-            C-->>A: Forward PopupNotifyEvent unchanged
+            A-->>C: PopupProve
+            P-->>C: PopupHello from qualified DIP or activated popup, possibly already received
+            C->>P: Echo-check capture and forward PopupProve
+            loop Zero or more progress events
+                P-->>C: PopupNotifyEvent(platform step)
+                C-->>A: Forward PopupNotifyEvent unchanged
+            end
             alt Prover failure
                 P-->>C: PopupAbort
                 C-->>A: Forward PopupAbort
                 A->>A: Reject Ceremony
             else Proof generated
                 P-->>C: PopupDeliverProof
-                C->>C: Bound and exact-match ceremonyId
-                C-->>A: Forward PopupDeliverProof unchanged
-                A->>A: Assemble OAuthProof, verify, and construct IdentityResult(accepted)
-                A->>J: CAS to composition-owned successor
+                C-->>A: Validate and forward PopupDeliverProof unchanged
+                A->>A: Assemble and verify OAuthProof, then resolve IdentityResult(accepted)
             end
         end
     end
