@@ -2,8 +2,7 @@
  * Noir witness builder for the new X token-only ZK circuit.
  *
  * Sizing constants MUST match the Noir globals in
- * `dyaka-noir-token/src/main.nr` (libid-org/libid-circuits) and
- * `dyaka-noir-shared/src/lib.nr` in the same repo.
+ * `circuits/x-token/src/main.nr` (libid-org/libid-circuits).
  */
 
 import { keccak256, sha256, toBytes } from 'viem'
@@ -57,7 +56,7 @@ function padTo(src: Uint8Array, n: number, label: string): Uint8Array {
 }
 
 /**
- * Mirror of `dyaka_noir_shared::compute_bearer_nullifier`:
+ * Mirror of `compute_bearer_nullifier` in the x-token circuit:
  *   keccak256(bearer_padded || bearer_len.be32)
  */
 function computeBearerNullifier(bearerPadded: Uint8Array, bearerLen: number): Uint8Array {
@@ -72,7 +71,7 @@ function computeBearerNullifier(bearerPadded: Uint8Array, bearerLen: number): Ui
 }
 
 /**
- * Mirror of `dyaka_noir_shared::verify_hash_commit` (without enforcement):
+ * Mirror of `verify_hash_commit` in the x-token circuit (without enforcement):
  *   SHA256(plaintext_padded[0..plaintext_len] || blinder)
  */
 export function computeBearerHash(

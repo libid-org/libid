@@ -9,7 +9,7 @@
 /// Static assets the host app must stage at its origin (@libid/claim-full
 /// bundles them all; `libid-claim-assets <public-dir>` stages them): the
 /// tlsn wasm bundle (/tlsn_wasm.js, /tlsn_wasm_bg.wasm, /spawn.js), the
-/// compiled circuits (/circuits/dyaka_noir_token.json for X,
+/// compiled circuits (/circuits/x_token.json for X,
 /// /circuits/jwt_email.json for Google — both overridable per-call), and
 /// the noir wasm (/wasm/acvm_js_bg.wasm, /wasm/noirc_abi_wasm_bg.wasm).
 /// The X and Google provers also require cross-origin isolation

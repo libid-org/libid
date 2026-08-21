@@ -25,9 +25,9 @@ import { assetsDir, copyAssets, listAssets } from './index.js'
 const sha256 = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex')
 
 const EXPECTED = [
-  'circuits/dyaka_noir_token.json',
   'circuits/jwt_email.json',
   'circuits/manifest.json',
+  'circuits/x_token.json',
   'spawn.js',
   'tlsn_wasm.js',
   'tlsn_wasm_bg.wasm',
@@ -57,7 +57,7 @@ describe('bundled assets', () => {
 
   it('circuit JSONs hash to the release manifest values', () => {
     const m = manifest()
-    for (const circuit of ['dyaka_noir_token.json', 'jwt_email.json']) {
+    for (const circuit of ['x_token.json', 'jwt_email.json']) {
       const bytes = readFileSync(join(assetsDir(), 'circuits', circuit))
       expect(sha256(bytes), circuit).toBe(manifestEntry(m, circuit).files[circuit])
     }
@@ -89,7 +89,7 @@ describe('toolchain tie: pinned bb.js reproduces the released vks', () => {
     await (await api).destroy()
   })
 
-  for (const circuit of ['dyaka_noir_token.json', 'jwt_email.json']) {
+  for (const circuit of ['x_token.json', 'jwt_email.json']) {
     it(`${circuit} vk derived by the pinned bb.js == release vk`, async () => {
       const m = manifest()
       const { bytecode } = JSON.parse(
