@@ -627,7 +627,7 @@ sequenceDiagram
             A-->>C: PopupAbort
         else Valid provider success
             A-->>C: PopupProve
-            P-->>C: PopupHello from qualified DIP or activated popup, possibly already received
+            Note over C,P: Forwarding waits for PopupHello from the qualified DIP or activated prover popup
             C->>P: Echo-check capture and forward PopupProve
             loop Zero or more progress events
                 P-->>C: PopupNotifyEvent(platform step)
