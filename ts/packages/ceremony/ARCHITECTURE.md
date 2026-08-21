@@ -599,7 +599,7 @@ sequenceDiagram
     alt Scripted launch
         U->>A: Start identification
         A->>C: Open empty /oauth/redirect
-        C->>P: Start prover warmup
+        C->>P: Embed /oauth/prove, which starts warmup
         C->>A: PopupHello(version)
         A-->>C: PopupHello(version)
         A->>O: Navigate retained popup to provider
