@@ -9,9 +9,9 @@ authenticated identity fields, evidence composition, proof-validity ceiling,
 exchange service, and platform-specific failure behavior. The
 [common ceremony rules](ceremony-common.md) own the Authorization Digest,
 serialization, PKCE, transcript extraction, client binding, and evidence
-time. The consumer protocol owns transaction dispatch and authorization.
-The browser protocol owns browsing contexts, redirect transport, storage,
-resume, and runtime handoff.
+time. The Consumer's protocol owns transaction dispatch and authorization.
+The browser architecture owns browsing contexts, redirect transport,
+interruption behavior, and application handoff.
 
 Google returns a signed OIDC ID Token directly to the redirect fragment. X and
 GitHub use the OAuth authorization-code flow and notarized transcripts of
@@ -23,8 +23,8 @@ Terms are imported from
 ## 2. Ceremony profiles
 
 Each platform ceremony has an independently versioned immutable profile:
-`google/v1`, `x/v1`, `github/v1`. Every profile fixes the exact Platform
-Verifier Version carried in its Authorization Digest and submission; launch
+`google/v1`, `x/v1`, `github/v1`. Every profile fixes the exact Platform Verifier Version
+carried in its Authorization Digest and Submission; launch
 profiles use `platformVerifierVersion = 1`.
 
 Each profile also fixes the attestation list of common REQ-COMMON-41 and the
@@ -35,12 +35,12 @@ and an identity session — and bind the digest through the revealed
 `code_verifier` of common REQ-COMMON-15A.
 
 - REQ-PLAT-01:
-  The Canonical Runtime MUST record in the ceremony state the exact profile it
-  selected. The Canonical Runtime MUST NOT substitute another profile on
-  resume. Necessity: a resumed ceremony that changed profile would produce
+  The Canonical Runtime MUST select and retain one exact profile for the live
+  ceremony. The Canonical Runtime MUST NOT substitute another profile after
+  authorization starts. Necessity: changing profiles mid-ceremony would produce
   evidence the selected verifier cannot check.
 - REQ-PLAT-01A (upholds SP-BIND-01):
-  The Verifier Governance Process MUST select an exact proof-verifier
+  The Verifier Governance Process MUST select an exact Platform Verifier
   artifact for every eligible profile and an exact Notary Service for every
   TLSNotary profile. Necessity: a profile name without its
   verifier artifacts does not identify one proof statement.
@@ -48,21 +48,21 @@ and an identity session — and bind the digest through the revealed
   The Canonical Runtime MUST treat a profile as ineligible until the
   application's authenticated profile lists it and the generated deployment
   contains every fixed route it requires. Necessity: cross-component
-  interoperability between runtime and deployment.
+  interoperability between the Canonical Runtime build and server deployment.
 - REQ-PLAT-03 (upholds SP-CLIENT-01):
-  The Canonical Runtime MUST construct the local claim preview exclusively from
-  the Platform Profile's canonical source in the exact Submission it returns.
-  The preview is not an authority decision; only the Consumer's acceptance of
-  that exact Submission is. For X and GitHub, the Canonical Runtime MUST parse
-  the exact revealed identity-response bytes that the Platform Verifier
-  extracts, using the same canonical extraction and normalization rules. The
-  Canonical Runtime MUST reject a detached proof output, sidecar value, or
-  caller value that supplies or overrides `userId`, handle, or
-  `metadataObservedAt`.
+  The Canonical Runtime MUST derive the local identity fields exclusively from
+  the Platform Profile's canonical source in the exact Submission it
+  returns.
+  Those fields are not an authority decision; only the Consumer's
+  acceptance of that exact Submission is. For X and GitHub, the Canonical Runtime MUST parse the exact revealed identity-response bytes that the
+  Platform Verifier extracts, using the same canonical extraction and
+  normalization rules. The Canonical Runtime MUST reject a detached proof
+  output, sidecar value, or caller value that supplies or overrides `userId`,
+  handle, or `metadataObservedAt`.
 
-This is a data-source invariant, not a browser-flow requirement. It defines the
-preview returned to callers and used by any composition-owned UI; it does not
-create a ceremony-owned confirmation page.
+This is a data-source invariant, not a browser-flow requirement. It defines
+the identity fields returned to callers and used by any composition-owned UI;
+it does not create a ceremony-owned confirmation page.
 
 ### 2.1 Canonical platform user identifiers
 
@@ -139,7 +139,7 @@ such table is ineligible.
 - TEST-PLAT-20 (exercises REQ-PLAT-08A, REQ-PLAT-08B, REQ-PLAT-08C):
   Every implementation reproduces the shared handle vector table byte for
   byte; a caller-supplied normalized handle or pre-hashed key is rejected;
-  and identity bytes transformed anywhere before Consumer-side derivation
+  and identity bytes transformed before derivation by the Consumer
   fail conformance.
 
 ### 2.2 Metadata ordering and validity ceilings
@@ -178,9 +178,9 @@ block an otherwise valid authority operation.
 
 ## 3. Google OIDC ceremony
 
-Google uses direct authentication-only OIDC. The ceremony has no token
-exchange, client secret, PKCE, token-exchange service, or server-side state.
-Identity evidence is the signed ID Token delivered in the redirect fragment.
+Google uses direct authentication-only OIDC and has no server-side token
+exchange. Identity evidence is the signed ID Token delivered in the redirect
+fragment.
 
 ### 3.1 Authorization request
 
@@ -209,14 +209,15 @@ operational guidance for obtaining a token whose signed claims satisfy
   The Canonical Runtime MUST request only `response_type=id_token` with
   `response_mode=fragment`. The Canonical Runtime MUST NOT request an
   authorization code or access token. Necessity: the signed identity evidence
-  reaches the local redirect runtime without introducing a confidential
+  reaches the local Redirect Runtime without introducing a confidential
   backend or bearer capability.
 - REQ-PLAT-12 (upholds SP-DELIVERY-01):
-  The Redirect Runtime MUST copy the bounded fragment into memory, clear the
-  fragment before storage or network access, and require exactly one `state`
-  plus exactly one `id_token` XOR `error`. The Redirect Runtime MUST reject
-  duplicate, additional authoritative, mixed, or malformed fields. The Redirect
-  Runtime MUST scrub ignored diagnostic fields.
+  The Redirect Runtime MUST copy the bounded query and fragment into memory and
+  clear both before storage or network access. The Canonical Runtime MUST require
+  an empty query and a fragment carrying exactly one `state` plus exactly one
+  `id_token` XOR `error`. The Canonical Runtime MUST reject duplicate, additional
+  authoritative, mixed-transport, or malformed fields and MUST ignore
+  diagnostic fields.
 - REQ-PLAT-13 (upholds SP-DELIVERY-01):
   The Canonical Runtime MUST match `state` to exactly one live local ceremony
   and consume it once before accepting the ID Token. No server-side state or
@@ -236,7 +237,7 @@ Google nonce         = sxj7VZ4WoXm4U-0oU1ds2hYDLZOwg5u4GlUTXTNMCvU
   The Canonical Runtime MUST reject an ID Token whose `nonce` differs from the
   Authorization Digest it constructed.
 - REQ-PLAT-15:
-  The Redirect Runtime MUST reject a Google response carrying `code` or
+  The Canonical Runtime MUST reject a Google response carrying `code` or
   `access_token`. Necessity: neither artifact belongs to this
   authentication-only profile.
 
@@ -291,7 +292,7 @@ require a verifier that dispatches on the header `alg`; none exists here.
   client-binding public input.
 - REQ-PLAT-19A (upholds SP-CLIENT-01):
   The Platform Verifier MUST require `SHA256` of the `aud` bytes carried in
-  the submission to equal that public input. The Platform Verifier MUST return those bytes
+  the Submission to equal that public input. The Platform Verifier MUST return those bytes
   as the client identifier of common REQ-COMMON-16. Necessity: the digest authenticates the
   bytes without the circuit packing a variable-length string into public
   inputs, and the Consumer still receives the readable value. Admission stays
@@ -350,9 +351,10 @@ Launch fixes X's `/2/oauth2/token` and `/2/users/me` sessions and GitHub's
   probe, failure, or retry select Browser MPC or switch transport within a
   launch ceremony.
 - REQ-PLAT-28 (upholds SP-DELIVERY-01):
-  The Redirect Runtime MUST require the X or GitHub authorization redirect to
-  carry exactly one `code` and exactly one `state`, or exactly one `error`.
-  The Redirect Runtime MUST reject duplicate, mixed, additional
+  The Canonical Runtime MUST require the X or GitHub authorization redirect to
+  carry an empty fragment and a query containing exactly one `state` plus
+  exactly one `code` XOR `error`. The Canonical Runtime MUST reject duplicate,
+  mixed-transport, additional
   authoritative, and malformed fields. The single accepted `code` is the code
   consumed at redirect ingress that REQ-PLAT-29 and REQ-PLAT-46 compare
   against.
@@ -427,7 +429,7 @@ attestation format:
 | `client_id` | yes | the Platform Verifier reads and returns it |
 | `code` | yes | compared to the code consumed at redirect ingress |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile; no chain or circuit value |
-| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
+| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `authorizationNonce` per common REQ-COMMON-15A |
 | attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit |
@@ -530,8 +532,8 @@ byte stays behind a range commitment of the pinned attestation format:
 | `"username":"`, the `data.username` value, and its closing quote | yes | the Platform Verifier extracts the raw handle bytes from these bytes per REQ-PLAT-31 |
 | everything else | no | status line, headers, display name, and every other response field |
 
-Each revealed range carries its own full delimiter, so the value the Platform
-Verifier reads is that field's value rather than a substring of a neighboring
+Each revealed range carries its own full delimiter, so the value the Platform Verifier
+reads is that field's value rather than a substring of a neighboring
 one. Every committed range of this direction is bounded by a revealed
 delimiter on each side that faces one, and by the signed transcript boundary
 of common REQ-COMMON-36 at the two ends, which is the anchoring common
@@ -601,11 +603,19 @@ copy of any of them, because a fact that can be checked in the open does not
 belong in a proof.
 
 - REQ-PLAT-33 (upholds SP-FRESH-01):
-  The Canonical Runtime MUST complete the token request within X's
-  authorization-code deadline of 30 seconds. The Canonical Runtime MUST abandon
-  the ceremony otherwise.
+  The Canonical Runtime MUST complete the request direction of X's first
+  notarized token session before X's 30-second authorization-code deadline.
+  The deadline ends when X has received the complete token request; receiving
+  or notarizing the response, running the identity session, proving, and proof
+  delivery are outside it. The Canonical Runtime MUST abandon the ceremony if it
+  cannot complete that request direction in time.
 
 ## 6. GitHub ceremony
+
+GitHub Token Service: The deployment-owned confidential-client component that
+performs the GitHub token exchange inside a notarized TLS session and returns
+the bearer, its opening, and the resulting attestation through the fixed
+`/oauth/github/token` route.
 
 GitHub uses a confidential client, a deployment-owned token-exchange
 TLSNotary session, and a browser-owned `/user` TLSNotary session. The
@@ -613,7 +623,7 @@ structure matches X exactly: two attestations, both verified by the Notary
 Service, one
 hidden bearer linking them, and one proof binding that link to the
 Authorization Digest. The exchange runs server-side because the client is
-confidential, which makes the Token-Exchange Service the notarized party for
+confidential, which makes the GitHub Token Service the notarized party for
 that session. It produces an attestation, not a proof.
 
 ### 6.1 Authorization request
@@ -680,20 +690,24 @@ revealed `client_id` something other than the credential GitHub authenticated.
   the Consumer Chain acts on them; the Canonical Runtime MAY check them
   locally.
 
-### 6.3 Token-exchange service
+### 6.3 GitHub token service
 
-The Deployment exposes one stateless Token-Exchange Service at the fixed
-`/oauth/github/token-exchange` route on the redirect origin.
+The Deployment exposes one stateless GitHub Token Service at the fixed
+`/oauth/github/token` route on the redirect origin.
+
+The prover sends `TokenRequest` as a UTF-8 JSON body in an exact `POST` with
+`Content-Type: application/json`. The URL has no query or fragment. A
+successful service response is status `200`, exact `Content-Type:
+application/json`, and a UTF-8 JSON `TokenResponse` body. JSON object member
+order has no meaning.
 
 ```ts
-interface TokenExchangeRequestV1 {
-  schema: 1
+interface TokenRequest {
   code: string
   codeVerifier: string
 }
 
-interface TokenExchangeResponseV1 {
-  schema: 1
+interface TokenResponse {
   accessToken: string
   tokenAttestation: string // canonical unpadded base64url
   bearerOpening: string // canonical unpadded base64url; private witness
@@ -712,13 +726,16 @@ interface TokenExchangeResponseV1 {
   `MAX_GITHUB_ACCESS_TOKEN_BYTES = 4096`, a decoded `bearerOpening` exceeding
   `MAX_GITHUB_BEARER_OPENING_BYTES = 256`, a decoded token attestation exceeding
   `MAX_GITHUB_TOKEN_ATTESTATION_BYTES = 2 MiB`, and a response body exceeding
-  `MAX_GITHUB_TOKEN_EXCHANGE_RESPONSE_BYTES = 3 MiB`. Necessity: bounded parsing.
+  `MAX_GITHUB_TOKEN_RESPONSE_BYTES = 3 MiB`. Necessity: bounded parsing.
 - REQ-PLAT-40:
   The Implementation MUST reject duplicate, missing, additional, differently
-  typed, and malformed fields on both interfaces. Necessity: cross-component
-  interoperability.
+  typed, and malformed fields on both interfaces. The GitHub Token Service MUST
+  reject GET, every method other than POST, a query, a non-JSON request media
+  type, or a malformed JSON body before starting token exchange. The Canonical Runtime MUST reject a successful response with another status or media type.
+  Necessity: cross-component interoperability, and neither the authorization
+  code nor verifier belongs in a URL, request line, or ordinary cache key.
 - REQ-PLAT-54:
-  The Token-Exchange Service MUST return in `bearerOpening` the blinder that
+  The GitHub Token Service MUST return in `bearerOpening` the blinder that
   opens the committed bearer range of the attestation it returns in the same
   response. Necessity: the Proving Circuit opens that commitment under
   REQ-PLAT-52, and the blinder is prover-private material generated inside
@@ -728,37 +745,37 @@ interface TokenExchangeResponseV1 {
 - REQ-PLAT-55 (upholds SP-CLIENT-01):
   The Canonical Runtime MUST treat `bearerOpening` as private witness
   material for the Proving Circuit. The Canonical Runtime MUST NOT place
-  `bearerOpening` in a submission. The Canonical Runtime MUST NOT publish it,
+  `bearerOpening` in a Submission. The Canonical Runtime MUST NOT publish it,
   log it, or transmit it anywhere outside the browser. Necessity: the opening
   and the commitment together reveal the committed bearer, so a published
   opening publishes the credential its commitment exists to hide.
 - REQ-PLAT-41 (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST use only its compiled client identifier, client
-  secret, redirect URI, token endpoint, and notary configuration. The
-  Token-Exchange Service MUST NOT accept a caller-selected action, job, client,
-  redirect, endpoint, return URL, or operation.
+  The GitHub Token Service MUST use only its compiled client identifier, client
+  secret, redirect URI, token endpoint, and notary configuration. The GitHub
+  Token Service MUST NOT accept a caller-selected action, job, client, redirect,
+  endpoint, return URL, or operation.
 - REQ-PLAT-42:
-  The Token-Exchange Service MUST persist no code, verifier, bearer, proof,
-  result, or progress state. The Token-Exchange Service MUST expose no polling or
+  The GitHub Token Service MUST persist no code, verifier, bearer, proof,
+  result, or progress state. The GitHub Token Service MUST expose no polling or
   result route. Necessity: the service holds ceremony credentials, so retention
   creates a compromise target with no protocol purpose.
 - REQ-PLAT-43:
-  The Token-Exchange Service MUST accept only the compiled redirect-runtime origin.
-  Necessity: limits accidental browser disclosure; it is not caller
-  authentication.
-- REQ-PLAT-43A:
-  The Token-Exchange Service MUST answer the CORS preflight for that origin.
-  Necessity: cross-component interoperability with the Canonical Runtime.
+  The GitHub Token Service MUST require the browser-generated `Origin` to equal
+  the redirect/prover origin that serves the route. It MUST NOT grant CORS
+  access to another origin, including a configured application frontend.
+  Necessity: only the same-origin isolated prover owns the authorization code,
+  verifier, and token response; application-frontends are authenticated earlier
+  by the Redirect Runtime Protocol and never call this credential route.
 - REQ-PLAT-43B:
-  The Token-Exchange Service MUST reject redirects. Necessity: a followed redirect
+  The GitHub Token Service MUST reject redirects. Necessity: a followed redirect
   would notarize a session other than the pinned token endpoint.
 - REQ-PLAT-43C:
-  The Token-Exchange Service MUST emit `Cache-Control: no-store`. Necessity: the
+  The GitHub Token Service MUST emit `Cache-Control: no-store`. Necessity: the
   response carries a bearer token.
 
 ### 6.4 Disclosure and verification
 
-The Token-Exchange Service, which holds the client secret, runs the exchange
+The GitHub Token Service, which holds the client secret, runs the exchange
 inside a notarized TLS session and returns the resulting attestation. The
 `client_secret` range stays redacted behind that attestation's range
 commitment, so the browser never receives the secret. The attestation is
@@ -770,14 +787,14 @@ the local ceremony and to the later `/user` attestation. The separately
 returned `accessToken` and the `bearerOpening` of REQ-PLAT-54 are the only
 additional response values. Both stay inside the browser: the opening is
 witness material for the circuit, and REQ-PLAT-55 keeps it out of every
-submission and every published artifact.
+Submission and every published artifact.
 
 | Range | Revealed | Why |
 |---|---|---|
-| `client_id` | yes | the Platform Verifier reads and returns it; the runtime checks its profile |
+| `client_id` | yes | the Platform Verifier reads and returns it; the Canonical Runtime checks its profile |
 | `code` | yes | the Canonical Runtime compares it to the code it consumed |
 | `redirect_uri` | yes | the Canonical Runtime compares its immutable profile |
-| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `pkceNonce` per common REQ-COMMON-15A |
+| `code_verifier` | yes | the Platform Verifier recomputes it from the digest and `authorizationNonce` per common REQ-COMMON-15A |
 | `"access_token":"` and the closing quote immediately around the bearer value | yes | anchor the committed bearer range as that field's value, per common REQ-COMMON-18A |
 | bearer range | committed | a blinded commitment, opened only in circuit to link this attestation to `/user` |
 | attestation timestamp | not a range | the attestation's own signed creation time, which derives the authenticated validity ceiling per §2.2 |
@@ -802,11 +819,11 @@ data itself, which is why common REQ-COMMON-25 can forbid inferring it from a
 response header. Revealing more would widen exposure without adding a check.
 
 - REQ-PLAT-43D (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST reveal no range outside the seven rows
-  marked `yes` above. The Token-Exchange Service MUST commit the bearer range
+  The GitHub Token Service MUST reveal no range outside the seven rows
+  marked `yes` above. The GitHub Token Service MUST commit the bearer range
   rather than reveal it.
 - REQ-PLAT-58 (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST reveal the `"access_token":"` delimiter
+  The GitHub Token Service MUST reveal the `"access_token":"` delimiter
   bytes immediately preceding that committed range and the closing quote byte
   immediately following it. The Platform Verifier MUST reject a
   token-exchange attestation whose committed range is not framed by exactly
@@ -825,9 +842,9 @@ response header. Revealing more would widen exposure without adding a check.
   locally against the `github/v1` profile's pinned notary key and attestation
   format before using the bearer. Necessity: the browser checks what it got
   back before spending a `/user` session on it; the Notary Service decision
-  the chain relies on is separate.
+  the Consumer Chain relies on is separate.
 - REQ-PLAT-45 (upholds SP-EXCHANGE-01):
-  The Token-Exchange Service MUST return an attestation carrying the
+  The GitHub Token Service MUST return an attestation carrying the
   configured notary's signature and revealing the token request's method and
   path. The Platform Verifier MUST compare those two revealed values with the
   `github/v1` profile. The Platform Verifier MUST compare the authority that
@@ -855,8 +872,8 @@ response header. Revealing more would widen exposure without adding a check.
   `bearerOpening`, to open the bearer commitment of the token-exchange
   attestation.
 - REQ-PLAT-50 (upholds SP-EXCHANGE-01):
-  The Canonical Runtime MUST discard the response and start neither `/user` nor
-  a resume record when any check in REQ-PLAT-44 through REQ-PLAT-49 fails.
+  The Canonical Runtime MUST discard the response and start no `/user` request
+  when any check in REQ-PLAT-44 through REQ-PLAT-49 fails.
 
 Verifying only arbitrary byte substrings is insufficient: a prover that
 composes the request could otherwise witness one `code` or `code_verifier`
@@ -899,8 +916,8 @@ byte stays behind a range commitment of the pinned attestation format:
 | `"login":"`, the `login` value, and its closing quote | yes | the Platform Verifier extracts the raw handle bytes from these bytes per REQ-PLAT-51 |
 | everything else | no | status line, headers, and every other response field |
 
-Each revealed range carries its own full delimiter, so the value the Platform
-Verifier reads is that field's value rather than a substring of a neighboring
+Each revealed range carries its own full delimiter, so the value the Platform Verifier
+reads is that field's value rather than a substring of a neighboring
 one. Every committed range of this direction is bounded by a revealed
 delimiter on each side that faces one, and by the signed transcript boundary
 of common REQ-COMMON-36 at the two ends, which is the anchoring common
@@ -935,8 +952,8 @@ REQ-COMMON-18A requires.
 - REQ-PLAT-52 (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST assert that one private bearer value opens the
   bearer commitment of the token-exchange attestation and the
-  `Authorization` bearer commitment of the `/user` attestation. The Platform
-  Verifier MUST compare the method and path revealed in each attestation, and
+  `Authorization` bearer commitment of the `/user` attestation. The Platform Verifier MUST
+  compare the method and path revealed in each attestation, and
   the authority each attestation authenticates, with the `github/v1` profile.
 
 - REQ-PLAT-52A (upholds SP-EXCHANGE-01):
@@ -960,15 +977,14 @@ REQ-COMMON-18A requires.
   ones submitted.
 
 Changing the pinned API version is a profile and verifier revision, not
-runtime configuration. The granted scope is no proof property at all:
+mutable configuration. The granted scope is no proof property at all:
 REQ-PLAT-36 leaves the exchange response unverified beyond the opened bearer
 range, and the Canonical Runtime's local reading of `scope` and `token_type`
 binds nothing on the Consumer Chain. The bearer is never disclosed by the
 proof.
 
 - REQ-PLAT-53:
-  The Token-Exchange Service MUST NOT promise idempotency or replay. The Canonical
-  Runtime MUST start a fresh ceremony when GitHub consumed the code but no
+  The GitHub Token Service MUST NOT promise idempotency or replay. The Canonical Runtime MUST start a fresh ceremony when GitHub consumed the code but no
   response reached it. Necessity: the exchange is a single-use, non-recoverable
   step.
 
@@ -982,12 +998,12 @@ authorization and redirect transport; every authenticated request and
 response field with its provenance; how the Authorization Digest is carried
 through that platform's authorization; its authenticated client-binding source; an
 authenticated proof-validity ceiling; its trust-root lifecycle;
-browser and deployment data exposure, retry, resume, and withholding
+browser and deployment data exposure, retry, interruption, and withholding
 behavior; and conformance vectors.
 
 ## 8. Conformance
 
-Roles: Canonical Runtime, Token-Exchange Service, Proving Circuit,
+Roles: Canonical Runtime, GitHub Token Service, Proving Circuit,
 Platform Verifier, Notary Service, Consumer.
 
 - TEST-PLAT-01 (exercises REQ-PLAT-10, REQ-PLAT-18):
@@ -998,8 +1014,9 @@ Platform Verifier, Notary Service, Consumer.
   is rejected.
 - TEST-PLAT-03 (exercises REQ-PLAT-11, REQ-PLAT-12):
   A Google authorization request not using the exact direct-ID-token fragment
-  profile is rejected, and a fragment carrying duplicate `state`, both
-  `id_token` and `error`, `code`, or `access_token` is rejected.
+  profile is rejected. A nonempty query, mixed query/fragment response, or
+  fragment carrying duplicate `state`, both `id_token` and `error`, `code`, or
+  `access_token` is rejected.
 - TEST-PLAT-04 (exercises REQ-PLAT-13, REQ-PLAT-14):
   A fragment whose `state` has no unique live local ceremony, and an ID Token
   whose `nonce` is not the constructed digest, are rejected. No backend state
@@ -1016,7 +1033,7 @@ Platform Verifier, Notary Service, Consumer.
   under any other algorithm or key fails the fixed verification relation.
   Header, payload, signature, or public-output substitution is rejected. A
   cryptographically valid proof under an inactive signing modulus passes
-  circuit verification but is rejected by the Platform Verifier. A submission
+  circuit verification but is rejected by the Platform Verifier. An Submission
   whose supplied `aud` bytes do not hash to the audience public input is
   rejected, and an accepted one returns those exact bytes as the client
   identifier.
@@ -1057,7 +1074,10 @@ Platform Verifier, Notary Service, Consumer.
   different bearers is rejected. No proof statement covers `token_type` or the
   granted scope.
 - TEST-PLAT-11 (exercises REQ-PLAT-33):
-  A token request issued after the 30-second deadline is abandoned.
+  The complete request direction of X's first notarized session reaches X
+  before the authorization-code deadline in the success case; delaying its
+  completion past the deadline abandons the ceremony, while delaying only the
+  response or later proof work does not trigger that deadline.
 - TEST-PLAT-12 (exercises REQ-PLAT-34, REQ-PLAT-35, REQ-PLAT-35A, REQ-PLAT-35B, REQ-PLAT-35C):
   An authorization request carrying a scope other than `read:user` is
   rejected; no public proof input derives from the client secret; an exchange
@@ -1066,21 +1086,24 @@ Platform Verifier, Notary Service, Consumer.
   configured secret contains neither `&` nor `=`. Verification: inspection of
   the configured credential for the secret rule.
 - TEST-PLAT-13 (exercises REQ-PLAT-37, REQ-PLAT-38, REQ-PLAT-39, REQ-PLAT-40):
-  Each over-limit, malformed, duplicate, and missing field on both token-exchange
-  interfaces is rejected.
-- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43A, REQ-PLAT-43B, REQ-PLAT-43C, REQ-PLAT-43D, REQ-PLAT-43E):
+  Each over-limit, malformed, duplicate, and missing field on both token
+  interfaces is rejected. GET, another method, a query, a non-JSON request, a
+  malformed JSON body, and a successful response with another status or media
+  type are rejected before credential use.
+- TEST-PLAT-14 (exercises REQ-PLAT-41, REQ-PLAT-42, REQ-PLAT-43, REQ-PLAT-43B, REQ-PLAT-43C, REQ-PLAT-43D, REQ-PLAT-43E):
   A request selecting an endpoint, client, or return URL is rejected; no state
-  survives the call; a foreign origin is refused; the CORS preflight for the
-  compiled origin is answered; every response carries `Cache-Control:
+  survives the call; a foreign-origin request or preflight is refused even
+  when that origin is an allowed application frontend; every response carries `Cache-Control:
   no-store`; an attestation revealing a range outside the seven marked rows,
-  or revealing the bearer range instead of committing it, is rejected; and no proof exposes the bearer or a value it can be recovered
+  or revealing the bearer range instead of committing it, is rejected; and no
+  proof exposes the bearer or a value it can be recovered
   from.
 - TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-48A, REQ-PLAT-49, REQ-PLAT-50):
   A token-exchange attestation with a bad notary signature, a foreign
   endpoint, a foreign client, a foreign `code_verifier`, a foreign serialized
   `redirect_uri`, or a bearer that does not
   open the commitment under the returned `bearerOpening` is discarded in each
-  case, and no resume record is written.
+  case, and no `/user` request starts.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A, REQ-PLAT-52B):
   A GitHub proof whose bearer commitment public input differs from the
   commitment in either submitted attestation is rejected; substituting one
@@ -1095,24 +1118,24 @@ Platform Verifier, Notary Service, Consumer.
 - TEST-PLAT-16 (exercises REQ-PLAT-53):
   A ceremony whose exchange response was lost restarts from authorization.
 - TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-02, REQ-PLAT-03):
-  A resume that substitutes a newer profile is rejected, an unlisted profile is
-  ineligible, a profile missing its verifier artifact or, for a TLSNotary
-  profile, its Notary Service is ineligible, and no preview field originates
+  A live ceremony that substitutes a newer profile is rejected, an unlisted
+  profile is ineligible, a profile missing its verifier artifact or, for a TLSNotary
+  profile, its Notary Service is ineligible, and no local identity field originates
   outside proof public inputs and the exact revealed attestation bytes carried
-  by its Submission. Only the Consumer's acceptance of that exact Submission
-  makes the claim authoritative.
+  by its Submission. Only the Consumer's acceptance of that exact Submission makes the claim authoritative.
 - TEST-PLAT-17A (exercises REQ-PLAT-03, REQ-PLAT-31A, REQ-PLAT-51A):
   Pair authenticated X or GitHub identity-response bytes for account B with a
-  detached `userId`, handle, or metadata value for account A. The runtime
-  rejects the extra representation; without it, the runtime and the Platform
-  Verifier both derive account B byte for byte. Replacing the proof,
-  attestation, platform, or version after deriving the preview discards it and
-  requires rederivation from the replacement Submission.
+  detached `userId`, handle, or metadata value for account A. The Canonical Runtime
+  rejects the extra representation; without it, the Canonical Runtime and the
+  Platform Verifier both derive account B byte for byte. Replacing the proof,
+  attestation, platform, or version after deriving the local identity fields
+  discards them and requires rederivation from the replacement Submission.
 - TEST-PLAT-18 (exercises REQ-PLAT-25, REQ-PLAT-26, REQ-PLAT-27, REQ-PLAT-28, REQ-PLAT-28A):
   Launch uses Proxy mode, rejects application or request selection of Browser
   MPC, uses no application-controlled platform egress, and carries no partial
-  transcript state into a retry. A redirect carrying two `code` fields, two
-  `state` fields, both `code` and `error`, or a malformed field is rejected
+  transcript state into a retry. A nonempty fragment, mixed query/fragment
+  response, or redirect carrying two `code` fields, two `state` fields, both
+  `code` and `error`, or a malformed field is rejected
   before any token request starts, as is a redirect whose `state` matches no
   live local ceremony or a ceremony already consumed.
 - TEST-PLAT-19 (exercises REQ-COMMON-32; supports ASM-PROV-07):
@@ -1126,8 +1149,8 @@ Platform Verifier, Notary Service, Consumer.
   open the committed bearer range and build the GitHub proof; a response
   omitting that field, or carrying an opening that does not open the
   attestation's bearer commitment, is discarded and no proof is built; and no
-  submission, log, or published artifact contains the opening. Verification:
-  inspection of the submission fields and the emitted artifacts for the
+  Submission, log, or published artifact contains the opening. Verification:
+  inspection of the Submission fields and the emitted artifacts for the
   disclosure rule.
 - TEST-PLAT-22 (exercises REQ-PLAT-57, REQ-PLAT-58, REQ-PLAT-59, REQ-PLAT-60):
   An X token attestation and a GitHub token-exchange attestation whose
@@ -1169,7 +1192,7 @@ reduce hidden request surface but do not replace that parser assumption.
 TEST-PLAT-19 exercises it continuously; a failed probe makes the affected
 profile ineligible for new ceremonies.
 
-A malicious Token-Exchange Service cannot rebind a ceremony to other
+A malicious GitHub Token Service cannot rebind a ceremony to other
 Authorized Transaction Data while ASM-PROV-07 holds, because the Authorization
 Digest fixes that data before the platform is contacted and the service cannot
 make GitHub redeem a `code_verifier` other than the one proven. Should
@@ -1178,16 +1201,16 @@ exploit it: it legitimately holds the user's code and verifier. It can
 withhold, and it can attempt to substitute a token obtained under a
 separately arranged authorization; REQ-PLAT-46 rejects that substitution by
 requiring the proven code to be the one this ceremony consumed. A proof
-built outside the Canonical Runtime performs no such check, so a submission
-of that proof is bounded by the Transaction Author rule stated in
+built outside the Canonical Runtime performs no such check, so a Submission
+carrying it is bounded by the Transaction Author rule stated in
 [common §12](ceremony-common.md#12-security-considerations).
 
 The notary key is a trust root for X and GitHub evidence. Its compromise
 mints fresh evidence until the key is removed, and does not revoke authority
 already committed.
 
-Google has no Token-Exchange Service or deployment-visible authorization
-response. Its signed ID Token reaches the redirect fragment, is cleared before
+Google has no server-side token exchange. Its signed ID Token reaches the
+redirect fragment, is cleared before
 other work, and is bound to the local ceremony by `state`, signed `nonce`, and
 signed `aud`. A deployment backend can withhold the static redirect document
 but cannot substitute an ID Token through a server exchange that does not
