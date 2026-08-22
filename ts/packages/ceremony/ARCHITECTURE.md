@@ -828,6 +828,7 @@ interface PopupNotifyEvent {
   type: 'popup-notify-event'
   ceremonyId: string
   platformStep: PlatformStep
+  timestamp: number
 }
 
 interface PopupDeliverProof {
@@ -1004,7 +1005,7 @@ sequenceDiagram
                 W-->>P: PopupNotifyEvent(platform step)
                 P-->>C: Forward PopupNotifyEvent unchanged
                 C-->>A: Forward PopupNotifyEvent unchanged
-                A->>A: Authenticate, stamp, and publish CeremonyEvent
+                A->>A: Authenticate, attach stage, and publish CeremonyEvent
             end
             alt Prover-window failure
                 W-->>P: PopupAbort
@@ -1021,7 +1022,7 @@ sequenceDiagram
             loop Zero or more progress events
                 P-->>C: PopupNotifyEvent(platform step)
                 C-->>A: Forward PopupNotifyEvent unchanged
-                A->>A: Authenticate, stamp, and publish CeremonyEvent
+                A->>A: Authenticate, attach stage, and publish CeremonyEvent
             end
             alt Prover failure
                 P-->>C: PopupAbort
@@ -1201,13 +1202,15 @@ client confirms them before publishing them.
 Each platform-verifier-version module defines only its steps beside the code
 which performs them and emits `started` followed by exactly one `completed` or
 `failed`. It cannot select a common stage. The prover validates only the bounded
-string and status shape and sends that `PlatformStep` in `PopupNotifyEvent`; the
-message contains no common stage or timestamp. A fallback window sends that
+string and status shape, stamps `timestamp` as non-negative safe-integer Unix
+milliseconds, and sends both in `PopupNotifyEvent`; the message contains no
+common stage. A fallback window sends that
 exact message through the coordinator, and the ceremony popup forwards it
 unchanged. The client accepts it only from the authenticated live ceremony
-while its local common stage is `proof-generation`, stamps `timestamp` as
-non-negative safe-integer Unix milliseconds, and publishes the resulting
-`CeremonyEvent`. It otherwise does not interpret the platform catalog. Neither
+while its local common stage is `proof-generation`, validates and preserves the
+prover timestamp, and publishes the resulting `CeremonyEvent`. Locally generated
+common-stage events use client timestamps. The client otherwise does not
+interpret the platform catalog. Neither
 event contains operation inputs, outputs,
 credentials, identities, witnesses, proofs, raw exceptions, or raw service
 errors. The application may map this advisory view into its broader job
