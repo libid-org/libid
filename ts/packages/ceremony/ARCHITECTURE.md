@@ -362,6 +362,46 @@ The launch profiles are:
 | GitHub | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor |
 | Google | prover WASM and Google circuit descriptor |
 
+The current known heavy cold-start payload is:
+
+| Profile | Profile artifacts | Shared bb.js CRS | Known cold total |
+|---|---:|---:|---:|
+| `google/v1`, non-iOS | 4,081,773 bytes (3.89 MiB) | 71,303,296 bytes (68.00 MiB) | 75,385,069 bytes (71.89 MiB) |
+| `x/v1` or `github/v1`, non-iOS | 20,674,830 bytes (19.72 MiB) | 71,303,296 bytes (68.00 MiB) | 91,978,126 bytes (87.72 MiB) |
+| `google/v1`, iOS | 4,081,773 bytes (3.89 MiB) | 20,971,648 bytes (20.00 MiB) | 25,053,421 bytes (23.89 MiB) |
+| `x/v1` or `github/v1`, iOS | 20,674,830 bytes (19.72 MiB) | 20,971,648 bytes (20.00 MiB) | 41,646,478 bytes (39.72 MiB) |
+
+These exact resource-body counts use
+[`libid-circuits v0.3.0-rc.1`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.1),
+whose target is the source commit pinned below: `jwt_email.json` is 1,296,747
+bytes and `bearer_link.json` is 158,142 bytes. The pinned bb.js
+`barretenberg-threads.wasm.gz` is 2,785,026 bytes. The
+[`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
+browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
+that tag and the source link below do not change the bundle.
+
+Current bb.js initialization additionally range-fetches shared BN254 G1 and G2
+plus Grumpkin G1 CRS data. Its non-iOS defaults fetch 2^20 BN254 points, 2^16
+Grumpkin points, and 128 G2 bytes; its iOS default reduces the BN254 count to
+2^18. Those immutable responses are shared by every profile and account for
+the CRS column. A later cold X/GitHub ceremony after either one fetches no new
+heavy profile asset; Google after either fetches only its 1,296,747-byte
+circuit, while X/GitHub after Google fetches 17,889,804 bytes of notary WASM and
+the bearer circuit.
+
+The counts are before HTTP content encoding and exclude HTML, the root bundled
+JavaScript, headers, OAuth/notary traffic, and attestations. They are therefore
+reproducible heavy-resource payloads, not a promise about transferred bytes.
+The root bundle does not exist yet and must publish its own measured size when
+built.
+
+The CRS fetch is a discovered gap in the `ProverAssets` model above: current
+bb.js obtains it from its default external CDN rather than from a manifest
+entry. Before implementation freeze, the deployment must pin its CRS source,
+range semantics, and integrity/cache policy as prover assets; otherwise neither
+the stated closed asset set nor consent-overlapped warmup covers most cold-start
+bytes.
+
 Shared entries use the same immutable URL and integrity value. The service
 worker keys its single-flight and completed cache by canonical URL; repeating
 that entry in another profile joins the existing request or cache hit. One URL
