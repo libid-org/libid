@@ -325,6 +325,8 @@ frontend `ServerConfig` or ceremony input:
 
 ```ts
 type ProverArtifactKind =
+  | 'acvm-wasm'
+  | 'noirc-abi-wasm'
   | 'notarization-client-wasm'
   | 'prover-wasm'
   | 'circuit'
@@ -359,16 +361,16 @@ size is protocol code, not deployment data:
 
 | Profile | Artifacts | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x/v1` | shared notarization-client WASM, shared prover WASM, shared `bearer-link` circuit descriptor | 42,008 | 65,536 (2^16) points |
-| `github/v1` | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor | 42,008 | 65,536 (2^16) points |
-| `google/v1` | prover WASM and `jwt_email` circuit descriptor | 179,413 | 262,144 (2^18) points |
+| `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,008 | 65,536 (2^16) points |
+| `github/v1` | the same five shared artifacts as X | 42,008 | 65,536 (2^16) points |
+| `google/v1` | shared ACVM, Noir ABI, and prover WASM; `jwt_email` circuit descriptor | 179,413 | 262,144 (2^18) points |
 
-The pinned current-circuit cold-start payload is:
+The pinned current-circuit heavy-resource subtotal is:
 
-| Profile | Ordinary artifact bodies | Pinned CRS bodies | Pinned cold total |
+| Profile | Non-CRS artifact bodies | Pinned CRS bodies | Known heavy subtotal |
 |---|---:|---:|---:|
-| `google/v1` | 4,081,773 bytes (3.89 MiB) | 20,971,648 bytes (20.00 MiB) | 25,053,421 bytes (23.89 MiB) |
-| `x/v1` or `github/v1` | 20,674,830 bytes (19.72 MiB) | 8,388,736 bytes (8.00 MiB) | 29,063,566 bytes (27.72 MiB) |
+| `google/v1` | 7,264,260 bytes (6.93 MiB) | 20,971,648 bytes (20.00 MiB) | 28,235,908 bytes (26.93 MiB) |
+| `x/v1` or `github/v1` | 23,857,317 bytes (22.75 MiB) | 8,388,736 bytes (8.00 MiB) | 32,246,053 bytes (30.75 MiB) |
 
 These exact resource-body counts use the compatible tuple Nargo
 `1.0.0-beta.20`, native bb `5.0.0-nightly.20260324`, and bb.js
@@ -376,7 +378,10 @@ These exact resource-body counts use the compatible tuple Nargo
 [`libid-circuits v0.3.0-rc.1`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.1),
 whose target is the source commit pinned below. `jwt_email.json` is 1,296,747
 bytes and `bearer_link.json` is 158,142 bytes. The pinned bb.js
-`barretenberg-threads.wasm.gz` is 2,785,026 bytes. The
+`barretenberg-threads.wasm.gz` is 2,785,026 bytes. The pinned Noir runtime adds
+2,571,406 bytes of `acvm_js_bg.wasm` and 611,081 bytes of
+`noirc_abi_wasm_bg.wasm`; every profile shares their exact URL and integrity.
+The
 [`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
 browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
 that tag and the source link below do not change the bundle.
@@ -397,11 +402,11 @@ asset. X/GitHub after Google reuses its larger BN254 cache and fetches only
 replaces the shorter BN254 prefix with its 2^18-point prefix and fetches its
 1,296,747-byte circuit.
 
-The counts are before HTTP content encoding and exclude HTML, the root bundled
-JavaScript, headers, OAuth/notary traffic, and attestations. They are therefore
-reproducible heavy-resource payloads, not a promise about transferred bytes.
-The root bundle does not exist yet and must publish its own measured size when
-built.
+The counts are before HTTP content encoding and exclude HTML, the root and
+worker JavaScript graph, headers, OAuth/notary traffic, and attestations. They
+are therefore reproducible heavy-resource subtotals, not a promise about total
+transferred bytes. The JavaScript graph does not exist yet and must publish its
+own measured size when built.
 
 Importing bb.js or fetching its prover WASM does not fetch the CRS. bb.js loads
 the CRS only while initializing `Barretenberg.new()`, before
