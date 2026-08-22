@@ -20,21 +20,21 @@ applies to one proof-bound transaction:
 
 ```text
 User -> Identity Platform -> Canonical Runtime -> Proving Circuit -> Consumer
-                                  |                                     |
-                                  +-> Token-Exchange Service            v
-                                      (GitHub only)              Proof Verifier
                                                                        |
-                                                                 Platform Verifier
+                                                                       v
+                                                               Proof Verifier
                                                                        |
-                                                                 Notary Service
-                                                                 (X and GitHub,
-                                                                  once per
-                                                                  attestation)
+                                                               Platform Verifier
+                                                                       |
+                                                               Notary Service
+                                                               (X and GitHub,
+                                                                once per
+                                                                attestation)
 ```
 
-The Consumer never verifies evidence itself. It calls the Proof
-Verifier, which selects the Platform Verifier registered for the named
-identity platform and Platform Verifier Version, which in turn obtains
+The Consumer never verifies evidence itself. It calls the Proof Verifier,
+which selects the Platform Verifier registered for the named identity platform
+and Platform Ceremony Version, which in turn obtains
 attestation authenticity from the Notary Service once for each attestation
 that profile carries. Google carries none, so its path reaches no Notary
 Service and pays no fee; X and GitHub carry two each. The result travels
@@ -44,13 +44,12 @@ what that transaction means. [Common §5.1](ceremony-common.md#51-verification-p
 owns this path.
 
 The application operator controls its frontend, redirect deployment, OAuth
-clients, and any Token-Exchange Service, but is not trusted to choose identity
-fields, change the proof-bound operation, or widen proof validity. The identity
-platform controls the authenticated account response. The notary authenticates
-X/GitHub transcripts and their creation times. Verifier governance selects
-accepted verifier artifacts, trust roots, and protocol parameters. The
-Consumer Chain authenticates the Transaction Author and supplies its Chain ID
-and Block Time.
+clients, and GitHub Token Service, but is not trusted to choose identity fields,
+change the proof-bound operation, or widen proof validity. The identity platform
+controls the authenticated account response. The notary authenticates X/GitHub
+transcripts and their creation times. Verifier governance selects accepted
+verifier artifacts, trust roots, and protocol parameters. The Consumer Chain
+authenticates the Transaction Author and supplies its Chain ID and Block Time.
 
 | Principal | Knows and can | Trusted for | Not trusted for |
 |---|---|---|---|
@@ -61,28 +60,29 @@ and Block Time.
 | Verifier governance administrator | activates verifier artifacts, trust roots, parameters, and the Supported Version Set | correct authority lifecycle | user consent |
 
 The principal trust roots are Google's active signing moduli, the active
-X/GitHub notary keys, the selected proof-verifier artifacts, the Proof
-Verifier that dispatches to them, the Platform Verifiers it selects, Verifier
-governance, and Consumer Chain consensus. The Proof Verifier is the most concentrated of these: every
-Consumer takes its accept-or-reject decision, operation domain, and
-Authorized Transaction Data from that one component, so its compromise
+X/GitHub notary keys, the selected proof-verifier artifacts, the Proof Verifier
+that dispatches to them, the Platform Verifiers it selects, Verifier governance,
+and Consumer Chain consensus. The Proof Verifier is the most concentrated of
+these: every Consumer takes its accept-or-reject decision, operation domain,
+and Authorized Transaction Data from that one component, so its compromise
 authorizes arbitrary transactions at every Consumer at once. A compromised
-Platform Verifier does the same for one platform and version, because it is
-the role that verifies the proof and binds the digest. Replacing or retiring a root stops future
-acceptance after the change takes effect; it does not undo bindings or sessions
-already committed. Loss of an application deployment is a liveness failure.
-Compromise of the browser release or its supply chain defeats local client and
-operation construction. Compromise of a platform signing root, notary key, or
-selected proof verifier can mint future evidence for the affected profiles.
-Compromise of Verifier governance can change every accepted root and verifier.
+Platform Verifier does the same for one platform and version, because it is the
+role that verifies the proof and binds the digest. Replacing or retiring a root
+stops future acceptance after the change takes effect; it does not undo bindings
+or sessions already committed. Loss of an application deployment is a liveness
+failure. Compromise of the Canonical Runtime build or its supply chain defeats
+local client and operation construction. Compromise of a platform signing root,
+notary key, or selected Platform Verifier can mint future evidence for the
+affected profiles. Compromise of Verifier governance can change every accepted
+root and verifier.
 
 | Subject | Single normative owner |
 |---|---|
 | Authorization Digest, PKCE, extraction, client binding, evidence time | [Common ceremony rules](ceremony-common.md) |
 | Chain ID, Transaction Author, Block Time, and transaction-data encoding | consumer protocol Chain Profile |
 | Platform endpoints, fields, trust roots, and proof projections | [Identity-platform ceremonies](platform-ceremonies.md) |
-| Redirect transport, persistence, resume, and UI control flow | browser protocol |
-| Transaction dispatch and author authentication | consumer protocol |
+| Redirect transport, interruption behavior, and UI control flow | browser architecture |
+| Transaction dispatch and author authentication | Consumer protocol |
 | Verification dispatch, replay recording, trust roots, and version governance | [Common ceremony rules](ceremony-common.md) |
 
 The linked ceremony chapters specify the ceremony layer. The browser and
@@ -104,16 +104,16 @@ evidence, which is Google's signature relation and, on X and GitHub, that one
 hidden bearer opens both sessions' commitments. The Consumer enforces replay
 rejection by recording every Authorization Digest it accepts before applying
 an effect (REQ-COMMON-03, REQ-COMMON-03A). The Canonical Runtime
-locally enforces the selected OAuth client and redirect profile. The protocol assumes the named identity-platform parser,
+locally enforces the selected OAuth client and redirect profile. The protocol
+assumes the named identity-platform parser,
 PKCE, delivery, notary, browser, verifier-soundness, and chain behaviors. It
 does not enforce human understanding of a platform consent screen, prevent
 cross-deployment presentation of the same proof, or make mutable display
 metadata authoritative.
 
-Collusion sanity check — non-exhaustive: application plus Token-Exchange Service
-control can withhold but cannot retarget valid evidence; application plus a
-malicious identity-platform operator defeats identity authenticity for that
-platform but not Authorization Digest binding; any pair containing compromised
+Collusion sanity check — non-exhaustive: application plus a malicious
+identity-platform operator defeats identity authenticity for that platform but
+not Authorization Digest binding; any pair containing compromised
 Verifier governance, a selected verifier, or the applicable platform/notary
 trust root inherits that single-root compromise. This does not model adaptive or
 three-party compromise, shared key custody, browser supply-chain compromise, or
@@ -141,7 +141,7 @@ outstanding X/GitHub proof. Current trust-root membership remains required.
 |---|---:|---|
 | `proofLifetime[x]` | 3600 | maximum age of the X token attestation |
 | `proofLifetime[github]` | 3600 | maximum age of the GitHub token-exchange attestation |
-| `maxFutureAttestationSkew` | 300 | maximum X/GitHub attestation lead over chain time |
+| `maxFutureAttestationSkew` | 300 | maximum X/GitHub attestation lead over Block Time |
 
 - REQ-PARAM-01:
   The Verifier Governance Process MUST reject an unknown parameter key and a
