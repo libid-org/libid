@@ -338,6 +338,7 @@ interface ProverArtifact {
 interface ProverProfile {
   platformId: PlatformId
   platformVerifierVersion: PlatformVerifierVersion
+  srsSize: number
   artifacts: readonly ProverArtifact[]
 }
 
@@ -356,20 +357,18 @@ but a ceremony fetches only its selected platform/version profile.
 
 The launch profiles are:
 
-| Platform | Artifacts |
-|---|---|
-| X | shared notarization-client WASM, shared prover WASM, shared `bearer-link` circuit descriptor |
-| GitHub | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor |
-| Google | prover WASM and Google circuit descriptor |
+| Platform | Artifacts | BN254 SRS size |
+|---|---|---:|
+| X | shared notarization-client WASM, shared prover WASM, shared `bearer-link` circuit descriptor | 2^16 points |
+| GitHub | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor | 2^16 points |
+| Google | prover WASM and Google circuit descriptor | 2^18 points |
 
 The current known heavy cold-start payload is:
 
-| Profile | Profile artifacts | Shared bb.js CRS | Known cold total |
+| Profile | Profile artifacts | bb.js CRS | Known cold total |
 |---|---:|---:|---:|
-| `google/v1`, non-iOS | 4,081,773 bytes (3.89 MiB) | 71,303,296 bytes (68.00 MiB) | 75,385,069 bytes (71.89 MiB) |
-| `x/v1` or `github/v1`, non-iOS | 20,674,830 bytes (19.72 MiB) | 71,303,296 bytes (68.00 MiB) | 91,978,126 bytes (87.72 MiB) |
-| `google/v1`, iOS | 4,081,773 bytes (3.89 MiB) | 20,971,648 bytes (20.00 MiB) | 25,053,421 bytes (23.89 MiB) |
-| `x/v1` or `github/v1`, iOS | 20,674,830 bytes (19.72 MiB) | 20,971,648 bytes (20.00 MiB) | 41,646,478 bytes (39.72 MiB) |
+| `google/v1` | 4,081,773 bytes (3.89 MiB) | 20,971,648 bytes (20.00 MiB) | 25,053,421 bytes (23.89 MiB) |
+| `x/v1` or `github/v1` | 20,674,830 bytes (19.72 MiB) | 8,388,736 bytes (8.00 MiB) | 29,063,566 bytes (27.72 MiB) |
 
 These exact resource-body counts use
 [`libid-circuits v0.3.0-rc.1`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.1),
@@ -380,14 +379,19 @@ bytes and `bearer_link.json` is 158,142 bytes. The pinned bb.js
 browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
 that tag and the source link below do not change the bundle.
 
-Current bb.js initialization additionally range-fetches shared BN254 G1 and G2
-plus Grumpkin G1 CRS data. Its non-iOS defaults fetch 2^20 BN254 points, 2^16
-Grumpkin points, and 128 G2 bytes; its iOS default reduces the BN254 count to
-2^18. Those immutable responses are shared by every profile and account for
-the CRS column. A later cold X/GitHub ceremony after either one fetches no new
-heavy profile asset; Google after either fetches only its 1,296,747-byte
-circuit, while X/GitHub after Google fetches 17,889,804 bytes of notary WASM and
-the bearer circuit.
+The pinned `bb gates -t evm` reports circuit sizes of 42,008 for
+`bearer_link` and 179,413 for `jwt_email`. Deployment generation rounds each up
+to its dyadic ceiling and emits that value as the profile's `srsSize`: 2^16 and
+2^18 respectively. The CRS column is therefore the selected BN254 G1 prefix at
+64 bytes per point, the shared 2^16-point Grumpkin G1 data, and 128 BN254 G2
+bytes. This circuit-derived value is identical on every browser; libID does not
+inherit bb.js's generic 2^20 desktop and 2^18 iOS defaults.
+
+A later cold X/GitHub ceremony after either one fetches no new heavy profile
+asset. X/GitHub after Google reuses its larger BN254 cache and fetches only
+17,889,804 bytes of notary WASM and the bearer circuit. Google after X/GitHub
+replaces the shorter BN254 prefix with its 2^18-point prefix and fetches its
+1,296,747-byte circuit.
 
 The counts are before HTTP content encoding and exclude HTML, the root bundled
 JavaScript, headers, OAuth/notary traffic, and attestations. They are therefore
@@ -395,19 +399,41 @@ reproducible heavy-resource payloads, not a promise about transferred bytes.
 The root bundle does not exist yet and must publish its own measured size when
 built.
 
-The CRS fetch is a discovered gap in the `ProverAssets` model above: current
-bb.js obtains it from its default external CDN rather than from a manifest
-entry. Before implementation freeze, the deployment must pin its CRS source,
-range semantics, and integrity/cache policy as prover assets; otherwise neither
-the stated closed asset set nor consent-overlapped warmup covers most cold-start
-bytes.
+Importing bb.js or fetching its prover WASM does not fetch the CRS. bb.js loads
+the CRS only while initializing `Barretenberg.new()`, before
+`generateProof()`. Warmup starts that network work explicitly without creating
+the prover backend: the module service worker calls the browser exports
+`Crs.new(profile.srsSize)` and `GrumpkinCrs.new(2 ** 16)` under its extended
+worker event. Those loaders use bb.js's own fixed CRS endpoints and IndexedDB
+cache. A later prover waits for that worker-owned attempt, then
+`Barretenberg.new({ srsSize: profile.srsSize })` reads the same cache.
+Navigation can destroy the warmup iframe without owning or restarting the
+download.
+
+The pinned bb.js browser build already owns the downloader and IndexedDB cache.
+Aztec's [`srsSize` constructor option](https://github.com/AztecProtocol/aztec-packages/pull/23419)
+is released in bb.js 5.2.0. Its compressed loader, however, persists G1 only
+after WASM decompression; [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290)
+also persists the download so `Crs.new()` alone is durable. The final
+circuit-compatible pin must provide both behaviors. The older measured nightly
+already persists its uncompressed download and needs only the `srsSize`
+backport; a compressed release needs #25290. Without aligned sizing, a
+circuit-sized warmup is followed by a larger desktop refetch. The selected
+bb.js bytes also fix its primary and fallback CRS origins, which are the only
+CRS origins admitted by the prover response policy.
+
+Deployment generation runs the pinned circuit-size command for every profile,
+emits `srsSize`, and fails if it differs from the platform version's checked-in
+expectation. It does not copy, slice, or reimplement the CRS downloader.
 
 Shared entries use the same immutable URL and integrity value. The service
-worker keys its single-flight and completed cache by canonical URL; repeating
-that entry in another profile joins the existing request or cache hit. One URL
-with conflicting kind or integrity is invalid deployment data. Platform modules
-define the exact required artifact kinds for each verifier version and reject a
-missing, duplicate, or additional kind before fetching.
+worker keys ordinary artifact single flights and Cache Storage entries by
+canonical URL; repeating an entry in another profile joins the existing request
+or cache hit. CRS single flights are keyed by curve and point count and complete
+through bb.js's IndexedDB cache. One URL with conflicting kind or integrity is
+invalid deployment data. Platform modules define the exact artifact kinds and
+SRS size for each verifier version and reject a missing, duplicate, additional,
+or mismatched value before fetching.
 
 `/oauth/prove` has three closed fragment forms. The bootstrap copies and clears
 the fragment before importing the root module or using storage or the network:
@@ -1212,29 +1238,35 @@ For warmup, its Window branch accepts only the closed, cleared
 `#fetch(ceremonyId, platformId, verifierVersion)` fragment and selects exactly
 one matching profile. The fragment can select a manifest profile but cannot
 supply an asset URL. The ceremony ID is only echoed in readiness; it is not
-passed into the proving implementation. The service-worker branch contains no OAuth or application
-state. It owns each selected immutable asset fetch from the first byte, keys
-single flights by canonical URL, rejects an integrity conflict, and extends the
-initiating worker event through completion. As soon as those single flights
-exist or the bounded startup attempt fails, without waiting for download
-completion, the child returns `PopupFetchingProver`, and the application
-proceeds to the provider without replying.
+passed into the proving implementation. The service-worker branch contains no
+OAuth or application state. It owns each selected immutable asset fetch from
+the first byte, keys ordinary artifact single flights by canonical URL, starts
+the profile's exact bb.js CRS loaders as a curve/point-count single flight,
+rejects a manifest conflict, and extends the initiating worker event through
+completion. Merely importing bb.js is not CRS warmup. As soon as those single
+flights exist or the bounded startup attempt fails, without waiting for
+download completion, the child returns `PopupFetchingProver`, and the
+application proceeds to the provider without replying.
 
 A later coordinator or prover window selects the same profile from its own
 embedded manifest using the exact `PopupProve` platform/version. Normal asset
-requests join an in-flight fetch or read the completed cache entry. A later
-ceremony for another platform likewise reuses every repeated artifact URL; only
-its profile-specific circuit or other missing entry is fetched. Navigation
-through OAuth therefore neither restarts shared work nor downloads unrelated
-platform profiles.
+requests join an in-flight fetch or read the completed Cache Storage entry. It
+first asks the service worker to finish or restart the exact CRS single flight;
+`Barretenberg.new({ srsSize })` then reads the resulting bb.js IndexedDB cache
+before proof generation. A later ceremony for another platform likewise reuses
+every repeated artifact URL and any sufficiently large CRS entry; only its
+profile-specific circuit or other missing entry is fetched. Navigation through
+OAuth therefore neither restarts shared work nor downloads unrelated platform
+profiles.
 
 The same worker registration and Cache Storage are visible to both qualified
 placements. DIP iframe proving uses them directly. A top-level window remains in
 the same origin and service-worker scope after COOP severs its opener, so it
 uses the same fetches and cache. A new document reconnects to the worker rather
 than awaiting a Promise owned by the destroyed warmup document. Worker
-termination after completion is harmless because completed responses live in
-the cache; no durable completion marker exists.
+termination after completion is harmless because ordinary responses live in
+Cache Storage and completed CRS data lives in bb.js's IndexedDB cache; no
+separate durable completion marker exists.
 
 Registration, fetch, eviction, quota, or unsupported-worker failure changes
 latency only. A missing or malformed selected profile fails before OAuth;
@@ -1259,8 +1291,10 @@ policy. The deployment-fixed same-origin `libid-ceremony-prover.js` URL already
 loaded by `/oauth/prove` is also its module-service-worker registration URL; it
 permits a scope covering `/oauth/`. This adds no second prover artifact, route,
 or `ServerConfig` field. The server embeds every prefetched WASM and circuit URL
-plus integrity in `ProverAssets`; opener, launch profile, and callback input can
-only select an exact listed platform/version and cannot supply an asset URL.
+plus integrity and the generated exact SRS size in `ProverAssets`; opener,
+launch profile, and callback input can only select an exact listed
+platform/version and cannot supply an asset URL or SRS size. The pinned bb.js
+module fixes the only admitted CRS origins.
 
 No request value is interpolated into CSP or another response header. Because
 a worker cannot directly load a cross-origin worker URL, the prover may create
