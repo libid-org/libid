@@ -338,7 +338,6 @@ interface ProverArtifact {
 interface ProverProfile {
   platformId: PlatformId
   platformVerifierVersion: PlatformVerifierVersion
-  srsSize: number
   artifacts: readonly ProverArtifact[]
 }
 
@@ -355,37 +354,42 @@ a profile, URL, or integrity value, and the prover never fetches
 `ServerConfig`. The document contains every still-supported deployed profile,
 but a ceremony fetches only its selected platform/version profile.
 
-The launch profiles are:
+Each closed platform/version module pins its circuit release and SRS size. SRS
+size is protocol code, not deployment data:
 
-| Platform | Artifacts | BN254 SRS size |
-|---|---|---:|
-| X | shared notarization-client WASM, shared prover WASM, shared `bearer-link` circuit descriptor | 2^16 points |
-| GitHub | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor | 2^16 points |
-| Google | prover WASM and Google circuit descriptor | 2^18 points |
+| Profile | Artifacts | Measured circuit size | Pinned BN254 SRS size |
+|---|---|---:|---:|
+| `x/v1` | shared notarization-client WASM, shared prover WASM, shared `bearer-link` circuit descriptor | 42,008 | 65,536 (2^16) points |
+| `github/v1` | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor | 42,008 | 65,536 (2^16) points |
+| `google/v1` | prover WASM and `jwt_email` circuit descriptor | 179,413 | 262,144 (2^18) points |
 
-The current known heavy cold-start payload is:
+The pinned current-circuit cold-start payload is:
 
-| Profile | Profile artifacts | bb.js CRS | Known cold total |
+| Profile | Ordinary artifact bodies | Pinned CRS bodies | Pinned cold total |
 |---|---:|---:|---:|
 | `google/v1` | 4,081,773 bytes (3.89 MiB) | 20,971,648 bytes (20.00 MiB) | 25,053,421 bytes (23.89 MiB) |
 | `x/v1` or `github/v1` | 20,674,830 bytes (19.72 MiB) | 8,388,736 bytes (8.00 MiB) | 29,063,566 bytes (27.72 MiB) |
 
-These exact resource-body counts use
+These exact resource-body counts use the compatible tuple Nargo
+`1.0.0-beta.20`, native bb `5.0.0-nightly.20260324`, and bb.js
+`5.0.0-nightly.20260324`, as recorded by
 [`libid-circuits v0.3.0-rc.1`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.1),
-whose target is the source commit pinned below: `jwt_email.json` is 1,296,747
+whose target is the source commit pinned below. `jwt_email.json` is 1,296,747
 bytes and `bearer_link.json` is 158,142 bytes. The pinned bb.js
 `barretenberg-threads.wasm.gz` is 2,785,026 bytes. The
 [`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
 browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
 that tag and the source link below do not change the bundle.
 
-The pinned `bb gates -t evm` reports circuit sizes of 42,008 for
-`bearer_link` and 179,413 for `jwt_email`. Deployment generation rounds each up
-to its dyadic ceiling and emits that value as the profile's `srsSize`: 2^16 and
-2^18 respectively. The CRS column is therefore the selected BN254 G1 prefix at
+The circuit release's pinned `bb gates -t evm` produces the measured sizes in
+the table. The platform modules pin their dyadic ceilings rather than deriving
+them at deployment. The CRS column is therefore the selected BN254 G1 prefix at
 64 bytes per point, the shared 2^16-point Grumpkin G1 data, and 128 BN254 G2
-bytes. This circuit-derived value is identical on every browser; libID does not
-inherit bb.js's generic 2^20 desktop and 2^18 iOS defaults.
+bytes. These constants are identical on every browser; libID does not inherit
+bb.js's generic 2^20 desktop and 2^18 iOS defaults. Circuit release tooling
+derives the same values and records them in release metadata so a changed
+circuit cannot silently retain an undersized platform constant; encoding the
+size in artifact filenames is optional and carries no additional authority.
 
 A later cold X/GitHub ceremony after either one fetches no new heavy profile
 asset. X/GitHub after Google reuses its larger BN254 cache and fetches only
@@ -403,10 +407,10 @@ Importing bb.js or fetching its prover WASM does not fetch the CRS. bb.js loads
 the CRS only while initializing `Barretenberg.new()`, before
 `generateProof()`. Warmup starts that network work explicitly without creating
 the prover backend: the module service worker calls the browser exports
-`Crs.new(profile.srsSize)` and `GrumpkinCrs.new(2 ** 16)` under its extended
-worker event. Those loaders use bb.js's own fixed CRS endpoints and IndexedDB
-cache. A later prover waits for that worker-owned attempt, then
-`Barretenberg.new({ srsSize: profile.srsSize })` reads the same cache.
+`Crs.new(platformVersion.srsSize)` and `GrumpkinCrs.new(2 ** 16)` under its
+extended worker event. Those loaders use bb.js's own fixed CRS endpoints and
+IndexedDB cache. A later prover waits for that worker-owned attempt, then
+`Barretenberg.new({ srsSize: platformVersion.srsSize })` reads the same cache.
 Navigation can destroy the warmup iframe without owning or restarting the
 download.
 
@@ -417,14 +421,18 @@ after WASM decompression; [Aztec #25290](https://github.com/AztecProtocol/aztec-
 also persists the download so `Crs.new()` alone is durable. The final
 circuit-compatible pin must provide both behaviors. The older measured nightly
 already persists its uncompressed download and needs only the `srsSize`
-backport; a compressed release needs #25290. Without aligned sizing, a
-circuit-sized warmup is followed by a larger desktop refetch. The selected
-bb.js bytes also fix its primary and fallback CRS origins, which are the only
+backport; a compressed release needs #25290. The browser pin cannot move alone:
+the compatible Nargo compiler, native `bb` used to produce the verification key
+and verifier, and `bb.js` prover move as one circuit release and verifier
+rollout. bb.js 5.2.0's smaller compressed-CRS transfer counts therefore do not
+apply to the current circuit release or the table above. Without aligned
+sizing, a circuit-sized warmup is followed by a larger desktop refetch. The
+selected bb.js bytes also fix its primary and fallback CRS origins, which are the only
 CRS origins admitted by the prover response policy.
 
-Deployment generation runs the pinned circuit-size command for every profile,
-emits `srsSize`, and fails if it differs from the platform version's checked-in
-expectation. It does not copy, slice, or reimplement the CRS downloader.
+Deployment selects the closed platform/version and embeds only its ordinary
+artifact URLs and integrity values. It neither computes nor configures SRS
+size, and it does not copy, slice, or reimplement the CRS downloader.
 
 Shared entries use the same immutable URL and integrity value. The service
 worker keys ordinary artifact single flights and Cache Storage entries by
@@ -432,8 +440,8 @@ canonical URL; repeating an entry in another profile joins the existing request
 or cache hit. CRS single flights are keyed by curve and point count and complete
 through bb.js's IndexedDB cache. One URL with conflicting kind or integrity is
 invalid deployment data. Platform modules define the exact artifact kinds and
-SRS size for each verifier version and reject a missing, duplicate, additional,
-or mismatched value before fetching.
+SRS size for each verifier version and reject a missing, duplicate, or
+additional artifact before fetching.
 
 `/oauth/prove` has three closed fragment forms. The bootstrap copies and clears
 the fragment before importing the root module or using storage or the network:
@@ -1291,7 +1299,7 @@ policy. The deployment-fixed same-origin `libid-ceremony-prover.js` URL already
 loaded by `/oauth/prove` is also its module-service-worker registration URL; it
 permits a scope covering `/oauth/`. This adds no second prover artifact, route,
 or `ServerConfig` field. The server embeds every prefetched WASM and circuit URL
-plus integrity and the generated exact SRS size in `ProverAssets`; opener,
+plus integrity in `ProverAssets`; opener,
 launch profile, and callback input can only select an exact listed
 platform/version and cannot supply an asset URL or SRS size. The pinned bb.js
 module fixes the only admitted CRS origins.
