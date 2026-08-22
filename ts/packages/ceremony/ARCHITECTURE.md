@@ -33,8 +33,8 @@ application-side client ── OAuth ── libid-ceremony-popup.js ── libid
 ```
 
 The ceremony owns authorization construction, OAuth, callback handling,
-isolated proving, sanitized progress, proof delivery, and local proof
-verification. It does not own application jobs, wallet keys or policy,
+isolated proving, sanitized progress, proof delivery, and local evidence
+validation. It does not own application jobs, wallet keys or policy,
 Registry calls, connectors, transaction submission, finality, React UI, or a
 server status service.
 
@@ -141,6 +141,18 @@ least one advertised verifier version in common.
 `supportedPlatforms` is an immutable `readonly PlatformId[]` derived
 from that same closed implementation table. It contains every platform compiled
 into the package release, exactly once, and has no mutable registration API.
+
+The launch release's closed local version table is:
+
+| Platform | Locally supported verifier versions |
+|---|---|
+| `google` | `1` |
+| `x` | `1` |
+| `github` | `1` |
+
+No other local verifier version is supported. A platform is therefore enabled
+at launch only when its validated `ServerConfig` entry advertises version `1`,
+and every created Ceremony for that platform freezes version `1`.
 
 The public catalog and client types are:
 
@@ -250,8 +262,8 @@ function activate(event: MouseEvent) {
 
 `proveUserIdentity()` parses the callback's OAuth `state` as a ceremony ID and
 claims that ID once in its owning client's live map, sends the minimal proving
-inputs, validates the provider return, performs
-exchange and proving, verifies the proof locally, and resolves with an accepted
+inputs, validates the provider return, performs exchange and proving,
+constructs the non-authoritative identity preview and OAuth proof, and resolves with an accepted
 `IdentityResult`. A valid ceremony-bound provider denial resolves with a denied
 `IdentityResult`; popup
 closure, malformed return, invalid proving input, isolation failure, and
@@ -346,8 +358,8 @@ The launch profiles are:
 
 | Platform | Artifacts |
 |---|---|
-| X | shared notarization-client WASM, shared prover WASM, X circuit descriptor |
-| GitHub | the same notarization-client WASM, the same prover WASM, GitHub circuit descriptor |
+| X | shared notarization-client WASM, shared prover WASM, shared `bearer-link` circuit descriptor |
+| GitHub | the same notarization-client WASM, prover WASM, and `bearer-link` circuit descriptor |
 | Google | prover WASM and Google circuit descriptor |
 
 Shared entries use the same immutable URL and integrity value. The service
@@ -367,6 +379,105 @@ the fragment before importing the root module or using storage or the network:
 These are document bootstrap roles, not server request variants or popup
 messages. The fragment never contains an asset URL. The same HTML, headers,
 embedded manifest, and root module are served in all three cases.
+
+### Platform proving pipelines
+
+The platform modules own witness construction and orchestration; the circuit
+repository owns the exact proof relation and ABI. Launch uses these artifacts:
+
+| Profile | Circuit | Returned attestations |
+|---|---|---|
+| `google/v1` | [`jwt_email`](https://github.com/libid-org/libid-circuits/blob/2b0e181485fb08441f63c57b3561e3655d394264/circuits/jwt_email/src/main.nr) | none |
+| `x/v1` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/2b0e181485fb08441f63c57b3561e3655d394264/circuits/bearer-link/src/main.nr) | token, identity |
+| `github/v1` | the same `bearer-link` artifact | token exchange, identity |
+
+Those links pin the current launch source snapshot. Deployment consumes the
+matching compiled ACIR/ABI and manifest from a
+[`libid-circuits` release](https://github.com/libid-org/libid-circuits/releases),
+not source or an application-selected URL. A profile is unavailable until its
+circuit release and matching Consumer verifier are both deployed.
+
+All three pipelines use one proving engine. The platform module builds the
+closed Noir input map, the Noir/ACVM runtime solves the witness, and the
+circuit-compatible [Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.0.0-nightly.20260324/barretenberg/ts/bb.js)
+release generates an UltraHonk proof. bb.js returns raw proof bytes and an
+ordered flat array of field-valued public inputs inside the prover. The prover
+discards that internal array after generation and returns only the proof and
+attestations. The Consumer verification path reconstructs the exact public
+inputs from the OAuth proof's authenticated fields and attestations; the
+browser does not duplicate the circuit ABI or verify the generated proof.
+
+X and GitHub additionally use the browser TLSNotary bundle built by the
+[`libid-org/notary` build script](https://github.com/libid-org/notary/blob/e0ce1f1e0bedcde54740d1af70d4eaf9b439a9fb/scripts/build-tlsn-wasm.sh)
+and published in [`libid-org/notary` releases](https://github.com/libid-org/notary/releases).
+That release contains the JavaScript wrapper, WASM, and worker bootstrap. The
+profile's `notarization-client-wasm` entry selects its heavy WASM member; the
+wrapper and worker bootstrap remain immutable dependencies of the prover root
+module. Neither an application nor `PopupProve` selects a notary, circuit, or
+bb.js version.
+
+#### Google
+
+`platforms/google` receives the captured ID Token and frozen client identifier.
+It obtains the JWK selected by the token's `kid` from Google's JWKS endpoint and
+constructs the `jwt_email` input map:
+
+- private witness: JWT signing input and payload bytes with their lengths,
+  checked-claim offsets and lengths, raw email/`sub`/`aud` bytes, RSA signature,
+  and the RSA reduction witness;
+- public inputs, in circuit order: 32 authorization-digest bytes, two fields
+  containing `SHA256(aud)`, one packed `sub` field, two packed email fields,
+  `exp`, and eighteen RSA-modulus limbs.
+
+The semantic groups flatten to exactly 56 bb.js public-input fields. The module
+derives the candidate authorization digest from the signed nonce; the circuit
+re-encodes it as the exact unpadded base64url nonce and verifies the RS256
+signature and signed claims. The module then generates one proof and returns it
+with an empty attestation list. The Ceremony Client derives the local identity
+preview and OAuth-proof fields from its retained ID Token, frozen client
+identifier, and the JWK selected by `kid`; only Consumer verification makes
+them authoritative.
+
+#### X
+
+`platforms/x` performs two browser-owned TLSNotary Proxy sessions:
+
+1. Notarize the fixed `/2/oauth2/token` exchange using the captured code,
+   derived code verifier, frozen redirect URI, and client identifier. Reveal
+   the profile-owned request and delimiter ranges and commit the returned bearer.
+2. Use that bearer in the fixed `/2/users/me` request. Reveal the complete
+   request framing around its committed bearer plus the identity response's
+   canonical `id` and `username` ranges.
+3. Build the shared `bearer-link` witness from the private bearer, its length,
+   and the two independent 16-byte TLSNotary blinders, then generate the proof.
+
+The token and identity TLS setup may overlap, but the identity request waits for
+the token exchange to produce the bearer. The circuit constrains the bearer to
+nonempty printable ASCII of at most 128 bytes and exposes exactly the two
+32-byte bearer commitments, token first and identity second; Noir flattens them
+to 64 bb.js public-input fields. Delivery contains only the proof and the two
+attestations in the same token/identity order. Identity fields and the
+authorization digest are authenticated by the attestations and Platform
+Verifier, not duplicated as circuit outputs.
+
+#### GitHub
+
+`platforms/github` first sends the captured code and derived verifier to the
+fixed server token-exchange route. The server uses its confidential client
+secret, performs the token-exchange TLSNotary session, and returns the bounded
+access token, token attestation, and `bearerBlinder`: the canonical unpadded
+base64url encoding of the token session's exact 16-byte TLSNotary blinder. The
+browser validates that response and blinder before using the
+bearer in its own fixed `/user` TLSNotary session, which commits the bearer and
+reveals the canonical `id` and `login` ranges.
+
+The module then runs the same `bearer-link` circuit with the token-exchange and
+identity blinders. Its public-input count and order are identical to X: 64
+fields representing token commitment then identity commitment. Delivery
+contains only the proof and the two attestations in token-exchange/identity
+order.
+GitHub-specific server exchange and transcript construction therefore remain
+platform code; no GitHub-specific proving circuit or proving engine exists.
 
 ### Ceremony result
 
@@ -400,8 +511,8 @@ shape is not redefined here.
 `@libid/ceremony/protocol`
 checks that exact `OAuthProof` against the live Ceremony's retained
 authorization fields, derives
-the identity preview only from locally verified proof inputs and authenticated
-attestation bytes, enforces the platform's canonical encodings and configured client, and
+the identity preview from locally validated platform evidence, enforces the
+platform's canonical encodings and configured client, and
 returns `Identity` with the same `OAuthProof`. The client constructs it from
 those retained fields and the proof and attestations returned by the prover.
 The ceremony exact-matches the
@@ -914,8 +1025,8 @@ the coordinator forwards it upstream as a terminal technical failure.
 
 The prover does not receive the expected Authorization Digest. Google exposes
 the signed token nonce as a proof public input; X and GitHub expose the
-attested code verifier. The Ceremony Client matches that verified output to
-its retained authorization fields after delivery.
+attested code verifier. The Consumer verification path matches that binding to
+the Authorization Digest it recomputes from the OAuth proof.
 
 After `PopupProve`, the active proving placement sends zero or more
 `PopupNotifyEvent` records followed by exactly one `PopupDeliverProof`. Either
@@ -942,9 +1053,10 @@ construction, and proof generation. It returns only the bounded generated
 proof and attestations through `PopupDeliverProof`; it does not receive the
 operation domain, chain ID, transaction data, or authorization nonce, and it
 does not assemble or verify `OAuthProof` or
-construct `Identity`. The application client combines the returned material
-with its retained ceremony fields, assembles the exact normative `OAuthProof`,
-and verifies it locally. For GitHub, the prover—not the
+construct `Identity`. The application client combines the returned proof and
+attestations with its retained ceremony fields, assembles the exact normative
+`OAuthProof`, and derives a locally checked but non-authoritative preview. For
+GitHub, the prover—not the
 popup—calls the fixed same-origin token route, verifies its response, and then
 performs the dependent `/user` notarization. `platforms/github` implements the normative
 `TokenRequest` and `TokenResponse` codecs; the platform
@@ -979,8 +1091,8 @@ The application-side `Ceremony` client owns the common stage. It enters
 authenticated `PopupOAuthResult` selects the live Ceremony,
 `prover-activation` only while the popup waits for the fallback **Continue
 proving** activation, and `proof-generation` when proving starts. Immediate
-local proof verification and `Identity` construction complete
-`proof-generation`; they are not separate progress stages. The popup reports
+`Identity` construction completes `proof-generation`; it is not a separate
+progress stage. The popup reports
 its two prover lifecycle transitions over the authenticated channel, and the
 client confirms them before publishing them.
 
