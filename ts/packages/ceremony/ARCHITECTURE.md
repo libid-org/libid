@@ -361,8 +361,8 @@ size is protocol code, not deployment data:
 
 | Profile | Artifacts | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,006 | 65,536 (2^16) points |
-| `github/v1` | the same five shared artifacts as X | 42,006 | 65,536 (2^16) points |
+| `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,006 | 131,072 (2^17) points |
+| `github/v1` | the same five shared artifacts as X | 42,006 | 131,072 (2^17) points |
 | `google/v1` | shared ACVM, Noir ABI, and prover WASM; `jwt_email` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
 The pinned current-circuit heavy-resource subtotal is:
@@ -370,7 +370,7 @@ The pinned current-circuit heavy-resource subtotal is:
 | Profile | Non-CRS artifact bodies | Pinned CRS bodies | Known heavy subtotal |
 |---|---:|---:|---:|
 | `google/v1` | 8,092,813 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,853 bytes (19.72 MiB) |
-| `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 6,291,584 bytes (6.00 MiB) | 30,975,279 bytes (29.54 MiB) |
+| `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 8,388,736 bytes (8.00 MiB) | 33,072,431 bytes (31.54 MiB) |
 
 These exact resource-body counts use the compatible tuple Nargo
 `1.0.0-beta.25`, native bb `5.2.0`, and bb.js `5.2.0`, as recorded by
@@ -385,14 +385,19 @@ browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
 that tag and the source link below do not change the bundle.
 
 The circuit release's pinned `bb gates -t evm` produces the measured sizes in
-the table. The platform modules pin their dyadic ceilings rather than deriving
-them at deployment. The CRS column is therefore the selected compressed BN254
+the table, but gate count alone does not determine the deployable SRS floor.
+bb.js 5.2 requires compressed SRS input to be a positive multiple of its 4 MiB
+verification chunk, so `bearer_link` fails at its mathematical 2^16 ceiling and
+requires 2^17; `jwt_email` remains 2^18. Platform modules pin these
+prover-qualified minima rather than deriving them at deployment. The CRS column
+is therefore the selected compressed BN254
 G1 prefix at 32 bytes per point, the shared 2^16-point Grumpkin G1 data at 64
 bytes per point, and 128 bytes of BN254 G2 data. These constants are identical
 on every browser; libID does not inherit
 bb.js's generic 2^20 desktop and 2^18 iOS defaults. Circuit release tooling
-derives the same values and records them in release metadata so a changed
-circuit cannot silently retain an undersized platform constant; encoding the
+qualifies the same values with the pinned browser prover and records them in
+release metadata so a circuit or bb.js change cannot silently retain an
+undersized platform constant; encoding the
 size in artifact filenames is optional and carries no additional authority.
 
 A later cold X/GitHub ceremony after either one fetches no new heavy profile
