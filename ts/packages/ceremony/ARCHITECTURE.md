@@ -867,12 +867,13 @@ sequenceDiagram
     end
     C->>C: Capture and clear ceremonyId, platformId, verifierVersion
     C->>P: Embed /oauth/prove#fetch(ceremonyId, platformId, verifierVersion)
-    P->>P: Capture and clear fragment; select profile
+    P->>P: Capture and clear fragment, then select profile
     P->>P: Start or join only the selected artifact fetches
     P-->>C: PopupFetchingProver(protocolVersion, ceremonyId, platformId, verifierVersion)
     C-->>A: Forward PopupFetchingProver unchanged
     A->>A: Validate versions, profile, and popup source
-    A->>O: Navigate retained popup to provider
+    A->>C: Navigate retained popup to provider URL
+    C->>O: Provider navigation
     O->>C: Return to /oauth/redirect
     Note right of C: Bound capture, then clear URL before module load or later requests
     C->>P: Load /oauth/prove and start or join warmup
@@ -914,7 +915,7 @@ sequenceDiagram
                 W-->>P: PopupDeliverProof
                 P-->>C: Forward PopupDeliverProof unchanged
                 C-->>A: Validate and forward PopupDeliverProof unchanged
-                A->>A: Assemble and verify OAuthProof, then resolve IdentityResult(accepted)
+                A->>A: Construct preview and resolve IdentityResult(accepted)
             end
         else Prover is qualified
             loop Zero or more progress events
@@ -928,7 +929,7 @@ sequenceDiagram
             else Proof generated
                 P-->>C: PopupDeliverProof
                 C-->>A: Validate and forward PopupDeliverProof unchanged
-                A->>A: Assemble and verify OAuthProof, then resolve IdentityResult(accepted)
+                A->>A: Construct preview and resolve IdentityResult(accepted)
             end
         end
     end
