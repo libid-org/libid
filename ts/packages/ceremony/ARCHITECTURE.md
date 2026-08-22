@@ -361,36 +361,35 @@ size is protocol code, not deployment data:
 
 | Profile | Artifacts | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,008 | 65,536 (2^16) points |
-| `github/v1` | the same five shared artifacts as X | 42,008 | 65,536 (2^16) points |
-| `google/v1` | shared ACVM, Noir ABI, and prover WASM; `jwt_email` circuit descriptor | 179,413 | 262,144 (2^18) points |
+| `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,006 | 65,536 (2^16) points |
+| `github/v1` | the same five shared artifacts as X | 42,006 | 65,536 (2^16) points |
+| `google/v1` | shared ACVM, Noir ABI, and prover WASM; `jwt_email` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
 The pinned current-circuit heavy-resource subtotal is:
 
 | Profile | Non-CRS artifact bodies | Pinned CRS bodies | Known heavy subtotal |
 |---|---:|---:|---:|
-| `google/v1` | 7,264,260 bytes (6.93 MiB) | 20,971,648 bytes (20.00 MiB) | 28,235,908 bytes (26.93 MiB) |
-| `x/v1` or `github/v1` | 23,857,317 bytes (22.75 MiB) | 8,388,736 bytes (8.00 MiB) | 32,246,053 bytes (30.75 MiB) |
+| `google/v1` | 8,092,813 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,853 bytes (19.72 MiB) |
+| `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 6,291,584 bytes (6.00 MiB) | 30,975,279 bytes (29.54 MiB) |
 
 These exact resource-body counts use the compatible tuple Nargo
-`1.0.0-beta.20`, native bb `5.0.0-nightly.20260324`, and bb.js
-`5.0.0-nightly.20260324`, as recorded by
-[`libid-circuits v0.3.0-rc.1`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.1),
-whose target is the source commit pinned below. `jwt_email.json` is 1,296,747
-bytes and `bearer_link.json` is 158,142 bytes. The pinned bb.js
-`barretenberg-threads.wasm.gz` is 2,785,026 bytes. The pinned Noir runtime adds
-2,571,406 bytes of `acvm_js_bg.wasm` and 611,081 bytes of
+`1.0.0-beta.25`, native bb `5.2.0`, and bb.js `5.2.0`, as recorded by
+[`libid-circuits v0.3.0-rc.2`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.2),
+whose target is the source commit pinned below. `jwt_email.json` is 1,312,736
+bytes and `bearer_link.json` is 171,956 bytes. The pinned bb.js
+`barretenberg-threads.wasm.gz` is 3,071,085 bytes. The pinned Noir runtime adds
+3,049,596 bytes of `acvm_js_bg.wasm` and 659,396 bytes of
 `noirc_abi_wasm_bg.wasm`; every profile shares their exact URL and integrity.
-The
-[`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
+The [`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
 browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
 that tag and the source link below do not change the bundle.
 
 The circuit release's pinned `bb gates -t evm` produces the measured sizes in
 the table. The platform modules pin their dyadic ceilings rather than deriving
-them at deployment. The CRS column is therefore the selected BN254 G1 prefix at
-64 bytes per point, the shared 2^16-point Grumpkin G1 data, and 128 BN254 G2
-bytes. These constants are identical on every browser; libID does not inherit
+them at deployment. The CRS column is therefore the selected compressed BN254
+G1 prefix at 32 bytes per point, the shared 2^16-point Grumpkin G1 data at 64
+bytes per point, and 128 bytes of BN254 G2 data. These constants are identical
+on every browser; libID does not inherit
 bb.js's generic 2^20 desktop and 2^18 iOS defaults. Circuit release tooling
 derives the same values and records them in release metadata so a changed
 circuit cannot silently retain an undersized platform constant; encoding the
@@ -398,9 +397,9 @@ size in artifact filenames is optional and carries no additional authority.
 
 A later cold X/GitHub ceremony after either one fetches no new heavy profile
 asset. X/GitHub after Google reuses its larger BN254 cache and fetches only
-17,889,804 bytes of notary WASM and the bearer circuit. Google after X/GitHub
+17,903,618 bytes of notary WASM and the bearer circuit. Google after X/GitHub
 replaces the shorter BN254 prefix with its 2^18-point prefix and fetches its
-1,296,747-byte circuit.
+1,312,736-byte circuit.
 
 The counts are before HTTP content encoding and exclude HTML, the root and
 worker JavaScript graph, headers, OAuth/notary traffic, and attestations. They
@@ -419,21 +418,16 @@ IndexedDB cache. A later prover waits for that worker-owned attempt, then
 Navigation can destroy the warmup iframe without owning or restarting the
 download.
 
-The pinned bb.js browser build already owns the downloader and IndexedDB cache.
-Aztec's [`srsSize` constructor option](https://github.com/AztecProtocol/aztec-packages/pull/23419)
-is released in bb.js 5.2.0. Its compressed loader, however, persists G1 only
-after WASM decompression; [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290)
-also persists the download so `Crs.new()` alone is durable. The final
-circuit-compatible pin must provide both behaviors. The older measured nightly
-already persists its uncompressed download and needs only the `srsSize`
-backport; a compressed release needs #25290. The browser pin cannot move alone:
-the compatible Nargo compiler, native `bb` used to produce the verification key
-and verifier, and `bb.js` prover move as one circuit release and verifier
-rollout. bb.js 5.2.0's smaller compressed-CRS transfer counts therefore do not
-apply to the current circuit release or the table above. Without aligned
-sizing, a circuit-sized warmup is followed by a larger desktop refetch. The
-selected bb.js bytes also fix its primary and fallback CRS origins, which are the only
-CRS origins admitted by the prover response policy.
+The pinned bb.js 5.2.0 browser build owns the downloader, compressed 32-byte G1
+format, and [`srsSize` constructor option](https://github.com/AztecProtocol/aztec-packages/pull/23419).
+The selected build also includes [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290),
+which persists the compressed download so `Crs.new()` alone is durable. That
+fix changes cache behavior, not the resource-body counts above. The compatible
+Nargo compiler, native `bb` used to produce the verification key and verifier,
+and `bb.js` prover remain one circuit release and verifier rollout. Without
+aligned sizing, a circuit-sized warmup is followed by a larger desktop refetch.
+The selected bb.js bytes also fix its primary and fallback CRS origins, which
+are the only CRS origins admitted by the prover response policy.
 
 Deployment selects the closed platform/version and embeds only its ordinary
 artifact URLs and integrity values. It neither computes nor configures SRS
@@ -466,8 +460,8 @@ repository owns the exact proof relation and ABI. Launch uses these artifacts:
 
 | Profile | Circuit | Returned attestations |
 |---|---|---|
-| `google/v1` | [`jwt_email`](https://github.com/libid-org/libid-circuits/blob/2b0e181485fb08441f63c57b3561e3655d394264/circuits/jwt_email/src/main.nr) | none |
-| `x/v1` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/2b0e181485fb08441f63c57b3561e3655d394264/circuits/bearer-link/src/main.nr) | token, identity |
+| `google/v1` | [`jwt_email`](https://github.com/libid-org/libid-circuits/blob/7b4a8b1940bae151f471d9863df3e493ac535bc0/circuits/jwt_email/src/main.nr) | none |
+| `x/v1` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/7b4a8b1940bae151f471d9863df3e493ac535bc0/circuits/bearer-link/src/main.nr) | token, identity |
 | `github/v1` | the same `bearer-link` artifact | token exchange, identity |
 
 Those links pin the current launch source snapshot. Deployment consumes the
@@ -478,7 +472,7 @@ circuit release and matching Consumer verifier are both deployed.
 
 All three pipelines use one proving engine. The platform module builds the
 closed Noir input map, the Noir/ACVM runtime solves the witness, and the
-circuit-compatible [Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.0.0-nightly.20260324/barretenberg/ts/bb.js)
+circuit-compatible [Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.2.0/barretenberg/ts/bb.js)
 release generates an UltraHonk proof. bb.js returns raw proof bytes and an
 ordered flat array of field-valued public inputs inside the prover. The prover
 discards that internal array after generation and returns only the proof and
