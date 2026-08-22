@@ -485,20 +485,24 @@ Each profile emits this closed, ordered sequence after `PopupProve`:
 
 | Profile | Platform-step codes |
 |---|---|
-| `google/v1` | `signing-key` → `witness` → `proof` |
-| `x/v1` | `token-notarization` → `identity-notarization` → `witness` → `proof` |
-| `github/v1` | `token-exchange` → `identity-notarization` → `witness` → `proof` |
+| `google/v1` | `prover-readiness` → `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` → `witness` → `proof` |
+| `x/v1` | `prover-readiness` → `notary-initialization` → `token-session` → `token-attestation` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
+| `github/v1` | `prover-readiness` → `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
 
-`signing-key` covers fetching and selecting the token's JWK.
-`token-notarization` covers X's token request and attestation.
-`token-exchange` covers GitHub's server request and validation of its complete
-response. `identity-notarization` covers the platform identity request and
-attestation. `witness` covers construction and solving of the closed Noir input
-map, and `proof` covers bb.js proof generation.
+`prover-readiness` covers awaiting the selected artifact single flights after
+`PopupProve`; those downloads may already have started during warmup. Google
+then decodes the ID Token, fetches and selects its JWK, and constructs the
+closed circuit inputs. X exposes initialization of the browser notary client,
+each notarized session, and each resulting attestation separately. GitHub
+exposes the start of its one server request and local validation of the complete
+response, but no fictional server-internal progress; its browser-owned identity
+session remains separate. `circuit-inputs` ends when the complete closed Noir
+input map exists, `witness` covers ACVM execution and constraint solving, and
+`proof` covers bb.js proof generation.
 
 For each code, the platform module emits `started`, followed by `completed`
 before starting the next code or `failed` immediately before Abort. A cache hit
-still emits the same sequence. Warmup, OAuth, isolation, delivery, and preview
+still emits the same sequence. OAuth, isolation, delivery, and preview
 construction are represented elsewhere and do not add platform steps.
 
 ### Ceremony result
