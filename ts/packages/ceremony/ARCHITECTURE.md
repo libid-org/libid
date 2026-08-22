@@ -479,6 +479,28 @@ order.
 GitHub-specific server exchange and transcript construction therefore remain
 platform code; no GitHub-specific proving circuit or proving engine exists.
 
+### Platform progress
+
+Each profile emits this closed, ordered sequence after `PopupProve`:
+
+| Profile | Platform-step codes |
+|---|---|
+| `google/v1` | `signing-key` → `witness` → `proof` |
+| `x/v1` | `token-notarization` → `identity-notarization` → `witness` → `proof` |
+| `github/v1` | `token-exchange` → `identity-notarization` → `witness` → `proof` |
+
+`signing-key` covers fetching and selecting the token's JWK.
+`token-notarization` covers X's token request and attestation.
+`token-exchange` covers GitHub's server request and validation of its complete
+response. `identity-notarization` covers the platform identity request and
+attestation. `witness` covers construction and solving of the closed Noir input
+map, and `proof` covers bb.js proof generation.
+
+For each code, the platform module emits `started`, followed by `completed`
+before starting the next code or `failed` immediately before Abort. A cache hit
+still emits the same sequence. Warmup, OAuth, isolation, delivery, and preview
+construction are represented elsewhere and do not add platform steps.
+
 ### Ceremony result
 
 ```ts
