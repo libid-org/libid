@@ -28,6 +28,11 @@ Submission. Each platform section defines its own launch version. A version
 covers the digest, OAuth construction, and platform-specific proof statement,
 not any Consumer Chain's verifier implementation.
 
+A profile is selected by the pair `(identityPlatform,
+platformCeremonyVersion)`. Each platform section defines its exact canonical
+lowercase ASCII `identityPlatform`; the version is a separate integer and is
+never appended to that string.
+
 Each profile also fixes the attestation list of common REQ-COMMON-41 and the
 digest-binding method of common REQ-COMMON-02C. Google verifies no attestation
 and binds the digest as a public proof input; X and GitHub each verify two
@@ -48,6 +53,12 @@ REQ-COMMON-15A.
   Verifier artifact and, for a TLSNotary profile, a compatible Notary Service.
   Necessity: chain artifacts implement the versioned ceremony boundary; they
   do not define it.
+- REQ-PLAT-01B:
+  The Canonical Runtime MUST identify a profile with the exact
+  `(identityPlatform, platformCeremonyVersion)` pair its platform section
+  defines. It MUST NOT append the version to `identityPlatform` or accept a
+  presentation alias in its place. Necessity: every component must dispatch on
+  one canonical pair.
 - REQ-PLAT-02:
   The Canonical Runtime MUST treat a profile as ineligible until the
   application's authenticated profile lists it and the generated deployment
@@ -182,7 +193,10 @@ block an otherwise valid authority operation.
 
 ## 3. Google OIDC ceremony
 
-The Google profile defined here uses `platformCeremonyVersion = 1`.
+```text
+identityPlatform = "google"
+platformCeremonyVersion = 1
+```
 
 Google uses direct authentication-only OIDC and has no server-side token
 exchange. Identity evidence is the signed ID Token delivered in the redirect
@@ -382,7 +396,10 @@ under the X or GitHub profile.
 
 ## 5. X ceremony
 
-The X profile defined here uses `platformCeremonyVersion = 1`.
+```text
+identityPlatform = "x"
+platformCeremonyVersion = 1
+```
 
 X uses a public client with S256 PKCE and two browser-owned TLSNotary
 sessions.
@@ -622,7 +639,10 @@ belong in a proof.
 
 ## 6. GitHub ceremony
 
-The GitHub profile defined here uses `platformCeremonyVersion = 1`.
+```text
+identityPlatform = "github"
+platformCeremonyVersion = 1
+```
 
 GitHub Token Service: The deployment-owned confidential-client component that
 performs the GitHub token exchange inside a notarized TLS session and returns
@@ -1111,8 +1131,10 @@ Platform Verifier, Notary Service, Consumer.
   rejected.
 - TEST-PLAT-16 (exercises REQ-PLAT-53):
   A ceremony whose exchange response was lost restarts from authorization.
-- TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-02, REQ-PLAT-03):
-  A live ceremony that substitutes a newer profile is rejected, an unlisted
+- TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-01B, REQ-PLAT-02, REQ-PLAT-03):
+  The launch profile pairs are exactly `("google", 1)`, `("x", 1)`, and
+  `("github", 1)`; a suffixed platform string is not one of those profiles. A
+  live ceremony that substitutes a newer profile is rejected, an unlisted
   profile is ineligible, and the profile identifies the same proof statement
   and semantic public inputs across two chains using different conforming
   verifier artifacts. A destination chain does not support the pair without a
