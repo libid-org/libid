@@ -282,7 +282,7 @@ The package-facing API surface is:
 |---|---|
 | `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization and `OAuthProof` construction, local evidence decoding, `CCDPMessage`, and `CCDPVersion` |
 | `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `CeremonyConfig` fetch, and stateful `Ceremony` orchestration |
-| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(query, fragment, allowedAppOrigins)` to the cleared redirect document |
+| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
 
 The API below and the CCDP records are the launch surface.
@@ -654,8 +654,10 @@ interface AppAuthenticateOrigin {
 interface PopupDeliverParams {
   type: 'popup-deliver-params'
   ceremonyId: string
-  query: string
-  fragment: string
+  oauthReturn: {
+    query: string
+    fragment: string
+  }
 }
 ```
 
@@ -673,7 +675,7 @@ and expected protocol version, then returns its retained ceremony ID in
 The popup accepts `AppAuthenticateOrigin` only from `window.opener`, requires
 the browser-stamped origin to be allowed, and exact-matches the supplied
 ceremony ID to the captured OAuth state. Only then does it return the unchanged
-bounded query and fragment in `PopupDeliverParams` to that exact source
+bounded `oauthReturn` in `PopupDeliverParams` to that exact source
 and origin. The message has no origin or version field: the browser supplies the
 origin, and the client already validated the returned popup's version. A
 different allowed application occupying the opener receives neither the
@@ -696,8 +698,10 @@ interface AppRequestProof {
   platformCeremonyVersion: PlatformCeremonyVersion
   clientId: string
   redirectUri: string
-  query: string
-  fragment: string
+  oauthReturn: {
+    query: string
+    fragment: string
+  }
   codeVerifier: string | null
 }
 ```
@@ -707,17 +711,17 @@ The application-scoped client selects the live `Ceremony` from the authenticated
 the composition. An unknown, stale, replayed, or post-reload ceremony ID changes
 no live state and causes cleanup through `AppCancelCeremony`. Otherwise the client
 atomically claims the state and uses that Ceremony's platform/version parser to
-exact-validate the query/fragment transport and fields.
+exact-validate the `oauthReturn` transport and fields.
 
 A malformed or mismatched result rejects the Ceremony. A valid provider denial
 resolves `{ status: 'denied' }`. Both paths send `AppCancelCeremony` for popup cleanup.
 A valid acceptance constructs `AppRequestProof` from the live ceremony ID,
 selected platform/version, frozen client and redirect, derived code verifier, and
-unchanged query and fragment. The application origin is trusted for this transient input;
+unchanged `oauthReturn`. The application origin is trusted for this transient input;
 the protocol does not try to hide it from other scripts executing in that
 origin.
 
-The popup byte-matches the echoed query and fragment to its retained values, validates the
+The popup byte-matches the echoed `oauthReturn` fields to its retained values, validates the
 closed platform/version and PKCE shape, and forwards the exact
 `AppRequestProof` once to its coordinator iframe. The claimed client entry, one-shot Ceremony, and
 popup state machine prevent duplicate proving. The composition's final Job CAS
@@ -855,7 +859,7 @@ sequenceDiagram
     A->>A: Match retained popup and claim Ceremony
     A-->>C: AppAuthenticateOrigin(ceremonyId)
     C->>C: Match opener, allowed browser origin, and OAuth state
-    C->>A: PopupDeliverParams(ceremonyId, query, fragment)
+    C->>A: PopupDeliverParams(ceremonyId, oauthReturn)
     Note over A,C: Before AppRequestProof, AppCancelCeremony always clears the parameters and closes or renders the fixed fallback
     alt Invalid callback or setup
         A->>A: Reject Ceremony
@@ -865,7 +869,7 @@ sequenceDiagram
         A-->>C: AppCancelCeremony
     else Valid provider success
         A-->>C: AppRequestProof
-        C->>P: Echo-check query and fragment, then forward AppRequestProof once
+        C->>P: Echo-check oauthReturn, then forward AppRequestProof once
         P->>P: Check isolation and SharedArrayBuffer
         alt DIP is not isolated
             P-->>C: ProverRequestIsolation
@@ -936,12 +940,14 @@ both with `history.replaceState`, and only then integrity-loads
 
 ```ts
 declare function startPopup(
-  query: string,
-  fragment: string,
+  oauthReturn: {
+    query: string
+    fragment: string
+  },
   allowedAppOrigins: readonly string[],
 ): void
 
-startPopup(query, fragment, allowedAppOrigins)
+startPopup(oauthReturn, allowedAppOrigins)
 ```
 
 An empty query plus the closed launch fragment containing ceremony ID, platform
@@ -956,8 +962,8 @@ comes from request `Origin`, `Referer`, query, fragment, or a client message.
 Redirect servers suppress query strings in access logs, traces, analytics, and
 errors.
 
-`query` and `fragment` are the exact captured `location.search` and
-`location.hash` strings, including a leading delimiter
+`oauthReturn.query` and `.fragment` are the exact captured `location.search`
+and `location.hash` strings, including a leading delimiter
 when nonempty. After loading, the popup extracts the single routing state,
 authenticates the opener through `AppAuthenticateOrigin`, and exact-validates the returned
 `AppRequestProof` ID, platform, ceremony version, client ID, redirect URI, unchanged
@@ -983,7 +989,7 @@ The popup/prover boundary reuses the closed `CCDPMessage` union. The ceremony
 popup always forwards the application's exact `AppRequestProof` once to its
 coordinator iframe. On receipt, the coordinator checks isolation and
 shared-memory availability before any credential-bearing network request. Its
-bounded `query` and `fragment` preserve the provider-returned values unchanged;
+bounded `oauthReturn` preserves the provider-returned query and fragment unchanged;
 `platformId` and `platformCeremonyVersion` select its
 exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
 verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
