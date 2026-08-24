@@ -155,7 +155,7 @@ Configured server origin
 The deployed route surface is:
 
 ```text
-GET  /_libid/config
+GET  /api/v1/ceremony/profiles
 GET  /api/v1/ceremony/popup
 GET  {callbackPath}                 byte-identical popup alias; default /auth/v1/callback
 GET  /api/v1/ceremony/prover
@@ -459,7 +459,8 @@ required by the no-ceremony-recovery launch scope.
 
 ### Server configuration
 
-The application server exposes public configuration:
+The application server exposes public configuration at
+`GET /api/v1/ceremony/profiles`:
 
 ```ts
 type PlatformCeremonyVersion = number
@@ -1412,7 +1413,7 @@ a checkpoint.
 
 | Response | Required policy |
 |---|---|
-| `/_libid/config` | exact `ServerConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
+| `/api/v1/ceremony/profiles` | exact `ServerConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
 | `/api/v1/ceremony/popup`, configured callback alias (default `/auth/v1/callback`) | byte-identical top-level non-isolated deployment-generated popup document embedding the canonical allowed-origin set; callback is a direct alias, not an HTTP redirect; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
 | `/api/v1/ceremony/prover` | the one deployment-generated warmup/proving document embedding exact libID-owned `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `Cross-Origin-Embedder-Policy (COEP): require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
 | server platform routes | prover-only exact method, body, and origin; reject redirects; no-store; bounded time/size; credential log redaction |
