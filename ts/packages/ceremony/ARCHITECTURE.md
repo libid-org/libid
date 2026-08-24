@@ -32,13 +32,38 @@ concrete component names below and defines no additional wrapper module or kind.
 One ceremony turns an application-owned operation into a locally checked
 identity preview and the exact proof-bearing `OAuthProof`:
 
-```text
-CeremonyClient.new inputs
-    │
-    ▼
-application-side client ── OAuth ── libid-ceremony-popup.js ── libid-ceremony-prover.js
-    │                                                   │
-    └────────────────────── Identity ◀─────────────────┘
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant A as Application composition
+    participant C as Ceremony Client
+    participant P as Ceremony popup
+    participant O as OAuth provider
+    participant R as Prover document
+
+    A->>C: Create Ceremony from Job operation
+    U->>A: Activate identity action
+    A->>P: Open ceremony navigation
+    A->>C: Call proveUserIdentity
+    P->>R: Start selected-profile prefetch
+    P-->>C: Establish live popup channel
+    C->>P: Continue with frozen provider URL
+    P->>O: Navigate through platform authorization
+    U->>O: Approve or deny
+    O-->>P: Return to callback alias
+    P-->>C: Deliver opener-authenticated OAuth return
+    alt User denied
+        C-->>A: IdentityResult denied
+    else User approved
+        C->>C: Validate platform return
+        C->>P: Request proof
+        P->>R: Prove in qualified placement
+        R-->>P: Progress and generated proof
+        P-->>C: Relay progress and proof
+        C->>C: Validate evidence and assemble OAuthProof
+        C-->>A: IdentityResult accepted with Identity
+        A->>A: Commit Job successor before downstream use
+    end
 ```
 
 The ceremony owns authorization construction, OAuth, callback handling,
@@ -72,8 +97,8 @@ OAuth popup/callback, and isolated prover placement. They communicate through
 the package-owned Ceremony Cross-Document Protocol (CCDP), whose document
 lifecycle also coordinates the prover service worker.
 
-[CCDP.md](CCDP.md) owns the execution-context rationale, topology and routes,
-exact `CCDPMessage` union and sequence, redirect ingress, prover fallback,
+[CCDP.md](CCDP.md) owns the execution-context rationale, topology,
+exact `CCDPMessage` union and message sequence, redirect ingress, prover fallback,
 cross-document progress and cancellation, prefetch/cache coordination, browser
 response policy, and `CCDPVersion` compatibility. This document retains the
 package and public application contracts which initiate and consume that

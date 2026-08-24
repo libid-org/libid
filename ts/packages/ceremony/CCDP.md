@@ -162,10 +162,10 @@ forwarding.
 5. Progress and the generated proof travel back over the same live path. The
    application assembles `OAuthProof`; no browser context persists a checkpoint.
 
-The full branch and failure ordering appears in the
-[end-to-end sequence](#end-to-end-sequence). The remaining sections define the
-wire records and ordering first, followed by ingress, prover placement,
-cross-document lifecycle, prefetch, response policy, and compatibility.
+The [package architecture](ARCHITECTURE.md#system-boundary) shows the complete
+human-facing ceremony. The message sequence below shows only the live CCDP
+path; the surrounding sections own input validation, failure ordering, ingress,
+prover placement, lifecycle, prefetch, response policy, and compatibility.
 
 ## Protocol definition
 
@@ -420,115 +420,56 @@ type CCDPMessage =
   | AbortCeremony
 ```
 
-### End-to-end sequence
+### CCDP message sequence
 
 ```mermaid
 sequenceDiagram
-    actor U as User
     participant A as App / Ceremony Client
     participant C as libid-ceremony-popup.js
-    participant O as OAuth provider
     participant P as Prover iframe / coordinator
     participant W as Optional isolated prover window
 
-    U->>A: Activate identity control
-    A->>A: Synchronously attempt window.open(about:blank, target)
-    alt WindowProxy returned
-        A->>A: Prevent anchor navigation and call proveUserIdentity(expectedPopup)
-        A->>C: Navigate expectedPopup to navigation.href
-    else window.open returned null
-        A->>A: Call proveUserIdentity() without expectedPopup
-        A->>C: Let the same activation's anchor navigate to navigation.href
-    end
-    C->>C: Capture and clear ceremonyId, platformId, ceremonyVersion
-    C->>P: Embed /api/v1/ceremony/prover#prefetch(ceremonyId, platformId, ceremonyVersion)
-    P->>P: Capture and clear fragment, then select profile
-    P->>P: Start or join only the selected artifact fetches
+    Note over A,P: Initial popup and prefetch iframe are loaded and URL-cleared
     P-->>C: ProverPrefetchingAssets(ccdpVersion, ceremonyId, platformId, ceremonyVersion)
     C-->>A: Forward ProverPrefetchingAssets unchanged
-    A->>A: Validate CCDP/platform versions and bind popup source
-    A->>O: Navigate retained popup to frozen provider URL
-    O->>C: Return to configured callback alias
-    Note right of C: Bound and copy query/fragment, then clear URL before module load or later requests
-    C->>P: Embed fresh /api/v1/ceremony/prover coordinator iframe
-    C->>A: PopupRequestAuthentication(ccdpVersion)
-    A->>A: Match retained popup and look up live Ceremony
-    A-->>C: AppAuthenticateOrigin(ceremonyId)
-    C->>C: Match opener, allowed browser origin, and OAuth state
-    C->>A: PopupDeliverParams(ceremonyId, oauthReturn)
-    A->>A: Claim Ceremony, enter oauth-validation, and parse oauthReturn
-    Note over A,C: Before AppRequestProof, AppCancelCeremony always clears the parameters and closes or renders the fixed fallback
-    alt Invalid or mismatched authenticated return
-        A->>A: Reject Ceremony
+    Note over A,C: Application navigates the retained popup through OAuth
+    Note over A,P: Callback popup and fresh coordinator are loaded and URL-cleared
+    C-->>A: PopupRequestAuthentication(ccdpVersion)
+    A->>C: AppAuthenticateOrigin(ceremonyId)
+    C-->>A: PopupDeliverParams(ceremonyId, oauthReturn)
+    alt Application does not proceed
         A-->>C: AppCancelCeremony
-    else Valid provider denial
-        A->>A: Resolve IdentityResult(denied)
-        A-->>C: AppCancelCeremony
-    else Valid provider success
-        A->>A: Enter proof-generation
+    else Application requests proof
         A-->>C: AppRequestProof
-        C->>P: Echo-check oauthReturn, then forward AppRequestProof once
-        Note over A,W: Before terminal, AppCancelCeremony flows downstream to the active prover as best effort with no acknowledgement
-        P->>P: Check isolation and SharedArrayBuffer
-        alt DIP is not isolated
+        C->>P: Forward AppRequestProof once
+        alt Coordinator requires isolated window
             P-->>C: ProverRequestIsolation
-            C-->>U: Expose Continue proving
-            U->>C: Activate Continue proving
-            C->>W: Open /api/v1/ceremony/prover#ceremonyId
-            W->>W: Clear fragment and check isolation
-            alt Fallback cannot qualify
-                W-->>P: AbortCeremony(reason)
-                P-->>C: Forward AbortCeremony
-                C-->>A: Forward AbortCeremony
-                A->>A: Reject Ceremony
-            else Fallback is qualified
-                W-->>P: ProverConfirmIsolation(ceremonyId) over BroadcastChannel
-                P-->>W: Forward retained AppRequestProof once
-                loop Zero or more progress events
-                    W-->>P: ProverNotifyEvent(platform step)
-                    P-->>C: Forward ProverNotifyEvent unchanged
-                    C-->>A: Forward ProverNotifyEvent unchanged
-                    A->>A: Authenticate, attach current local stage, and publish CeremonyEvent
-                end
-                alt Prover-window failure
-                    W-->>P: AbortCeremony(reason)
-                    P-->>C: Forward AbortCeremony
-                    C-->>A: Forward AbortCeremony
-                    A->>A: Reject Ceremony
-                else Proof generated
-                    W-->>P: ProverDeliverProof
-                    P-->>C: Forward ProverDeliverProof unchanged
-                    C-->>A: Validate and forward ProverDeliverProof unchanged
-                    A->>A: Assemble OAuthProof and resolve IdentityResult(accepted)
-                end
-            end
-        else Prover is qualified
-            loop Zero or more progress events
-                P-->>C: ProverNotifyEvent(platform step)
-                C-->>A: Forward ProverNotifyEvent unchanged
-                A->>A: Authenticate, attach current local stage, and publish CeremonyEvent
-            end
-            alt Prover failure
-                P-->>C: AbortCeremony(reason)
-                C-->>A: Forward AbortCeremony
-                A->>A: Reject Ceremony
-            else Proof generated
-                P-->>C: ProverDeliverProof
-                C-->>A: Validate and forward ProverDeliverProof unchanged
-                A->>A: Assemble OAuthProof and resolve IdentityResult(accepted)
-            end
+            Note over C,W: User opens the URL-cleared fallback window
+            W-->>P: ProverConfirmIsolation(ceremonyId)
+            P-->>W: Forward retained AppRequestProof once
+        else Coordinator is qualified
+            Note over P: Coordinator is the active prover
+        end
+        Note over P,W: Coordinator emits or relays active-prover messages
+        loop Zero or more progress events
+            P-->>C: ProverNotifyEvent(platform step)
+            C-->>A: Forward ProverNotifyEvent unchanged
+        end
+        alt Technical failure
+            P-->>C: AbortCeremony(reason)
+            C-->>A: Forward AbortCeremony
+        else Proof generated
+            P-->>C: ProverDeliverProof
+            C-->>A: Forward ProverDeliverProof unchanged
         end
     end
 ```
 
-An implementation executes only one launch path per ceremony.
-
-`ProverDeliverProof` has no acknowledgement or ceremony-side checkpoint;
-successful assembly and local evidence validation resolve `proveUserIdentity()` with an accepted
-`IdentityResult`.
-External-wallet submission and native-wallet confirmation begin only after the
-application commits its composition-owned successor. Only Consumer acceptance
-makes the proof authoritative.
+The diagram deliberately omits application self-transitions, provider
+navigation mechanics, URL clearing, user-interface actions, validation
+failures, mid-proving cancellation forwarding, and duplicate fallback relay
+arrows. Those rules remain normative in their owning subsections.
+`ProverDeliverProof` has no acknowledgement or ceremony-side checkpoint.
 
 ### Redirect ingress
 
