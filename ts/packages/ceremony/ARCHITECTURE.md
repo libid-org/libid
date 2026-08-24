@@ -155,7 +155,7 @@ Configured server origin
 The deployed route surface is:
 
 ```text
-GET  /api/v1/ceremony/profiles
+GET  /api/v1/ceremony/config
 GET  /api/v1/ceremony/popup
 GET  {callbackPath}                 byte-identical popup alias; default /auth/v1/callback
 GET  /api/v1/ceremony/prover
@@ -232,7 +232,7 @@ Launch publishes one `@libid/ceremony` package:
 ```text
 @libid/ceremony
 ├── protocol    pure records, codecs, authorization, proof assembly, wire version
-├── client      ServerConfig fetch, application-side API, and orchestration
+├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── popup       source entrypoint for libid-ceremony-popup.js
 ├── prover      source entrypoint for libid-ceremony-prover.js, workers, WASM, and warmup
 └── platforms   versioned browser OAuth, progress, witness, and proving modules
@@ -278,7 +278,7 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization and `OAuthProof` construction, local evidence decoding, and `PopupProtocolVersion` |
-| `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `ServerConfig` fetch, and stateful `Ceremony` orchestration |
+| `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `CeremonyConfig` fetch, and stateful `Ceremony` orchestration |
 | `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(capture, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts the closed Popup Protocol and its ServiceWorker branch owns warmup fetches |
 
@@ -304,7 +304,7 @@ const ceremonies = await createCeremonyClient({
 ```
 
 This is an application-owned instance, not a package-global singleton. Client
-creation fetches and exact-validates `ServerConfig`; a configured platform is
+creation fetches and exact-validates `CeremonyConfig`; a configured platform is
 enabled only when the installed package has a closed implementation and at
 least one advertised ceremony version in common.
 `supportedPlatforms` is an immutable `readonly PlatformId[]` derived
@@ -320,7 +320,7 @@ The launch release's closed local version table is:
 | `github` | `1` |
 
 No other local ceremony version is supported. A platform is therefore enabled
-at launch only when its validated `ServerConfig` entry advertises version `1`,
+at launch only when its validated `CeremonyConfig` entry advertises version `1`,
 and every created Ceremony for that platform freezes version `1`.
 
 The public catalog and client types are:
@@ -352,7 +352,7 @@ const ceremony = await ceremonies.new(jobId, {
 ```
 
 `enabledPlatforms` is the immutable intersection of `supportedPlatforms` and
-the exact platform keys in validated `ServerConfig` that have at least one
+the exact platform keys in validated `CeremonyConfig` that have at least one
 ceremony version in common with the installed implementation. Catalog order is
 stable discovery order, not a product ranking; applications may present
 another order. Neither array contains OAuth clients, ceremony versions, server
@@ -363,7 +363,7 @@ their exact 32-byte `chainId` and `operationDomain` hashes with bounded
 `transactionData`. During `new`, the client exact-validates and copies both
 hashes without deriving or interpreting them, then treats `transactionData` as
 opaque. It requires the selected platform to be enabled by validated
-`ServerConfig`, chooses the newest locally preferred ceremony version also
+`CeremonyConfig`, chooses the newest locally preferred ceremony version also
 advertised for that platform, generates a fresh 32-byte authorization nonce,
 computes the authorization digest, and freezes all of those values before
 constructing OAuth or allowing provider navigation.
@@ -460,7 +460,7 @@ required by the no-ceremony-recovery launch scope.
 ### Server configuration
 
 The application server exposes public configuration at
-`GET /api/v1/ceremony/profiles`:
+`GET /api/v1/ceremony/config`:
 
 ```ts
 type PlatformCeremonyVersion = number
@@ -470,7 +470,7 @@ interface PlatformConfig {
   ceremonyVersions: readonly PlatformCeremonyVersion[]
 }
 
-interface ServerConfig {
+interface CeremonyConfig {
   schema: 1
   redirectUri: string
   platforms: Partial<Record<PlatformId, PlatformConfig>>
@@ -488,7 +488,7 @@ ceremony versions. List order has no meaning: the client chooses the newest
 version according to its closed local implementation table from the
 intersection. Platform entries contain no credentials.
 
-`allowedAppOrigins` is deployment configuration, not a public `ServerConfig`
+`allowedAppOrigins` is deployment configuration, not a public `CeremonyConfig`
 field. The server uses the same canonical set for exact request-origin
 Cross-Origin Resource Sharing (CORS) and embeds it into the byte-identical popup
 document served at both `/api/v1/ceremony/popup` and the configured
@@ -519,7 +519,7 @@ type IdentityResult =
 ```
 
 `PlatformCeremonyVersion` is an unsigned 16-bit integer selected by the ceremony client
-from the versions advertised in server configuration, never by the caller. It
+from the versions advertised in ceremony configuration, never by the caller. It
 versions one platform's complete ceremony semantics: authorization-digest
 construction, OAuth request and return handling, platform proof construction,
 and assembly of the final `OAuthProof`. It does not version a chain, Registry,
@@ -942,7 +942,7 @@ bounded `capture` preserves the provider-returned query
 and fragment unchanged; `platformId` and `platformCeremonyVersion` select its
 exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
 verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
-the Ceremony Client from its validated `ServerConfig`. The ceremony popup,
+the Ceremony Client from its validated `CeremonyConfig`. The ceremony popup,
 coordinator, and active fallback window exact-validate the record where they
 receive it. Client classification and prover credential
 extraction use the same closed platform/version parser; the prover admits no
@@ -1143,7 +1143,7 @@ construction are represented elsewhere and do not add platform steps.
 ### Deployment assets and shared toolchain
 
 Only libID-owned prover release assets are deployment data embedded into
-`/api/v1/ceremony/prover`, not frontend `ServerConfig` or ceremony input:
+`/api/v1/ceremony/prover`, not frontend `CeremonyConfig` or ceremony input:
 
 ```ts
 type ProverArtifactKind =
@@ -1172,7 +1172,7 @@ locations. Its bootstrap passes that value and its already-cleared
 closed fragment input to the imported prover entrypoint. This is the prover-side equivalent of embedding
 `allowedAppOrigins` into the popup document: request values cannot add or replace
 a profile or URL, and the prover never fetches
-`ServerConfig`. The document contains every still-supported deployed profile,
+`CeremonyConfig`. The document contains every still-supported deployed profile,
 but a ceremony fetches only its selected platform/version profile.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
@@ -1413,7 +1413,7 @@ a checkpoint.
 
 | Response | Required policy |
 |---|---|
-| `/api/v1/ceremony/profiles` | exact `ServerConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
+| `/api/v1/ceremony/config` | exact `CeremonyConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
 | `/api/v1/ceremony/popup`, configured callback alias (default `/auth/v1/callback`) | byte-identical top-level non-isolated deployment-generated popup document embedding the canonical allowed-origin set; callback is a direct alias, not an HTTP redirect; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
 | `/api/v1/ceremony/prover` | the one deployment-generated warmup/proving document embedding exact libID-owned `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `Cross-Origin-Embedder-Policy (COEP): require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
 | server platform routes | prover-only exact method, body, and origin; reject redirects; no-store; bounded time/size; credential log redaction |
@@ -1426,7 +1426,7 @@ COEP-compatible response policy. The deployment-fixed same-origin
 `libid-ceremony-prover.js` URL already
 loaded by `/api/v1/ceremony/prover` is also its module-service-worker registration URL; it
 permits a scope covering `/api/v1/ceremony/`. This adds no second prover artifact, route,
-or `ServerConfig` field. The server embeds only the configurable notary and
+or `CeremonyConfig` field. The server embeds only the configurable notary and
 circuit URLs in `ProverAssets`; platform-version code pins their digests, and
 the prover build pins its Noir and bb.js dependency graph. Opener,
 launch profile, and callback input can only select an exact listed
