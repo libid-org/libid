@@ -361,13 +361,14 @@ Their JavaScript is part of the prover build; whether the build emits one
 configuration. The build likewise owns every toolchain worker, WASM, and CRS
 location. A deployer cannot replace those dependencies through `ProverAssets`.
 
-Each closed platform/version module pins its circuit release and SRS size. SRS
-size is protocol code, not deployment data:
+Each closed platform/version module pins its circuit release. The ceremony
+package pins one launch-wide `SRS_SIZE = 2 ** 18`; SRS size is code, not
+deployment data:
 
 | Profile | Configurable libID assets | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x/v1` | shared notarization-client WASM and `bearer-link` circuit descriptor | 42,006 | 131,072 (2^17) points |
-| `github/v1` | the same two shared artifacts as X | 42,006 | 131,072 (2^17) points |
+| `x/v1` | shared notarization-client WASM and `bearer-link` circuit descriptor | 42,006 | 262,144 (2^18) points |
+| `github/v1` | the same two shared artifacts as X | 42,006 | 262,144 (2^18) points |
 | `google/v1` | `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
 The pinned current-circuit heavy-resource subtotal is:
@@ -375,7 +376,7 @@ The pinned current-circuit heavy-resource subtotal is:
 | Profile | Non-CRS artifact bodies | Pinned CRS bodies | Known heavy subtotal |
 |---|---:|---:|---:|
 | `google/v1` | 8,092,815 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,855 bytes (19.72 MiB) |
-| `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 8,388,736 bytes (8.00 MiB) | 33,072,431 bytes (31.54 MiB) |
+| `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 12,583,040 bytes (12.00 MiB) | 37,266,735 bytes (35.54 MiB) |
 
 These exact resource-body counts use the compatible tuple Nargo
 `1.0.0-beta.25`, native bb `5.2.0`, and bb.js `5.2.0`, as recorded by
@@ -393,9 +394,12 @@ The circuit release's pinned `bb gates -t evm` produces the measured sizes in
 the table, but gate count alone does not determine the deployable SRS floor.
 bb.js 5.2 requires compressed SRS input to be a positive multiple of its 4 MiB
 verification chunk, so `bearer_link` fails at its mathematical 2^16 ceiling and
-requires 2^17; `oidc_google` remains 2^18. Platform modules pin these
-prover-qualified minima rather than deriving them at deployment. The CRS column
-is therefore the selected compressed BN254
+has a qualified 2^17 minimum; `oidc_google` requires 2^18. Launch deliberately
+uses 2^18 for every profile so one download serves users who link multiple
+platforms. This costs X/GitHub-only users 4 MiB and removes per-platform SRS
+selection and later cache upgrades. The policy may split if measurements show
+that cost matters; doing so does not change `PlatformCeremonyVersion` while the
+proof statement and output remain identical. The CRS column is therefore the shared compressed BN254
 G1 prefix at 32 bytes per point, the shared 2^16-point Grumpkin G1 data at 64
 bytes per point, and 128 bytes of BN254 G2 data. These constants are identical
 on every browser; libID does not inherit
@@ -405,11 +409,10 @@ release metadata so a circuit or bb.js change cannot silently retain an
 undersized platform constant; encoding the
 size in artifact filenames is optional and carries no additional authority.
 
-A later cold X/GitHub ceremony after either one fetches no new heavy profile
-asset. X/GitHub after Google reuses its larger BN254 cache and fetches only
-17,903,618 bytes of notary WASM and the bearer circuit. Google after X/GitHub
-replaces the shorter BN254 prefix with its 2^18-point prefix and fetches its
-1,312,738-byte circuit.
+The first ceremony downloads the one shared SRS set. A later ceremony for any
+platform reuses it and fetches only missing profile assets. X/GitHub after
+Google fetches 17,903,618 bytes of notary WASM and the bearer circuit; Google
+after X/GitHub fetches only its 1,312,738-byte circuit.
 
 The counts are before HTTP content encoding and exclude HTML, the root and
 worker JavaScript graph, headers, OAuth/notary traffic, and attestations. They
@@ -421,10 +424,10 @@ Importing bb.js or fetching its prover WASM does not fetch the CRS. bb.js loads
 the CRS only while initializing `Barretenberg.new()`, before
 `generateProof()`. Warmup starts that network work explicitly without creating
 the prover backend: the module service worker calls the browser exports
-`Crs.new(platformVersion.srsSize)` and `GrumpkinCrs.new(2 ** 16)` under its
+`Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)` under its
 extended worker event. Those loaders use bb.js's own fixed CRS endpoints and
 IndexedDB cache. A later prover waits for that worker-owned attempt, then
-`Barretenberg.new({ srsSize: platformVersion.srsSize })` reads the same cache.
+`Barretenberg.new({ srsSize: SRS_SIZE })` reads the same cache.
 Navigation can destroy the warmup iframe without owning or restarting the
 download.
 
@@ -434,15 +437,15 @@ The selected build also includes [Aztec #25290](https://github.com/AztecProtocol
 which persists the compressed download so `Crs.new()` alone is durable. That
 fix changes cache behavior, not the resource-body counts above. The compatible
 Nargo compiler, native `bb` used to produce the verification key and verifier,
-and `bb.js` prover remain one circuit release and verifier rollout. Without
-aligned sizing, a circuit-sized warmup is followed by a larger desktop refetch.
+and `bb.js` prover remain one circuit release and verifier rollout. The shared
+size prevents a later platform from expanding and refetching the cache.
 The selected bb.js bytes also fix its primary and fallback CRS origins, which
 are the only CRS origins admitted by the prover response policy.
 
 Deployment selects the closed platform/version and embeds only its circuit and
 notarization-client URLs. Platform-version code pins the expected digest for
-each libID artifact. Noir and bb.js code, workers, WASM, CRS locations, and SRS
-sizes likewise remain closed ceremony-build constants. The deployment neither
+each libID artifact. Noir and bb.js code, workers, WASM, CRS locations, and the
+shared SRS size likewise remain closed ceremony-build constants. The deployment neither
 computes nor configures them and does not copy, slice, or reimplement the CRS
 downloader.
 
@@ -450,10 +453,10 @@ Shared deployment entries use the same immutable URL. The
 service worker resolves a selected profile from those entries plus the
 code-pinned toolchain assets, then keys ordinary artifact single flights and
 Cache Storage entries by canonical URL; a repeated URL joins the existing
-request or cache hit. CRS single flights are keyed by curve and point count and
-complete through bb.js's IndexedDB cache. One deployment URL mapped to
+request or cache hit. The fixed launch CRS loaders each single-flight by their
+code-pinned curve and size and complete through bb.js's IndexedDB cache. One deployment URL mapped to
 conflicting kinds is invalid. Platform modules define each ceremony version's
-exact libID artifact kinds, digests, and SRS size and reject a missing,
+exact libID artifact kinds and digests and reject a missing,
 duplicate, or additional deployment artifact before fetching.
 
 `/api/v1/ceremony/prover` has three closed fragment forms. The bootstrap copies and clears
@@ -1286,7 +1289,7 @@ profile but cannot supply an asset URL. The ceremony ID is only echoed in readin
 passed into the proving implementation. The service-worker branch contains no
 OAuth or application state. It owns each selected immutable asset fetch from
 the first byte, keys ordinary artifact single flights by canonical URL, starts
-the profile's exact bb.js CRS loaders as a curve/point-count single flight,
+the fixed launch bb.js CRS loaders as their curve-specific single flights,
 rejects a manifest conflict, and extends the initiating worker event through
 completion. Merely importing bb.js is not CRS warmup. As soon as those single
 flights exist or the bounded startup attempt fails, without waiting for
@@ -1297,10 +1300,10 @@ A later coordinator or prover window resolves the same profile from its own
 embedded manifest and code-pinned assets using the exact `PopupProve`
 platform/version. Normal asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
-first asks the service worker to finish or restart the exact CRS single flight;
-`Barretenberg.new({ srsSize })` then reads the resulting bb.js IndexedDB cache
+first asks the service worker to finish or restart the fixed CRS single flights;
+`Barretenberg.new({ srsSize: SRS_SIZE })` then reads the resulting bb.js IndexedDB cache
 before proof generation. A later ceremony for another platform likewise reuses
-every repeated artifact URL and any sufficiently large CRS entry; only its
+every repeated artifact URL and the same CRS entries; only its
 profile-specific circuit or other missing entry is fetched. Navigation through
 OAuth therefore neither restarts shared work nor downloads unrelated platform
 profiles.
