@@ -572,21 +572,19 @@ noncanonical encodings fail before use.
 
 ## Ceremony Popup Protocol
 
-### Why each message exists
+`PopupMessage` is the closed internal browser protocol between the application,
+ceremony popup, and prover placements. It carries one ceremony through launch,
+OAuth return, opener authentication, proving, and delivery because those steps
+cross independent documents and cannot share library calls or memory. The
+[architecture drivers](#why-a-popup-protocol-exists) explain why these browser
+boundaries exist; this section defines their ordered messages.
 
-| Message | Boundary crossed and purpose |
-|---|---|
-| `PopupFetchingProver` | initial popup → application: binds the popup source, confirms a compatible package/profile loaded, and signals that warmup work has been started without waiting for completion |
-| `PopupUserDecided` | returned callback → application: signals provider return without disclosing the ceremony ID or OAuth capture to a possibly replaced opener |
-| `PopupAuthenticateOrigin` | application → returned callback: returns the retained ceremony ID over the exact `WindowProxy`; the callback combines it with browser-stamped origin and OAuth state before releasing data |
-| `PopupOAuthResult` | returned callback → application: releases the cleared raw query/fragment capture only after opener authentication so the platform-aware client can classify it |
-| `PopupProve` | application → popup → prover: carries the validated capture plus frozen client, redirect, platform, version, and PKCE input into the isolated proving placement |
-| `PopupProverWindowRequired`, `PopupProverWindowReady` | coordinator ↔ popup/fallback: add the user-opened isolated proving window only when DIP cannot provide isolation, then bind it before forwarding credentials |
-| `PopupNotifyEvent` | prover → application: relays bounded advisory platform progress without exposing credentials, proof data, or application state |
-| `PopupDeliverProof` | prover → application: returns only generated proof bytes and attestations for application-side `OAuthProof` assembly |
-| `PopupAbort` | either direction: stops reachable live work or reports terminal technical failure without creating a reason-bearing remote error API |
+Every receiver exact-validates message shape, direction, source, origin, and
+current phase. Unknown, replayed, out-of-order, or post-terminal messages change
+no state. The protocol has no caller-defined message, extension point, or
+negotiated capability.
 
-### Message schema
+### Protocol version
 
 ```ts
 type PopupProtocolVersion = 1
@@ -599,6 +597,8 @@ client validates it before OAuth and again after return; it does not echo or
 negotiate a version. The package-internal popup/prover boundary introduces no
 second version exchange.
 
+### Launch and prover warmup
+
 ```ts
 interface PopupFetchingProver {
   popupProtocolVersion: PopupProtocolVersion
@@ -607,7 +607,30 @@ interface PopupFetchingProver {
   platformId: PlatformId
   platformCeremonyVersion: PlatformCeremonyVersion
 }
+```
 
+On initial launch, the popup exact-validates and clears its fragment's ceremony
+ID, platform ID, and ceremony version, then loads
+`/api/v1/ceremony/prover#fetch(ceremonyId, platformId,
+platformCeremonyVersion)`. The child clears that fragment, resolves the exact
+profile, and asks the service worker to start or join only those artifact
+fetches. It returns `PopupFetchingProver` after the single flights exist or the
+bounded warmup attempt is unavailable; it does not wait for downloads to
+finish. The popup accepts the message only from its exact child and forwards it
+unchanged to `window.opener` using only server-embedded allowed origins. A
+missing or invalid profile or silent child fails before OAuth; ordinary cache
+or fetch failure continues on the cold proving path.
+
+The application accepts `PopupFetchingProver` only from the configured server
+origin with its live ceremony ID, platform, version, and expected source. A
+scripted launch exact-matches the supplied `WindowProxy`; a real-anchor launch
+binds the matching message source. The client validates the protocol version,
+retains that source, and navigates it to the frozen provider authorization URL.
+Warmup requires no opener reply because it handles only public assets.
+
+### OAuth return and opener authentication
+
+```ts
 interface PopupUserDecided {
   popupProtocolVersion: PopupProtocolVersion
   type: 'popup-user-decided'
@@ -628,7 +651,38 @@ interface PopupOAuthResult {
   ceremonyId: string
   capture: OAuthRedirectCapture
 }
+```
 
+The popup clears the provider callback URL before parsing it. An absent,
+malformed, or duplicate OAuth `state` changes no live state and produces no
+application message. After extracting exactly one syntactically valid state,
+the returned popup sends
+`PopupUserDecided`. This message means only that the provider returned from its
+user-decision step; it exposes neither the ceremony ID nor the OAuth capture and
+does not classify approval, denial, or malformed platform fields. The client
+accepts it only from the retained popup source at the configured server origin
+and expected protocol version, then returns its retained ceremony ID in
+`PopupAuthenticateOrigin`.
+
+The popup accepts `PopupAuthenticateOrigin` only from `window.opener`, requires
+the browser-stamped origin to be allowed, and exact-matches the supplied
+ceremony ID to the captured OAuth state. Only then does it return the unchanged
+bounded query and fragment in `PopupOAuthResult` to that exact source and
+origin. The result has no origin or version field: the browser supplies the
+origin, and the client already validated the returned popup's version. A
+different allowed application occupying the opener receives neither the
+ceremony ID nor the OAuth result. No callback-time binding record or storage is
+needed.
+
+If no valid `PopupAuthenticateOrigin` arrives within
+`REDIRECT_OPENER_TIMEOUT_MS = 30_000`, the popup clears its in-memory capture,
+severs the opener, and renders the same fixed unapproved-application result as
+an invalid opener origin. It renders no callback value and performs no
+navigation with it.
+
+### OAuth classification and proof dispatch
+
+```ts
 interface PopupProve {
   type: 'popup-prove'
   ceremonyId: string
@@ -639,7 +693,34 @@ interface PopupProve {
   capture: OAuthRedirectCapture
   codeVerifier: string | null
 }
+```
 
+The application-scoped client selects the live `Ceremony` from the authenticated
+`PopupOAuthResult`; it does not query IndexedDB or reveal the ID to the
+composition. An unknown, stale, replayed, or post-reload ceremony ID changes no
+live state and causes cleanup through `PopupAbort`. Otherwise the client
+atomically claims the state and uses that Ceremony's platform/version parser to
+exact-validate the capture's transport and fields.
+
+A malformed or mismatched result rejects the Ceremony. A valid provider denial
+resolves `{ status: 'denied' }`. Both paths send `PopupAbort` for popup cleanup.
+A valid acceptance constructs `PopupProve` from the live ceremony ID, selected
+platform/version, frozen client and redirect, derived code verifier, and
+unchanged capture. The application origin is trusted for this transient input;
+the protocol does not try to hide it from other scripts executing in that
+origin.
+
+The popup byte-matches the echoed capture to its retained capture, validates the
+closed platform/version and PKCE shape, and forwards the exact `PopupProve` once
+to its coordinator iframe. The claimed client entry, one-shot Ceremony, and
+popup state machine prevent duplicate proving. The composition's final Job CAS
+prevents a late result from producing an application effect. No separate OAuth
+state, job revision, composition discriminator, wallet state, or connector
+crosses this protocol.
+
+### Isolated prover-window fallback
+
+```ts
 interface PopupProverWindowRequired {
   type: 'popup-prover-window-required'
 }
@@ -648,11 +729,20 @@ interface PopupProverWindowReady {
   type: 'popup-prover-window-ready'
   ceremonyId: string
 }
+```
 
-interface PopupAbort {
-  type: 'popup-abort'
-}
+These messages remain package-internal. A coordinator which cannot prove in its
+DIP iframe sends `PopupProverWindowRequired`; the popup exposes the user-opened
+fallback action. The resulting COOP-isolated window sends
+`PopupProverWindowReady` over the ceremony-scoped same-origin channel. The
+coordinator exact-matches the ceremony ID before forwarding its retained
+`PopupProve` once. Neither message crosses the application boundary or changes
+the Ceremony result. Warmup selection remains document bootstrap data, not a
+protocol message.
 
+### Progress and proof delivery
+
+```ts
 interface PopupNotifyEvent {
   type: 'popup-notify-event'
   ceremonyId: string
@@ -666,7 +756,37 @@ interface PopupDeliverProof {
   proof: Uint8Array
   attestations: readonly Uint8Array[]
 }
+```
 
+After `PopupProve`, the active prover sends zero or more bounded
+`PopupNotifyEvent` records followed by one `PopupDeliverProof`, unless the run
+aborts. The coordinator and popup validate and forward them without adding
+proof or application state. Progress is advisory; delivery contains only the
+generated proof and attestations needed for application-side `OAuthProof`
+assembly. Their detailed semantics are defined under
+[progress, cancellation, and recovery](#progress-cancellation-and-recovery) and
+the [popup/prover channel](#popupprover-channel).
+
+### Abort
+
+```ts
+interface PopupAbort {
+  type: 'popup-abort'
+}
+```
+
+`PopupAbort` is parameterless and terminal for the current live direction. From
+the application it cancels reachable work or cleans up a denied or invalid OAuth
+return; from the popup or prover it reports technical failure and rejects the
+live Ceremony. Before `PopupProve`, the popup clears its capture and attempts to
+close, rendering one fixed fallback if closing fails. Afterwards it also
+cancels reachable proving work. Direction supplies the meaning, so Abort has no
+reason field, ceremony ID, acknowledgement, or response. Context loss may
+produce no Abort at all.
+
+### Closed message union
+
+```ts
 type PopupMessage =
   | PopupFetchingProver
   | PopupUserDecided
@@ -675,108 +795,10 @@ type PopupMessage =
   | PopupProve
   | PopupProverWindowRequired
   | PopupProverWindowReady
-  | PopupAbort
   | PopupNotifyEvent
   | PopupDeliverProof
+  | PopupAbort
 ```
-
-On an initial launch, the redirect exact-validates and clears its fragment's
-ceremony ID, platform ID, and ceremony version, then loads
-`/api/v1/ceremony/prover#fetch(ceremonyId, platformId, platformCeremonyVersion)`. The
-child captures and clears that fragment before importing the root module or using the
-network, resolves exactly that profile from its server-embedded `ProverAssets`
-and code-pinned toolchain assets, asks the service worker to start or join only
-those artifact fetches, and returns
-`PopupFetchingProver(popupProtocolVersion, ceremonyId, platformId,
-platformCeremonyVersion)` after the single flights exist or the bounded attempt
-determines that warmup is unavailable. The redirect accepts this only from its
-exact child and forwards it unchanged to `window.opener`, trying only the
-server-embedded allowed origins as exact `targetOrigin` values. A missing or
-invalid profile or silent child fails before OAuth; ordinary fetch/cache failure
-still follows the cold proving path. Warmup requires no opener response or
-origin authentication.
-
-The application accepts `PopupFetchingProver` only from the exact configured
-redirect origin and a matching live ceremony ID, platform ID, and ceremony
-version. A scripted launch additionally requires
-`MessageEvent.source === expectedPopup`; a real-anchor launch binds that source
-to the matching Ceremony. The client exact-validates the popup protocol version,
-retains the source, and navigates it directly to the frozen provider
-authorization URL.
-
-After clearing a provider callback URL and extracting exactly one syntactically
-valid OAuth `state` as its ceremony ID, the new redirect document sends
-`PopupUserDecided(version)` to the server-embedded allowed origins. This means
-only that the provider returned from its user-decision step; it does not classify
-approval, denial, or malformed platform fields. The client accepts it only from
-the retained popup source at the exact configured redirect origin and under the
-expected protocol version. It responds directly with
-`PopupAuthenticateOrigin(ceremonyId)`.
-
-The popup accepts `PopupAuthenticateOrigin` only from `window.opener`, requires
-its browser-stamped `MessageEvent.origin` to be in `allowedAppOrigins`, and
-exact-matches the supplied ceremony ID to the captured OAuth state. It then
-sends `PopupOAuthResult` only to that exact source and origin. The message has
-no origin or version field: the browser supplies the authoritative origin and
-the client already validated the popup's version. A different allowed origin
-occupying the opener after OAuth receives no ceremony ID, cannot authenticate,
-and receives no OAuth result. No binding record or callback-time storage exists.
-
-If a provider callback receives no valid `PopupAuthenticateOrigin` within
-`REDIRECT_OPENER_TIMEOUT_MS = 30_000`, the popup clears its in-memory capture,
-severs the opener, and renders the same fixed unapproved-application result as
-an invalid opener origin. No callback value is rendered or used for navigation.
-
-After authentication, popup-to-application messages are `PopupOAuthResult`,
-`PopupAbort`, `PopupNotifyEvent`, and `PopupDeliverProof`.
-Application-to-popup messages are `PopupAuthenticateOrigin`, `PopupProve`, and
-parameterless `PopupAbort`. `PopupProve` and Abort are the two application
-responses to `PopupOAuthResult`;
-application-to-popup Abort may also stop a ceremony after `PopupProve`. Before
-`PopupProve`, every Abort identically clears the OAuth capture and attempts to
-close; if closing fails, the popup renders one fixed fallback message. Afterwards
-it cancels reachable proving work and attempts to close. Popup-to-application Abort reports a
-technical terminal failure and rejects the live Ceremony. Direction supplies
-the meaning; Abort carries no reason and has no response. Warmup exposes only
-`PopupFetchingProver` to the application.
-
-`PopupProverWindowRequired` and `PopupProverWindowReady` are package-internal
-messages. Neither changes the Ceremony result; they request and bind the
-fallback proving window. Warmup selection is document bootstrap data, not a
-popup message. Only the resulting `PopupFetchingProver` crosses the application
-boundary.
-
-`PopupOAuthResult` sends the authenticated ceremony ID and unchanged bounded
-`OAuthRedirectCapture`. An absent, malformed, or duplicate OAuth state changes
-no live state. The popup does not select a transport or classify the
-platform-specific result.
-The application origin is trusted for
-both the transient `PopupProve` and provider capture; the protocol does
-not attempt to isolate either value from other scripts executing in that
-origin. Exact `targetOrigin`, `MessageEvent.origin`, and `MessageEvent.source`
-checks prevent unrelated origins from receiving or injecting this traffic.
-The application-scoped `CeremonyClient` uses its in-memory table to select one
-live `Ceremony`; it does not query IndexedDB or reveal the ID to the
-composition. For an unknown, stale, replayed, or post-reload state, the client
-sends `PopupAbort`, and the popup follows the same pre-prove cleanup path.
-Otherwise, the client
-atomically claims the matching state and uses that Ceremony's retained
-platform/version parser to exact-validate the capture's transport and fields
-and classify its outcome. A
-malformed or mismatched capture rejects the
-Ceremony and sends `PopupAbort`. A valid denial resolves with
-`{ status: 'denied' }` and sends `PopupAbort` for popup cleanup. A valid
-acceptance constructs `PopupProve` from the live Ceremony's ID, selected
-platform/version, frozen client and redirect, derived code verifier, and
-received `capture`.
-The popup byte-matches both components of the echoed capture to its retained
-capture, validates
-the `PopupProve` shape and closed platform/version dispatch, and forwards that
-exact message to the coordinator iframe without another app roundtrip. The claimed map entry,
-single-use Ceremony instance, and one-shot popup state machine prevent duplicate
-proving; the final Job CAS prevents a late result from producing an application
-effect. No separate OAuth-state value, job revision, composition discriminator, wallet state,
-or connector crosses the public API.
 
 ### End-to-end sequence
 
