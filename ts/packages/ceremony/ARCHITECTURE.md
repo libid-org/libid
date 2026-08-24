@@ -637,9 +637,9 @@ Prefetch requires no opener reply because it handles only public assets.
 ### Callback and opener authentication
 
 ```ts
-interface PopupRequestOriginAuthentication {
+interface PopupRequestAuthentication {
   popupProtocolVersion: PopupProtocolVersion
-  type: 'popup-request-origin-authentication'
+  type: 'popup-request-authentication'
 }
 
 interface AppAuthenticateOrigin {
@@ -652,8 +652,8 @@ interface OAuthRedirectCapture {
   fragment: string
 }
 
-interface PopupDeliverRedirectCapture {
-  type: 'popup-deliver-redirect-capture'
+interface PopupDeliverParams {
+  type: 'popup-deliver-params'
   ceremonyId: string
   capture: OAuthRedirectCapture
 }
@@ -662,7 +662,7 @@ interface PopupDeliverRedirectCapture {
 The popup clears the provider callback URL before parsing it. An absent,
 malformed, or duplicate OAuth `state` changes no live state and produces no
 application message. After extracting exactly one syntactically valid state,
-the callback popup sends `PopupRequestOriginAuthentication`. It asks the
+the callback popup sends `PopupRequestAuthentication`. It asks the
 retained application to prove continuity before the popup releases the captured
 redirect; it exposes neither the ceremony ID nor that capture and does not
 classify approval, denial, or malformed platform fields. The client
@@ -673,12 +673,12 @@ and expected protocol version, then returns its retained ceremony ID in
 The popup accepts `AppAuthenticateOrigin` only from `window.opener`, requires
 the browser-stamped origin to be allowed, and exact-matches the supplied
 ceremony ID to the captured OAuth state. Only then does it return the unchanged
-bounded query and fragment in `PopupDeliverRedirectCapture` to that exact source
-and origin. The result has no origin or version field: the browser supplies the
+bounded query and fragment in `PopupDeliverParams` to that exact source
+and origin. The message has no origin or version field: the browser supplies the
 origin, and the client already validated the returned popup's version. A
 different allowed application occupying the opener receives neither the
-ceremony ID nor the OAuth result. No callback-time binding record or storage is
-needed.
+ceremony ID nor the redirect capture. No callback-time binding record or
+storage is needed.
 
 If no valid `AppAuthenticateOrigin` arrives within
 `REDIRECT_OPENER_TIMEOUT_MS = 30_000`, the popup clears its in-memory capture,
@@ -702,7 +702,7 @@ interface AppRequestProof {
 ```
 
 The application-scoped client selects the live `Ceremony` from the authenticated
-`PopupDeliverRedirectCapture`; it does not query IndexedDB or reveal the ID to
+`PopupDeliverParams`; it does not query IndexedDB or reveal the ID to
 the composition. An unknown, stale, replayed, or post-reload ceremony ID changes
 no live state and causes cleanup through `Abort`. Otherwise the client
 atomically claims the state and uses that Ceremony's platform/version parser to
@@ -727,12 +727,12 @@ crosses this protocol.
 ### Isolated prover-window fallback
 
 ```ts
-interface ProverRequestWindow {
-  type: 'prover-request-window'
+interface ProverRequestIsolation {
+  type: 'prover-request-isolation'
 }
 
-interface ProverNotifyWindowReady {
-  type: 'prover-notify-window-ready'
+interface ProverConfirmIsolation {
+  type: 'prover-confirm-isolation'
   ceremonyId: string
 }
 ```
@@ -740,13 +740,13 @@ interface ProverNotifyWindowReady {
 These messages remain package-internal. The coordinator iframe and fallback
 window are two placements of the same prover implementation, not different
 prover roles. A coordinator which cannot prove in its DIP iframe sends
-`ProverRequestWindow`; the popup exposes the user-opened
+`ProverRequestIsolation`; the popup exposes the user-opened
 fallback action. The resulting COOP-isolated window sends
-`ProverNotifyWindowReady` over the ceremony-scoped same-origin channel. The
+`ProverConfirmIsolation` over the ceremony-scoped same-origin channel. The
 coordinator exact-matches the ceremony ID before forwarding its retained
 `AppRequestProof` once. Neither message crosses the application boundary or
-changes the Ceremony result. Prefetch selection remains document bootstrap data, not a
-protocol message.
+changes the Ceremony result. Prefetch selection remains document bootstrap
+data, not a protocol message.
 
 ### Progress and proof delivery
 
@@ -797,12 +797,12 @@ produce no Abort at all.
 ```ts
 type PopupMessage =
   | ProverPrefetchingAssets
-  | PopupRequestOriginAuthentication
+  | PopupRequestAuthentication
   | AppAuthenticateOrigin
-  | PopupDeliverRedirectCapture
+  | PopupDeliverParams
   | AppRequestProof
-  | ProverRequestWindow
-  | ProverNotifyWindowReady
+  | ProverRequestIsolation
+  | ProverConfirmIsolation
   | ProverNotifyEvent
   | ProverDeliverProof
   | Abort
@@ -837,11 +837,11 @@ sequenceDiagram
     O->>C: Return to configured callback alias
     Note right of C: Bound capture, then clear URL before module load or later requests
     C->>P: Load /api/v1/ceremony/prover and start or join prefetch
-    C->>A: PopupRequestOriginAuthentication(version)
+    C->>A: PopupRequestAuthentication(version)
     A->>A: Match retained popup and claim Ceremony
     A-->>C: AppAuthenticateOrigin(ceremonyId)
     C->>C: Match opener, allowed browser origin, and OAuth state
-    C->>A: PopupDeliverRedirectCapture(ceremonyId, capture)
+    C->>A: PopupDeliverParams(ceremonyId, capture)
     Note over A,C: Before AppRequestProof, Abort always clears the capture and closes or renders the fixed fallback
     alt Invalid callback or setup
         A->>A: Reject Ceremony
@@ -854,12 +854,12 @@ sequenceDiagram
         C->>P: Echo-check capture and forward AppRequestProof once
         P->>P: Check isolation and SharedArrayBuffer
         alt DIP is not isolated
-            P-->>C: ProverRequestWindow
+            P-->>C: ProverRequestIsolation
             C-->>U: Expose Continue proving
             U->>C: Activate Continue proving
             C->>W: Open /api/v1/ceremony/prover#ceremonyId
             W->>W: Clear fragment and check isolation
-            W-->>P: ProverNotifyWindowReady(ceremonyId) over BroadcastChannel
+            W-->>P: ProverConfirmIsolation(ceremonyId) over BroadcastChannel
             P-->>W: Forward retained AppRequestProof once
             loop Zero or more progress events
                 W-->>P: ProverNotifyEvent(platform step)
@@ -979,11 +979,11 @@ extraction use the same closed platform/version parser; the prover admits no
 second interpretation of the capture.
 
 When qualified, the coordinator proves in place. Otherwise it retains
-`AppRequestProof` in memory and sends `ProverRequestWindow` only to its exact
+`AppRequestProof` in memory and sends `ProverRequestIsolation` only to its exact
 parent. The ceremony popup renders the real **Continue proving** anchor and
 opens no window without that user activation. The top-level `/api/v1/ceremony/prover`
 window clears its ceremony-ID fragment, validates isolation and shared memory,
-then sends `ProverNotifyWindowReady(ceremonyId)` over the scoped
+then sends `ProverConfirmIsolation(ceremonyId)` over the scoped
 `BroadcastChannel`. The coordinator exact-matches that ID and forwards its
 retained `AppRequestProof` once. Unknown, stale, duplicate, pre-request, or wrong-ID
 readiness changes no state. Before Ready, the only other accepted window message
@@ -1340,7 +1340,7 @@ interface CeremonyEvent {
 
 The application-side `Ceremony` client owns the common stage. It enters
 `authorization` when `proveUserIdentity()` starts, `oauth-validation` when an
-authenticated `PopupDeliverRedirectCapture` selects the live Ceremony,
+authenticated `PopupDeliverParams` selects the live Ceremony,
 `prover-activation` only while the popup waits for the fallback **Continue
 proving** activation, and `proof-generation` when proving starts. Immediate
 `Identity` construction completes `proof-generation`; it is not a separate
