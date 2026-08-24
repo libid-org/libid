@@ -47,7 +47,7 @@ External-wallet and native libID wallet compositions use the same ceremony.
 They encode their operation into opaque `transactionData` before the ceremony
 and interpret it only after the ceremony returns `Identity`. A native wallet
 may run key preparation before the ceremony and wallet confirmation afterward;
-those sessions do not extend `PopupMessage`.
+those sessions do not extend the browser message protocol.
 
 The application origin owns the durable operation record, called the Job. One
 application-scoped `CeremonyClient` owns its live ceremonies, retained popups,
@@ -85,7 +85,10 @@ started provider navigation. Multithreaded proving cannot be made a normal
 function call in the application page because isolation is a response-level
 property, not a library option.
 
-### Why a popup protocol exists
+Communication among these documents is the **Ceremony Cross-Document Protocol
+(CCDP)**.
+
+### Why CCDP exists
 
 The package provides the application-side client, but the popup and prover are
 independent server-hosted documents emitted by that same package release. A
@@ -95,7 +98,7 @@ browser transports available across those boundaries are `postMessage` for
 live opener and parent/child channels and a same-origin `BroadcastChannel` for
 the optional prover window after COOP removes its opener.
 
-`PopupMessage` is therefore an internal browser application binary interface
+CCDP is therefore an internal browser application binary interface
 (ABI), not a remote product API or plugin system. Its closed records provide
 the minimum information needed to:
 
@@ -118,12 +121,12 @@ so that this necessary transport does not become an extension surface.
 | Decision | Constraint and rationale | Cost and revisit condition |
 |---|---|---|
 | Serve fixed popup and prover documents from the configured server | OAuth needs a registered callback document; isolation, Content Security Policy (CSP), allowed origins, and asset manifests are response properties | server must expose the documented routes; revisit only if browsers provide an authenticated callback and isolated-prover primitive without separate documents |
-| Keep the popup non-isolated and isolate the prover separately | preserving the application opener conflicts with top-level COOP isolation | requires the Popup Protocol and a prover child; this is the core unavoidable complexity |
+| Keep the popup non-isolated and isolate the prover separately | preserving the application opener conflicts with top-level COOP isolation | requires CCDP and a prover child; this is the core unavoidable complexity |
 | Reuse one ceremony popup across launch, provider navigation, callback, and proving UI | preserves user activation, opener continuity, and one primary visible ceremony surface | navigation destroys popup memory, so the application retains ceremony state and reauthenticates the returned document |
 | Prefer DIP iframe proving with a user-opened isolated-window fallback | DIP gives an isolated child without severing the popup; browser support is not universal | adds two package-internal placement messages and a **Continue proving** action; remove the fallback only after the supported browser matrix makes it unnecessary |
 | Prefetch prover assets through a service worker during consent | proving assets are large and popup navigation destroys document-owned fetch state | adds cache orchestration; retain because the PoC showed material cold-start improvement |
 | Keep ceremonies memory-only and one-shot | durable OAuth/proof recovery would add credential storage, replay, migration, and cleanup state | interruption before delivery repeats OAuth; add recovery only as a separately justified protocol revision |
-| Use one closed message union and one `PopupProtocolVersion` | popup, coordinator, and fallback are one package-owned browser protocol | a breaking wire change increments one version; no per-message negotiation |
+| Use one closed message union and one `CCDPVersion` | application, popup, coordinator, and fallback participate in one package-owned cross-document protocol | a breaking wire change increments one version; no per-message negotiation |
 
 Future material decisions belong here with their constraint, consequence, and
 concrete revisit condition. Exact mechanics belong in their owning reference
@@ -277,12 +280,12 @@ The package-facing API surface is:
 
 | Export or entrypoint | Contract |
 |---|---|
-| `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization and `OAuthProof` construction, local evidence decoding, and `PopupProtocolVersion` |
+| `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization and `OAuthProof` construction, local evidence decoding, `CCDPMessage`, and `CCDPVersion` |
 | `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `CeremonyConfig` fetch, and stateful `Ceremony` orchestration |
 | `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(capture, allowedAppOrigins)` to the cleared redirect document |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts the closed Popup Protocol and its ServiceWorker branch owns asset-prefetch single flights |
+| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
 
-The API below and the Ceremony Popup Protocol records are the launch surface.
+The API below and the CCDP records are the launch surface.
 Implementation-private helpers may change without changing authority or wire
 behavior.
 
@@ -570,13 +573,14 @@ normative PKCE construction. Derived hashes are exact 32-byte `Uint8Array`
 values. Unknown fields, aliases, coercions, and
 noncanonical encodings fail before use.
 
-## Ceremony Popup Protocol
+## Ceremony Cross-Document Protocol (CCDP)
 
-`PopupMessage` is the closed internal browser protocol between the application,
-ceremony popup, and prover placements. It carries one ceremony through launch,
-OAuth return, opener authentication, proving, and delivery because those steps
-cross independent documents and cannot share library calls or memory. The
-[architecture drivers](#why-a-popup-protocol-exists) explain why these browser
+CCDP is the closed internal browser protocol between the application, ceremony
+popup, and prover placements. Its wire surface is the `CCDPMessage` union. It
+carries one ceremony through launch, OAuth return, opener authentication,
+proving, and delivery because those steps cross independent documents and
+cannot share library calls or memory. The
+[architecture drivers](#why-ccdp-exists) explain why these browser
 boundaries exist; this section defines their ordered messages.
 
 A message name starts with the component which creates it: `App`, `Popup`, or
@@ -593,10 +597,10 @@ negotiated capability.
 ### Protocol version
 
 ```ts
-type PopupProtocolVersion = 1
+type CCDPVersion = 1
 ```
 
-`PopupProtocolVersion` versions the complete `PopupMessage` union shared by the
+`CCDPVersion` versions the complete `CCDPMessage` union shared by the
 application/popup and popup/prover boundaries. The initial and returned
 ceremony popup carries the version in its first application-facing message. The
 client validates it before OAuth and again after return; it does not echo or
@@ -607,7 +611,7 @@ second version exchange.
 
 ```ts
 interface ProverPrefetchingAssets {
-  popupProtocolVersion: PopupProtocolVersion
+  ccdpVersion: CCDPVersion
   type: 'prover-prefetching-assets'
   ceremonyId: string
   platformId: PlatformId
@@ -638,7 +642,7 @@ Prefetch requires no opener reply because it handles only public assets.
 
 ```ts
 interface PopupRequestAuthentication {
-  popupProtocolVersion: PopupProtocolVersion
+  ccdpVersion: CCDPVersion
   type: 'popup-request-authentication'
 }
 
@@ -807,7 +811,7 @@ message.
 ### Closed message union
 
 ```ts
-type PopupMessage =
+type CCDPMessage =
   | ProverPrefetchingAssets
   | PopupRequestAuthentication
   | AppAuthenticateOrigin
@@ -842,7 +846,7 @@ sequenceDiagram
     C->>P: Embed /api/v1/ceremony/prover#prefetch(ceremonyId, platformId, ceremonyVersion)
     P->>P: Capture and clear fragment, then select profile
     P->>P: Start or join only the selected artifact fetches
-    P-->>C: ProverPrefetchingAssets(protocolVersion, ceremonyId, platformId, ceremonyVersion)
+    P-->>C: ProverPrefetchingAssets(ccdpVersion, ceremonyId, platformId, ceremonyVersion)
     C-->>A: Forward ProverPrefetchingAssets unchanged
     A->>A: Validate versions, profile, and popup source
     A->>C: Navigate retained popup to provider URL
@@ -977,7 +981,7 @@ redirect capture without a valid bounded ceremony ID sends no callback value.
 
 ### Popup/prover channel
 
-The popup/prover boundary reuses the closed `PopupMessage` union. The ceremony
+The popup/prover boundary reuses the closed `CCDPMessage` union. The ceremony
 popup always forwards the application's exact `AppRequestProof` once to its
 coordinator iframe. On receipt, the coordinator checks isolation and
 shared-memory availability before any credential-bearing network request. Its
@@ -1026,7 +1030,7 @@ duplicate it. The DIP path binds
 the exact parent/child `WindowProxy` and browser-stamped origin. The fallback
 window uses the cleared ceremony-ID fragment only to derive its same-origin
 `BroadcastChannel` with the coordinator. All browser boundaries share
-`PopupProtocolVersion`; no
+`CCDPVersion`; no
 second protocol or version exists.
 
 The prover performs the selected version's exchange, notarization, witness
@@ -1378,7 +1382,7 @@ event contains operation inputs, outputs,
 credentials, identities, witnesses, proofs, raw exceptions, or raw service
 errors. The application may map this advisory view into its broader job
 progress; later confirmation, submission, and finality never enter the
-Ceremony Popup Protocol.
+CCDP.
 
 `CeremonyEvent` carries only advisory progress. OAuth denial is returned only
 through `proveUserIdentity()`; acceptance proceeds to `AppRequestProof`.
@@ -1495,8 +1499,8 @@ DOM UI.
 
 The redirect deployment, configured libID-asset origins, and code-pinned
 toolchain origins are code-supply-chain trust boundaries. A malicious owner can
-replace the document, CSP, and matching assets; the Ceremony Popup Protocol
-cannot constrain that owner. Dedicated
+replace the document, CSP, and matching assets; CCDP cannot constrain that
+owner. Dedicated
 origins, immutable assets, CSP, SRI, and closed messages reduce accidental
 exposure and cross-application confusion, not malicious deployment authority.
 
@@ -1515,7 +1519,7 @@ output-shape versions. A proof change normally changes the assembled
 `OAuthProof`; a rare compatible internal change does not justify another
 public compatibility axis.
 
-`PopupProtocolVersion` changes only when the shared browser message union or
+`CCDPVersion` changes only when the `CCDPMessage` union or
 its application/popup or popup/prover semantics break. One package release may
 retain older protocol and platform-version validators during its compatibility window. Local
 job schema versioning remains owned by the client store; deployment route and
