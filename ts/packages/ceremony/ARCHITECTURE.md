@@ -320,21 +320,17 @@ dispatch without fetching configuration again.
 
 ### Prover deployment assets
 
-Heavy prover assets are deployment data embedded into `/oauth/prove`, not
-frontend `ServerConfig` or ceremony input:
+Only libID-owned prover release assets are deployment data embedded into
+`/oauth/prove`, not frontend `ServerConfig` or ceremony input:
 
 ```ts
 type ProverArtifactKind =
-  | 'acvm-wasm'
-  | 'noirc-abi-wasm'
   | 'notarization-client-wasm'
-  | 'prover-wasm'
   | 'circuit'
 
 interface ProverArtifact {
   kind: ProverArtifactKind
   url: string
-  integrity: string
 }
 
 interface ProverProfile {
@@ -349,21 +345,28 @@ interface ProverAssets {
 ```
 
 The server generates each `/oauth/prove` document with one exact, validated
-`ProverAssets` value. Its bootstrap passes that value and its already-cleared
+`ProverAssets` value containing only circuit and notarization-client release
+locations. Its bootstrap passes that value and its already-cleared
 closed fragment input to the imported prover entrypoint. This is the prover-side equivalent of embedding
 `allowedAppOrigins` into `/oauth/redirect`: request values cannot add or replace
-a profile, URL, or integrity value, and the prover never fetches
+a profile or URL, and the prover never fetches
 `ServerConfig`. The document contains every still-supported deployed profile,
 but a ceremony fetches only its selected platform/version profile.
+
+The ceremony package pins the compatible Noir and bb.js dependencies in code.
+Their JavaScript is part of the prover build; whether the build emits one
+`libid-ceremony-prover.js` file or immutable companion chunks is not deployment
+configuration. The build likewise owns every toolchain worker, WASM, and CRS
+location. A deployer cannot replace those dependencies through `ProverAssets`.
 
 Each closed platform/version module pins its circuit release and SRS size. SRS
 size is protocol code, not deployment data:
 
-| Profile | Artifacts | Measured circuit size | Pinned BN254 SRS size |
+| Profile | Configurable libID assets | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,006 | 131,072 (2^17) points |
-| `github/v1` | the same five shared artifacts as X | 42,006 | 131,072 (2^17) points |
-| `google/v1` | shared ACVM, Noir ABI, and prover WASM; `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
+| `x/v1` | shared notarization-client WASM and `bearer-link` circuit descriptor | 42,006 | 131,072 (2^17) points |
+| `github/v1` | the same two shared artifacts as X | 42,006 | 131,072 (2^17) points |
+| `google/v1` | `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
 The pinned current-circuit heavy-resource subtotal is:
 
@@ -379,7 +382,7 @@ whose target is the source commit pinned below. `oidc_google.json` is 1,312,738
 bytes and `bearer_link.json` is 171,956 bytes. The pinned bb.js
 `barretenberg-threads.wasm.gz` is 3,071,085 bytes. The pinned Noir runtime adds
 3,049,596 bytes of `acvm_js_bg.wasm` and 659,396 bytes of
-`noirc_abi_wasm_bg.wasm`; every profile shares their exact URL and integrity.
+`noirc_abi_wasm_bg.wasm`; every profile shares these code-owned build assets.
 The [`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
 browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`; commits between
 that tag and the source link below do not change the bundle.
@@ -434,18 +437,22 @@ aligned sizing, a circuit-sized warmup is followed by a larger desktop refetch.
 The selected bb.js bytes also fix its primary and fallback CRS origins, which
 are the only CRS origins admitted by the prover response policy.
 
-Deployment selects the closed platform/version and embeds only its ordinary
-artifact URLs and integrity values. It neither computes nor configures SRS
-size, and it does not copy, slice, or reimplement the CRS downloader.
+Deployment selects the closed platform/version and embeds only its circuit and
+notarization-client URLs. Platform-version code pins the expected digest for
+each libID artifact. Noir and bb.js code, workers, WASM, CRS locations, and SRS
+sizes likewise remain closed ceremony-build constants. The deployment neither
+computes nor configures them and does not copy, slice, or reimplement the CRS
+downloader.
 
-Shared entries use the same immutable URL and integrity value. The service
-worker keys ordinary artifact single flights and Cache Storage entries by
-canonical URL; repeating an entry in another profile joins the existing request
-or cache hit. CRS single flights are keyed by curve and point count and complete
-through bb.js's IndexedDB cache. One URL with conflicting kind or integrity is
-invalid deployment data. Platform modules define the exact artifact kinds and
-SRS size for each verifier version and reject a missing, duplicate, or
-additional artifact before fetching.
+Shared deployment entries use the same immutable URL. The
+service worker resolves a selected profile from those entries plus the
+code-pinned toolchain assets, then keys ordinary artifact single flights and
+Cache Storage entries by canonical URL; a repeated URL joins the existing
+request or cache hit. CRS single flights are keyed by curve and point count and
+complete through bb.js's IndexedDB cache. One deployment URL mapped to
+conflicting kinds is invalid. Platform modules define each verifier version's
+exact libID artifact kinds, digests, and SRS size and reject a missing,
+duplicate, or additional deployment artifact before fetching.
 
 `/oauth/prove` has three closed fragment forms. The bootstrap copies and clears
 the fragment before importing the root module or using storage or the network:
@@ -685,7 +692,7 @@ authenticate and communicate with the application opener. `/oauth/prove` is
 the single prover document used first for warmup and later for proving. Neither
 route depends on application business logic or stores ceremony state.
 Warmup adds no server route or response variant: both invocations receive the
-same `/oauth/prove` HTML and the same deployment-configured prover module. The
+same `/oauth/prove` HTML and the same immutable prover module. The
 Window branch starts warmup on load and begins proof execution only after a
 valid `PopupProve`; no request parameter selects a mode.
 
@@ -729,9 +736,10 @@ That document may warm assets without isolation or credentials. Its
 `libid-ceremony-prover.js` Window branch registers the same module URL as a
 module service worker. The redirect gives the child a closed
 `#fetch(ceremonyId, platformId, verifierVersion)` bootstrap fragment. The child
-clears it before importing the root module or using the network, selects that profile from
-its server-embedded manifest, and asks the worker to start only those artifact
-single flights. The ceremony ID is retained only for the readiness response;
+clears it before importing the root module or using the network, selects that
+profile from its server-embedded libID-asset manifest and code-pinned toolchain
+assets, and asks the worker to start only those artifact single flights. The
+ceremony ID is retained only for the readiness response;
 the proving implementation receives only the selected platform and verifier version. After
 the flights exist or the bounded startup attempt determines that warmup is
 unavailable, the child returns `PopupFetchingProver` and the redirect forwards
@@ -860,8 +868,9 @@ On an initial launch, the redirect exact-validates and clears its fragment's
 ceremony ID, platform ID, and verifier version, then loads
 `/oauth/prove#fetch(ceremonyId, platformId, platformVerifierVersion)`. The
 child captures and clears that fragment before importing the root module or using the
-network, selects exactly that profile from its server-embedded `ProverAssets`, asks the
-service worker to start or join only those artifact fetches, and returns
+network, resolves exactly that profile from its server-embedded `ProverAssets`
+and code-pinned toolchain assets, asks the service worker to start or join only
+those artifact fetches, and returns
 `PopupFetchingProver(popupProtocolVersion, ceremonyId, platformId,
 platformVerifierVersion)` after the single flights exist or the bounded attempt
 determines that warmup is unavailable. The redirect accepts this only from its
@@ -1255,8 +1264,9 @@ proving; there is no warmup route, artifact, or mode flag.
 The `/oauth/prove` bootstrap exact-validates its server-embedded `ProverAssets`.
 For warmup, its Window branch accepts only the closed, cleared
 `#fetch(ceremonyId, platformId, verifierVersion)` fragment and selects exactly
-one matching profile. The fragment can select a manifest profile but cannot
-supply an asset URL. The ceremony ID is only echoed in readiness; it is not
+one matching profile, combining its libID-owned deployment entries with the
+toolchain assets pinned by the prover build. The fragment can select a manifest
+profile but cannot supply an asset URL. The ceremony ID is only echoed in readiness; it is not
 passed into the proving implementation. The service-worker branch contains no
 OAuth or application state. It owns each selected immutable asset fetch from
 the first byte, keys ordinary artifact single flights by canonical URL, starts
@@ -1267,8 +1277,9 @@ flights exist or the bounded startup attempt fails, without waiting for
 download completion, the child returns `PopupFetchingProver`, and the
 application proceeds to the provider without replying.
 
-A later coordinator or prover window selects the same profile from its own
-embedded manifest using the exact `PopupProve` platform/version. Normal asset
+A later coordinator or prover window resolves the same profile from its own
+embedded manifest and code-pinned assets using the exact `PopupProve`
+platform/version. Normal asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
 first asks the service worker to finish or restart the exact CRS single flight;
 `Barretenberg.new({ srsSize })` then reads the resulting bb.js IndexedDB cache
@@ -1299,7 +1310,7 @@ a checkpoint.
 |---|---|
 | `/_libid/config` | exact `ServerConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
 | `/oauth/redirect` | top-level non-isolated deployment-generated document embedding the canonical allowed-origin set; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
-| `/oauth/prove` | the one deployment-generated warmup/proving document embedding exact `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `COEP: require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
+| `/oauth/prove` | the one deployment-generated warmup/proving document embedding exact libID-owned `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `COEP: require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
 | server platform routes | prover-only exact method, body, and origin; reject redirects; no-store; bounded time/size; credential log redaction |
 
 Both documents start from `default-src 'none'`, `object-src 'none'`,
@@ -1309,8 +1320,9 @@ hash. Root modules use immutable URLs, SRI, CORS, and COEP-compatible response
 policy. The deployment-fixed same-origin `libid-ceremony-prover.js` URL already
 loaded by `/oauth/prove` is also its module-service-worker registration URL; it
 permits a scope covering `/oauth/`. This adds no second prover artifact, route,
-or `ServerConfig` field. The server embeds every prefetched WASM and circuit URL
-plus integrity in `ProverAssets`; opener,
+or `ServerConfig` field. The server embeds only the configurable notary and
+circuit URLs in `ProverAssets`; platform-version code pins their digests, and
+the prover build pins its Noir and bb.js dependency graph. Opener,
 launch profile, and callback input can only select an exact listed
 platform/version and cannot supply an asset URL or SRS size. The pinned bb.js
 module fixes the only admitted CRS origins.
@@ -1319,9 +1331,9 @@ No request value is interpolated into CSP or another response header. Because
 a worker cannot directly load a cross-origin worker URL, the prover may create
 only a local `blob:` bootstrap which imports the fixed immutable worker module
 and installs the same fixed bridge for nested workers. Its CSP permits that
-bootstrap and only the deployment manifest's asset origins plus the exact
-runtime network origins required by enabled platform versions. Runtime fetches
-remain restricted to the selected profile's exact URLs.
+bootstrap, the deployment manifest's libID-asset origins, and the exact
+code-pinned toolchain network origins. Runtime fetches remain restricted to the
+selected profile's resolved exact URLs.
 
 The application page must preserve an opener through the provider roundtrip.
 `COOP: unsafe-none` and `same-origin-allow-popups` are compatible; a strictly
@@ -1330,9 +1342,10 @@ transport exists. Redirect and prover pages accept no application HTML,
 component, stylesheet, script URL, or raw error markup and render fixed native
 DOM UI.
 
-The redirect deployment and configured asset origin are code-supply-chain
-trust boundaries. A malicious owner can replace the document, CSP, and matching
-assets; the Ceremony Popup Protocol cannot constrain that owner. Dedicated
+The redirect deployment, configured libID-asset origins, and code-pinned
+toolchain origins are code-supply-chain trust boundaries. A malicious owner can
+replace the document, CSP, and matching assets; the Ceremony Popup Protocol
+cannot constrain that owner. Dedicated
 origins, immutable assets, CSP, SRI, and closed messages reduce accidental
 exposure and cross-application confusion, not malicious deployment authority.
 
