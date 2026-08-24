@@ -1069,9 +1069,9 @@ repository owns the exact proof relation and ABI. Launch uses these artifacts:
 
 | Profile | Circuit | Returned attestations |
 |---|---|---|
-| `google/v1` | [`oidc-google`](https://github.com/libid-org/libid-circuits/blob/91bc3446eeaa50ab2056d88dd9941374aa4fa34c/circuits/oidc-google/src/main.nr) | none |
-| `x/v1` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/91bc3446eeaa50ab2056d88dd9941374aa4fa34c/circuits/bearer-link/src/main.nr) | token, identity |
-| `github/v1` | the same `bearer-link` artifact | token exchange, identity |
+| `google` | [`oidc-google`](https://github.com/libid-org/libid-circuits/blob/91bc3446eeaa50ab2056d88dd9941374aa4fa34c/circuits/oidc-google/src/main.nr) | none |
+| `x` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/91bc3446eeaa50ab2056d88dd9941374aa4fa34c/circuits/bearer-link/src/main.nr) | token, identity |
+| `github` | the same `bearer-link` artifact | token exchange, identity |
 
 Those links pin the current launch source snapshot. Deployment consumes the
 matching compiled Abstract Circuit Intermediate Representation (ACIR), circuit
@@ -1172,9 +1172,9 @@ stage and event envelope are defined under
 
 | Profile | Platform-step codes |
 |---|---|
-| `google/v1` | `prover-readiness` → `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` → `witness` → `proof` |
-| `x/v1` | `prover-readiness` → `notary-initialization` → `token-session` → `token-attestation` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
-| `github/v1` | `prover-readiness` → `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
+| `google` | `prover-readiness` → `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` → `witness` → `proof` |
+| `x` | `prover-readiness` → `notary-initialization` → `token-session` → `token-attestation` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
+| `github` | `prover-readiness` → `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
 
 `prover-readiness` covers awaiting the selected artifact single flights after
 `AppRequestProof`; those downloads may already have started during prefetch. Google
@@ -1240,16 +1240,16 @@ package pins one launch-wide structured reference string size,
 
 | Profile | Configurable libID assets | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x/v1` | shared notarization-client WASM and `bearer-link` circuit descriptor | 42,006 | 262,144 (2^18) points |
-| `github/v1` | the same two shared artifacts as X | 42,006 | 262,144 (2^18) points |
-| `google/v1` | `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
+| `x` | shared notarization-client WASM and `bearer-link` circuit descriptor | 42,006 | 262,144 (2^18) points |
+| `github` | the same two shared artifacts as X | 42,006 | 262,144 (2^18) points |
+| `google` | `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
 The pinned current-circuit heavy-resource subtotal is:
 
 | Profile | Non-CRS artifact bodies | Pinned CRS bodies | Known heavy subtotal |
 |---|---:|---:|---:|
-| `google/v1` | 8,092,815 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,855 bytes (19.72 MiB) |
-| `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 12,583,040 bytes (12.00 MiB) | 37,266,735 bytes (35.54 MiB) |
+| `google` | 8,092,815 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,855 bytes (19.72 MiB) |
+| `x` or `github` | 24,683,695 bytes (23.54 MiB) | 12,583,040 bytes (12.00 MiB) | 37,266,735 bytes (35.54 MiB) |
 
 These exact resource-body counts use the compatible tuple Nargo
 `1.0.0-beta.25`, native bb `5.2.0`, and bb.js `5.2.0`, as recorded by
