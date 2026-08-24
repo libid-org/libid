@@ -363,19 +363,19 @@ size is protocol code, not deployment data:
 |---|---|---:|---:|
 | `x/v1` | shared ACVM, Noir ABI, notarization-client, and prover WASM; shared `bearer-link` circuit descriptor | 42,006 | 131,072 (2^17) points |
 | `github/v1` | the same five shared artifacts as X | 42,006 | 131,072 (2^17) points |
-| `google/v1` | shared ACVM, Noir ABI, and prover WASM; `jwt_email` circuit descriptor | 179,443 | 262,144 (2^18) points |
+| `google/v1` | shared ACVM, Noir ABI, and prover WASM; `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
 The pinned current-circuit heavy-resource subtotal is:
 
 | Profile | Non-CRS artifact bodies | Pinned CRS bodies | Known heavy subtotal |
 |---|---:|---:|---:|
-| `google/v1` | 8,092,813 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,853 bytes (19.72 MiB) |
+| `google/v1` | 8,092,815 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,855 bytes (19.72 MiB) |
 | `x/v1` or `github/v1` | 24,683,695 bytes (23.54 MiB) | 8,388,736 bytes (8.00 MiB) | 33,072,431 bytes (31.54 MiB) |
 
 These exact resource-body counts use the compatible tuple Nargo
 `1.0.0-beta.25`, native bb `5.2.0`, and bb.js `5.2.0`, as recorded by
-[`libid-circuits v0.3.0-rc.2`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0-rc.2),
-whose target is the source commit pinned below. `jwt_email.json` is 1,312,736
+[`libid-circuits v0.3.0`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0),
+whose target is the source commit pinned below. `oidc_google.json` is 1,312,738
 bytes and `bearer_link.json` is 171,956 bytes. The pinned bb.js
 `barretenberg-threads.wasm.gz` is 3,071,085 bytes. The pinned Noir runtime adds
 3,049,596 bytes of `acvm_js_bg.wasm` and 659,396 bytes of
@@ -388,7 +388,7 @@ The circuit release's pinned `bb gates -t evm` produces the measured sizes in
 the table, but gate count alone does not determine the deployable SRS floor.
 bb.js 5.2 requires compressed SRS input to be a positive multiple of its 4 MiB
 verification chunk, so `bearer_link` fails at its mathematical 2^16 ceiling and
-requires 2^17; `jwt_email` remains 2^18. Platform modules pin these
+requires 2^17; `oidc_google` remains 2^18. Platform modules pin these
 prover-qualified minima rather than deriving them at deployment. The CRS column
 is therefore the selected compressed BN254
 G1 prefix at 32 bytes per point, the shared 2^16-point Grumpkin G1 data at 64
@@ -404,7 +404,7 @@ A later cold X/GitHub ceremony after either one fetches no new heavy profile
 asset. X/GitHub after Google reuses its larger BN254 cache and fetches only
 17,903,618 bytes of notary WASM and the bearer circuit. Google after X/GitHub
 replaces the shorter BN254 prefix with its 2^18-point prefix and fetches its
-1,312,736-byte circuit.
+1,312,738-byte circuit.
 
 The counts are before HTTP content encoding and exclude HTML, the root and
 worker JavaScript graph, headers, OAuth/notary traffic, and attestations. They
@@ -465,8 +465,8 @@ repository owns the exact proof relation and ABI. Launch uses these artifacts:
 
 | Profile | Circuit | Returned attestations |
 |---|---|---|
-| `google/v1` | [`jwt_email`](https://github.com/libid-org/libid-circuits/blob/7b4a8b1940bae151f471d9863df3e493ac535bc0/circuits/jwt_email/src/main.nr) | none |
-| `x/v1` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/7b4a8b1940bae151f471d9863df3e493ac535bc0/circuits/bearer-link/src/main.nr) | token, identity |
+| `google/v1` | [`oidc-google`](https://github.com/libid-org/libid-circuits/blob/91bc3446eeaa50ab2056d88dd9941374aa4fa34c/circuits/oidc-google/src/main.nr) | none |
+| `x/v1` | [`bearer-link`](https://github.com/libid-org/libid-circuits/blob/91bc3446eeaa50ab2056d88dd9941374aa4fa34c/circuits/bearer-link/src/main.nr) | token, identity |
 | `github/v1` | the same `bearer-link` artifact | token exchange, identity |
 
 Those links pin the current launch source snapshot. Deployment consumes the
@@ -498,7 +498,7 @@ bb.js version.
 
 `platforms/google` receives the captured ID Token and frozen client identifier.
 It obtains the JWK selected by the token's `kid` from Google's JWKS endpoint and
-constructs the `jwt_email` input map:
+constructs the `oidc_google` input map:
 
 - private witness: JWT signing input and payload bytes with their lengths,
   checked-claim offsets and lengths, raw email/`sub`/`aud` bytes, RSA signature,
