@@ -9,16 +9,17 @@ to verify.
 This document defines the package boundary, public application API and
 configuration, result lifecycle, and platform prover implementation and assets.
 The package's browser protocol is defined separately in [CCDP.md](CCDP.md).
-Both are implementation architecture, not part of the normative protocol
-specification.
+The integrating server's routes, deployment inputs, and response policy are
+defined in [SERVER.md](SERVER.md). These documents are implementation
+architecture, not part of the normative protocol specification.
 
 The normative libID specification owns the proof statement and authorization
 encoding. See the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md)
-for their exact content. Together, this document and CCDP otherwise stand
-alone; application job storage and all post-ceremony effects are outside their
-scope.
+for their exact content. Together, this document, CCDP, and the server contract
+otherwise stand alone; application job storage and all post-ceremony effects
+are outside their scope.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 
 The specification's **Ceremony Client** role maps to this package's closed
@@ -313,40 +314,11 @@ required by the no-ceremony-recovery launch scope.
 
 ### Server configuration
 
-The application server exposes public configuration at
-`GET /api/v1/ceremony/config`:
-
-```ts
-type PlatformCeremonyVersion = number
-
-interface PlatformConfig {
-  clientId: string
-  ceremonyVersions: readonly PlatformCeremonyVersion[]
-}
-
-interface CeremonyConfig {
-  schema: 1
-  redirectUri: string
-  platforms: Partial<Record<PlatformId, PlatformConfig>>
-}
-```
-
-The application-scoped client fetches this record once with native `fetch` and
-validates it through `@libid/ceremony/protocol`; there is no configuration
-module. The fetch requires an exact browser `Origin`. `redirectUri` is the
-registered HTTPS URL on the configured server origin, with no credentials,
-query, or fragment. Its path is deployment-configurable and defaults to
-`/auth/v1/callback`; loopback development may use HTTP. Each platform entry
-contains its public client ID and a nonempty, duplicate-free set of supported
-ceremony versions. List order has no meaning: the client chooses the newest
-version according to its closed local implementation table from the
-intersection. Platform entries contain no credentials.
-
-`allowedAppOrigins` is deployment configuration, not a public `CeremonyConfig`
-field. The server uses the same canonical set for exact request-origin
-Cross-Origin Resource Sharing (CORS) and embeds it into the byte-identical popup
-document served at both `/api/v1/ceremony/popup` and the configured
-`redirectUri` path. It is never derived from a request's `Origin` or `Referer`.
+The integrating server exposes the exact `CeremonyConfig` and origin-controlled
+fetch defined in [SERVER.md](SERVER.md#public-configuration). The
+application-scoped client fetches it once with native `fetch` and validates it
+through `@libid/ceremony/protocol`; there is no configuration module. Popup and
+prover do not fetch it.
 
 The client freezes the selected platform, ceremony version, client ID, and
 redirect URI in the live Ceremony. `AppRequestProof` carries those values; the popup
@@ -466,10 +438,10 @@ X and GitHub additionally use the browser TLSNotary bundle built by the
 [`libid-org/notary` build script](https://github.com/libid-org/notary/blob/e0ce1f1e0bedcde54740d1af70d4eaf9b439a9fb/scripts/build-tlsn-wasm.sh)
 and published in [`libid-org/notary` releases](https://github.com/libid-org/notary/releases).
 That release contains the JavaScript wrapper, WASM, and worker bootstrap. The
-profile's `notarization-client-wasm` entry selects its heavy WASM member; the
-wrapper and worker bootstrap remain immutable dependencies of the prover root
-module. Neither an application nor `AppRequestProof` selects a notary, circuit, or
-bb.js version.
+global `ProverAssets.notarizationClientUrl` selects the immutable client
+release. GitHub releases may host the initial asset; moving it to a CDN changes
+only deployment configuration. Neither an application nor `AppRequestProof`
+selects a notary, circuit, or bb.js version.
 
 #### Google
 
@@ -562,40 +534,12 @@ before starting the next code or `failed` immediately before AbortCeremony. A ca
 still emits the same sequence. OAuth, isolation, delivery, and preview
 construction are represented elsewhere and do not add platform steps.
 
-### Deployment assets and shared toolchain
+### Shared prover toolchain
 
-Only libID-owned prover release assets are deployment data embedded into
-`/api/v1/ceremony/prover`, not frontend `CeremonyConfig` or ceremony input:
-
-```ts
-type ProverArtifactKind =
-  | 'notarization-client-wasm'
-  | 'circuit'
-
-interface ProverArtifact {
-  kind: ProverArtifactKind
-  url: string
-}
-
-interface ProverProfile {
-  platformId: PlatformId
-  platformCeremonyVersion: PlatformCeremonyVersion
-  artifacts: readonly ProverArtifact[]
-}
-
-interface ProverAssets {
-  profiles: readonly ProverProfile[]
-}
-```
-
-The server generates each `/api/v1/ceremony/prover` document with one exact, validated
-`ProverAssets` value containing only circuit and notarization-client release
-locations. Its bootstrap passes that value and its already-cleared
-closed fragment input to the imported prover entrypoint. This is the prover-side equivalent of embedding
-`allowedAppOrigins` into the popup document: request values cannot add or replace
-a profile or URL, and the prover never fetches
-`CeremonyConfig`. The document contains every still-supported deployed profile,
-but a ceremony fetches only its selected platform/version profile.
+The integrating server embeds the exact `ProverAssets` catalog defined in
+[SERVER.md](SERVER.md#embedded-prover-assets). It contains only configurable
+libID-owned circuit and notarization-client release locations; a ceremony
+fetches only its selected platform/version profile.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
 Their JavaScript is part of the prover build; whether the build emits one
@@ -610,7 +554,7 @@ package pins one launch-wide structured reference string size,
 
 | Profile | Configurable libID assets | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
-| `x` | shared notarization-client WASM and `bearer-link` circuit descriptor | 42,006 | 262,144 (2^18) points |
+| `x` | shared notarization client and `bearer-link` circuit descriptor | 42,006 | 262,144 (2^18) points |
 | `github` | the same two shared artifacts as X | 42,006 | 262,144 (2^18) points |
 | `google` | `oidc_google` circuit descriptor | 179,443 | 262,144 (2^18) points |
 
@@ -678,20 +622,20 @@ and `bb.js` prover remain one circuit release and verifier rollout. The shared
 size prevents a later platform from expanding and refetching the cache.
 The selected bb.js bytes also fix its primary and fallback CRS origins, which
 are the only CRS origins admitted by the
-[prover response policy](CCDP.md#browser-and-response-policy).
+[prover response policy](SERVER.md#prover-response-policy).
 
-Deployment selects the closed platform/version and embeds only its circuit and
-notarization-client URLs. Platform-version code pins the expected digest for
-each libID artifact. Noir and bb.js code, workers, WASM, CRS locations, and the
-shared SRS size likewise remain closed ceremony-build constants. The deployment neither
-computes nor configures them and does not copy, slice, or reimplement the CRS
-downloader.
+Deployment embeds one global notarization-client URL and one circuit URL
+for each closed platform/version. Platform-version code pins the expected
+digest for each libID artifact. Noir and Aztec-distributed bb.js code, workers,
+WASM, CRS locations, and the shared SRS size remain closed ceremony-build
+constants. The deployment neither computes nor configures them and does not
+copy, slice, or reimplement the CRS downloader.
 
-Shared deployment entries use the same immutable URL. Platform modules define
-each ceremony version's exact artifact kinds and digests, then reject missing,
-duplicate, or additional entries and any URL mapped to conflicting kinds
-before fetching. Canonical-URL single flights and the separate CRS cache are
-defined under [prefetch and shared caching](CCDP.md#prefetch-and-shared-caching).
+X and GitHub use the same immutable circuit URL and the same global
+notarization-client URL. Platform modules reject missing, duplicate, additional,
+or digest-mismatched profiles before fetching. Canonical-URL single flights and
+the separate CRS cache are defined under
+[prefetch and shared caching](CCDP.md#prefetch-and-shared-caching).
 
 ## Progress, cancellation, and recovery
 

@@ -3,16 +3,18 @@
 This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, popup, prover iframe, and isolated prover window. It
 also owns their service-worker prefetch coordination, document lifecycle,
-routes, isolation and response policy, and protocol compatibility rules.
+isolation behavior, and protocol compatibility rules.
 
 The package boundary, public client API, result lifecycle, platform pipelines,
-and prover assets are defined in [ARCHITECTURE.md](ARCHITECTURE.md). This is
-implementation architecture, not part of the normative proof specification.
+and prover implementation are defined in [ARCHITECTURE.md](ARCHITECTURE.md).
+The deployed routes, embedded inputs, and response policy are defined in
+[SERVER.md](SERVER.md). This is implementation architecture, not part of the
+normative proof specification.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 Shared package types and constants such as `PlatformId`,
-`PlatformCeremonyVersion`, `PlatformStep`, `CeremonyConfig`, `ProverAssets`, and
-`SRS_SIZE` retain their definitions in that architecture document and are
-referenced here rather than redefined.
+`PlatformCeremonyVersion`, `PlatformStep`, and `SRS_SIZE` retain their
+definitions in the architecture document. `CeremonyConfig` and `ProverAssets`
+retain theirs in the server contract.
 
 ## Architecture drivers and decisions
 
@@ -108,28 +110,12 @@ Configured server origin
               └─ optional server-owned same-origin platform route
 ```
 
-The deployed route surface is:
-
-```text
-GET  /api/v1/ceremony/config
-GET  /api/v1/ceremony/popup
-GET  {callbackPath}                 byte-identical popup alias; default /auth/v1/callback
-GET  /api/v1/ceremony/prover
-POST /api/v1/ceremony/github-token  server-provided when GitHub is enabled
-```
-
-`/api/v1/ceremony/popup` is the shared launch document. The configured
-`redirectUri` path, defaulting to `/auth/v1/callback`, is its registered OAuth
-callback alias: the server directly serves the same bytes and headers at both
-paths rather than issuing an HTTP redirect. The popup document is top-level and
-non-isolated so it can authenticate and communicate with the application
-opener. `/api/v1/ceremony/prover` is the single prover document used first for
-prefetch and later for proving. Neither route depends on application business
-logic or stores ceremony state.
-Prefetch adds no server route or response variant: both invocations receive the
-same `/api/v1/ceremony/prover` HTML and the same immutable prover module. The
-Window branch starts prefetch on load and begins proof execution only after a
-valid `AppRequestProof`; no request parameter selects a mode.
+The exact route surface and response contracts are defined in
+[SERVER.md](SERVER.md#route-surface). `/api/v1/ceremony/popup` is the shared
+launch document and its configured callback path is the registered OAuth
+`redirect_uri`. `/api/v1/ceremony/prover` is the one document used for prefetch,
+coordination, and isolated proving. These roles are selected after fragment
+clearing; they are not server response variants and keep no ceremony state.
 
 The caller launches the popup through the scripted path or real-anchor fallback
 defined under [client lifecycle](ARCHITECTURE.md#client-lifecycle). Both paths preserve
@@ -546,41 +532,22 @@ makes the proof authoritative.
 
 ### Redirect ingress
 
-The same fixed popup response is served at `/api/v1/ceremony/popup` for the
-initial shared launch and at the configured callback alias, default
-`/auth/v1/callback`, for OAuth success, provider denial, malformed input, and
-unknown state. The alias is not an HTTP redirect.
-The response contains no
-request-derived HTML, header, script URL, origin, platform, or mode.
-
-Its fixed inline bootstrap bounds the combined raw query and fragment to
-`MAX_OAUTH_REDIRECT_BYTES = 32 KiB`, copies them into lexical memory, clears
-both with `history.replaceState`, and only then integrity-loads
-`libid-ceremony-popup.js` and calls:
+The fixed popup bootstrap captures and clears the URL before loading package
+code, then invokes the server contract's
+[`startPopup`](SERVER.md#ingress-bootstrap) entrypoint. CCDP begins with its
+exact captured value:
 
 ```ts
-declare function startPopup(
-  oauthReturn: {
-    query: string
-    fragment: string
-  },
-  allowedAppOrigins: readonly string[],
-): void
-
-startPopup(oauthReturn, allowedAppOrigins)
+interface OAuthReturn {
+  query: string
+  fragment: string
+}
 ```
 
 An empty query plus the closed launch fragment containing ceremony ID, platform
 ID, and ceremony version is the initial shared launch. Provider callbacks
 instead carry their platform's closed query/fragment grammar, including only
-the same ceremony ID as OAuth `state`. The
-bootstrap clears even malformed or oversized input before rendering. It performs no
-parsing, storage, network request, dynamic rendering, or error reporting before
-clearing. `startPopup` exact-validates and freezes the nonempty embedded list of
-canonical origins before using it; the list is deployment-generated and never
-comes from request `Origin`, `Referer`, query, fragment, or a client message.
-Redirect servers suppress query strings in access logs, traces, analytics, and
-errors.
+the same ceremony ID as OAuth `state`.
 
 `oauthReturn.query` and `.fragment` are the exact captured `location.search`
 and `location.hash` strings, including a leading delimiter
@@ -746,9 +713,10 @@ embedded manifest, and root module are served in all three cases.
 The `/api/v1/ceremony/prover` bootstrap exact-validates its server-embedded `ProverAssets`.
 For prefetch, its Window branch accepts only the closed, cleared
 `#prefetch(ceremonyId, platformId, ceremonyVersion)` fragment and selects exactly
-one matching profile, combining its libID-owned deployment entries with the
-toolchain assets pinned by the prover build. The fragment can select a manifest
-profile but cannot supply an asset URL. The ceremony ID is only echoed in readiness; it is not
+one matching circuit profile, adding the single deployment-configured
+notarization client only when that closed platform implementation requires it,
+and combining both with the toolchain assets pinned by the prover build. The
+fragment can select a profile but cannot supply an asset URL. The ceremony ID is only echoed in readiness; it is not
 passed into the proving implementation. The service-worker branch contains no
 OAuth or application state. It owns each selected immutable asset fetch from
 the first byte, keys ordinary artifact single flights by canonical URL, starts
@@ -788,41 +756,16 @@ ordinary prefetch failure follows the identical selected-profile cold fetch path
 and never weakens isolation, worker count, or verification. Warm state is never
 a checkpoint.
 
-## Browser and response policy
+## Browser isolation consequences
 
-| Response | Required policy |
-|---|---|
-| `/api/v1/ceremony/config` | exact `CeremonyConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
-| `/api/v1/ceremony/popup`, configured callback alias (default `/auth/v1/callback`) | byte-identical top-level non-isolated deployment-generated popup document embedding the canonical allowed-origin set; callback is a direct alias, not an HTTP redirect; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
-| `/api/v1/ceremony/prover` | the one deployment-generated prefetch/proving document embedding exact libID-owned `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `Cross-Origin-Embedder-Policy (COEP): require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
-| server platform routes | prover-only exact method, body, and origin; reject redirects; no-store; bounded time/size; credential log redaction |
-
-Both documents start from `default-src 'none'`, `object-src 'none'`,
-`base-uri 'none'`, and `form-action 'none'`. The URL-clearing bootstrap is the
-only inline executable and is pinned by its exact deployment-generated CSP
-hash. Root modules use immutable URLs, Subresource Integrity (SRI), CORS, and
-COEP-compatible response policy. The deployment-fixed same-origin
-`libid-ceremony-prover.js` URL already
-loaded by `/api/v1/ceremony/prover` is also its module-service-worker registration URL; it
-permits a scope covering `/api/v1/ceremony/`. This adds no second prover artifact, route,
-or `CeremonyConfig` field. The server embeds only the configurable notary and
-circuit URLs in `ProverAssets`; platform-version code pins their digests, and
-the prover build pins its Noir and bb.js dependency graph. Opener,
-launch profile, and callback input can only select an exact listed
-platform/version and cannot supply an asset URL or SRS size. The pinned bb.js
-module fixes the only admitted CRS origins.
-
-No request value is interpolated into CSP or another response header. The one
-byte-identical prover response therefore has one deployment-fixed
-`connect-src`: the closed union of exact origins required by every enabled
-platform/version profile. Selection after fragment clearing does not narrow or
-expand that response policy. The selected profile's closed implementation
-issues requests only to its own resolved exact URLs, and caller input cannot
-select another profile's origin.
+The exact document and asset headers are defined in
+[SERVER.md](SERVER.md#popup-and-callback-documents). They preserve the popup's
+opener while isolating the prover, make both bootstraps request-invariant, and
+admit only immutable package and configured prover assets.
 
 This is not browser-enforced cross-profile compartmentalization: a compromised
-prover root module can reach any origin in the CSP union. That module is already
-a code-supply-chain trust boundary. Stronger confinement would require a
+prover root module can reach any origin in the prover response's closed CSP
+union. That module is already a code-supply-chain trust boundary. Stronger confinement would require a
 platform-specific response or isolated worker which alone receives the
 credential; it is not part of the static launch deployment.
 
