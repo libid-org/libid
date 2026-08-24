@@ -88,8 +88,9 @@ root and verifier.
 The linked ceremony chapters specify the ceremony layer. The browser and
 consumer protocol specifications do not redefine its proof fields or security
 assumptions. A profile is implementable only when its exact proving artifacts
-and Notary Services are published and selected by the Verifier Governance
-Process.
+are published. It is usable on a destination chain only while that chain's
+Verifier Governance Process selects a conforming verifier artifact and, where
+required, a compatible Notary Service.
 
 ## Enforceable guarantees and accepted boundaries
 

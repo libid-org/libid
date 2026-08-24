@@ -5,7 +5,7 @@ Part of the [libID protocol specification](libid.md).
 ## 1. Scope
 
 This document is the normative owner of each platform's OAuth profile,
-authenticated identity fields, evidence composition, proof-validity ceiling,
+authenticated identity fields, evidence composition, proof-validity rule,
 exchange service, and platform-specific failure behavior. The
 [common ceremony rules](ceremony-common.md) own the Authorization Digest,
 serialization, PKCE, transcript extraction, client binding, and evidence
@@ -42,10 +42,13 @@ and an identity session — and bind the digest through the revealed
   authorization starts. Necessity: changing profiles mid-ceremony would produce
   evidence the selected verifier cannot check.
 - REQ-PLAT-01A (upholds SP-BIND-01):
-  The Verifier Governance Process MUST select an exact Platform Verifier
-  artifact for every eligible profile and an exact Notary Service for every
-  TLSNotary profile. Necessity: a profile name without its
-  verifier artifacts does not identify one proof statement.
+  Each Platform Ceremony Version MUST identify one exact proof statement and
+  set of semantic public inputs independently of any Platform Verifier artifact
+  or Notary Service deployment. Before accepting that platform and version
+  pair, the Verifier Governance Process MUST select a conforming Platform
+  Verifier artifact and, for a TLSNotary profile, a compatible Notary Service.
+  Necessity: chain artifacts implement the versioned ceremony boundary; they
+  do not define it.
 - REQ-PLAT-02:
   The Canonical Runtime MUST treat a profile as ineligible until the
   application's authenticated profile lists it and the generated deployment
@@ -262,7 +265,8 @@ require a verifier that dispatches on the header `alg`; none exists here.
 
 - REQ-PLAT-16A (upholds SP-CLIENT-01):
   The Proving Circuit MUST expose the exact RSA modulus used for REQ-PLAT-16
-  as a public proof input, in the limb encoding its verifier artifact fixes.
+  as a public proof input. Its internal field or limb representation belongs to
+  the proving and verifier artifacts, not the Platform Profile.
   The Proving Circuit MUST NOT decide trusted-set membership or take the active
   set as an input. The Platform Verifier alone checks the modulus under
   REQ-PLAT-23. JWK decoding and canonical-encoding validation happen where a
@@ -371,8 +375,9 @@ Browser MPC is a deferred protocol alternative. It may remove the
 notary-to-platform path assumption and notary egress exposure, but it requires
 qualification of browser bandwidth, latency, memory, battery,
 WebSocket-to-TCP bridging, and mobile suspension. Adopting it requires a new
-ceremony profile whenever it changes the verifier, artifacts, or security
-assumptions; it is not deployment configuration under `x/v1` or `github/v1`.
+ceremony profile whenever it changes the proof statement, attestation format,
+ceremony behavior, or security assumptions; it is not deployment configuration
+under `x/v1` or `github/v1`.
 
 ## 5. X ceremony
 
@@ -764,7 +769,7 @@ The GitHub Token Service, which holds the client secret, runs the exchange
 inside a notarized TLS session and returns the resulting attestation. The
 `client_secret` range stays redacted behind that attestation's range
 commitment, so the browser never receives the secret. The attestation is
-verified under the pinned `github/v1` Notary Service, exactly
+verified by the compatible Notary Service selected for `github/v1`, exactly
 as the `/user` attestation is.
 
 The token-exchange attestation reveals exactly the ranges needed to bind it to
@@ -982,7 +987,7 @@ observation ordering; client portability or a bounded client family; exact
 authorization and redirect transport; every authenticated request and
 response field with its provenance; how the Authorization Digest is carried
 through that platform's authorization; its authenticated client-binding source; an
-authenticated proof-validity ceiling; its trust-root lifecycle;
+authenticated proof-validity rule and parameter keys; its trust-root lifecycle;
 browser and deployment data exposure, retry, interruption, and withholding
 behavior; and conformance vectors.
 
@@ -1103,10 +1108,13 @@ Platform Verifier, Notary Service, Consumer.
   A ceremony whose exchange response was lost restarts from authorization.
 - TEST-PLAT-17 (exercises REQ-PLAT-01, REQ-PLAT-01A, REQ-PLAT-02, REQ-PLAT-03):
   A live ceremony that substitutes a newer profile is rejected, an unlisted
-  profile is ineligible, a profile missing its verifier artifact or, for a TLSNotary
-  profile, its Notary Service is ineligible, and no local identity field originates
-  outside proof public inputs and the exact revealed attestation bytes carried
-  by its Submission. Only the Consumer's acceptance of that exact Submission makes the claim authoritative.
+  profile is ineligible, and the profile identifies the same proof statement
+  and semantic public inputs across two chains using different conforming
+  verifier artifacts. A destination chain does not support the pair without a
+  conforming artifact or, for a TLSNotary profile, a compatible Notary Service.
+  No local identity field originates outside proof public inputs and the exact
+  revealed attestation bytes carried by its Submission. Only the Consumer's
+  acceptance of that exact Submission makes the claim authoritative.
 - TEST-PLAT-17A (exercises REQ-PLAT-03, REQ-PLAT-31A, REQ-PLAT-51A):
   Pair authenticated X or GitHub identity-response bytes for account B with a
   detached `userId`, handle, or metadata value for account A. The Canonical Runtime

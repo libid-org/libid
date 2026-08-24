@@ -9,7 +9,7 @@ more platform ceremonies: the Authorization Digest, OAuth request
 serialization, the PKCE construction, notarized-transcript extraction, client
 binding, and evidence-time rules. Each platform profile owns its endpoints,
 ordered fields, authenticated response locations, canonical user-ID encoding, and
-proof-validity ceiling. The browser protocol owns redirect transport,
+proof-validity rule. The browser protocol owns redirect transport,
 persistence, continuation, and application control flow and code composition.
 
 ## 2. Terminology
@@ -95,11 +95,12 @@ Ceremony: The complete off-chain process that authenticates a user's selected
 Platform Profile: The immutable, independently versioned definition of one
    identity platform's ceremony: its endpoints, ordered request fields,
    revealed ranges, authenticated response locations, proof-validity inputs,
-   and, where its Attestation Count is nonzero, its pinned Notary Service and
-   attestation format. A profile whose Attestation Count is zero pins neither
-   of those two. Every Platform Verifier registered for that platform and
-   version MUST enforce the same profile, but its implementation and deployment
-   are ledger-specific. The Consumer holds none of the profile constants.
+   parameter keys and rules, and, where its Attestation Count is nonzero, its
+   attestation protocol and format. A profile whose Attestation Count is zero
+   defines neither of those two. Every Platform Verifier registered for that
+   platform and version MUST enforce the same profile, but its implementation
+   and deployment are ledger-specific. The Consumer holds none of the profile
+   constants.
 
 Proving Circuit: The zero-knowledge circuit whose proof a Platform Verifier
    checks. It proves only what cannot be read from authenticated evidence.
@@ -130,11 +131,14 @@ Notary Service: The role that observes a TLS session and signs the resulting
    inside the bytes it signed, so that signature is what binds them to the
    session it observed. It knows nothing of any Platform Profile: which
    ranges a profile expects, and what the revealed bytes must contain, are
-   proof-specific and belong to the Platform Verifier. A Platform Profile
-   whose Attestation Count is nonzero pins the exact Notary Service and the
-   attestation format it accepts; a profile whose Attestation Count is zero
-   reaches no Notary Service and pins neither. ASM-NOTARY-01 fixes what its
-   signature is trusted for.
+   proof-specific and belong to the Platform Verifier. A Platform Profile whose
+   Attestation Count is nonzero defines the required attestation protocol,
+   format, and security properties. The Verifier Governance Process selects
+   the exact compatible Notary Service trusted for each supported platform and
+   version pair; that mutable selection is not part of the Platform Ceremony
+   Version. A profile whose Attestation Count is zero reaches no Notary
+   Service. ASM-NOTARY-01 fixes what a selected service's signature is trusted
+   for.
 
 Notary Fee: The fixed amount a Notary Service charges for one verification,
    denominated in the Consumer Chain's native asset. One Submission carries
@@ -192,10 +196,11 @@ Attestation Count: The number of entries in the closed attestation list a
   comparison against the current `maxFutureAttestationSkew` parameter, not
   part of this assumption.
 - ASM-PROOF-01:
-  A proof accepted under a profile's selected verifier artifact satisfies
-  that profile's complete proof statement. Verifier governance MAY replace an
-  artifact only with one that enforces the same statement; changing the
-  statement requires a new Platform Ceremony Version.
+  A proof accepted under the verifier artifact selected for its platform and
+  version pair satisfies that Platform Profile's complete proof statement.
+  Verifier governance MAY replace an artifact only with one that enforces the
+  same statement; changing the statement requires a new Platform Ceremony
+  Version.
 - ASM-BROWSER-01:
   The Canonical Runtime executes unmodified, and the user agent enforces the
   same-origin policy over authorization responses.
@@ -451,9 +456,11 @@ Notary Service    authenticates one notary signature and charges one fee
 Only the Consumer knows what the transaction means; only the Notary Service
 knows whether the notary signed. Everything between them is dispatch and
 field checking. The Supported Version Set lives in the Proof Verifier. The
-Platform Profile defines every platform constant — endpoints, revealed ranges,
-trust roots, and parameters — and each ledger's Platform Verifier enforces
-that profile. The verifier's code and address may differ across ledgers without
+Platform Profile defines every immutable platform constant — endpoints,
+revealed ranges, attestation format, validity rules, and parameter keys — and
+each ledger's Platform Verifier enforces that profile. Verifier governance owns
+the mutable verifier artifact, Notary Service, trust roots, fees, and parameter
+values. The verifier's code and address may differ across ledgers without
 changing the Platform Ceremony Version. The Consumer holds none of those
 constants.
 
@@ -802,13 +809,15 @@ exposes a minimal set of public inputs, which never includes a credential.
   The Implementation MUST redact every byte outside the ranges its profile
   lists.
 - REQ-COMMON-18 (upholds SP-EXCHANGE-01):
-  The Platform Profile whose Attestation Count is nonzero MUST pin the exact
-  Notary Service and the attestation format it accepts. The Implementation
-  MUST use that format's native commitment for every hidden range of such a
-  profile. The Proving Circuit MUST open each hidden range whose value that
-  profile checks. Such a profile pinning neither is ineligible. A profile
-  whose Attestation Count is zero verifies no attestation, so it pins
-  neither and this rule does not reach it.
+  The Platform Profile whose Attestation Count is nonzero MUST fix the
+  attestation protocol, format, and required security properties. The Verifier
+  Governance Process MUST select an exact compatible Notary Service before it
+  supports that platform and version pair on a Consumer Chain. The
+  Implementation MUST use that format's native commitment for every hidden
+  range of such a profile. The Proving Circuit MUST open each hidden range
+  whose value that profile checks. A profile whose Attestation Count is zero
+  verifies no attestation, so it defines none of those requirements and this
+  rule does not reach it.
 - REQ-COMMON-38:
   The Platform Profile MUST pin the hash algorithm of every range commitment
   its pinned attestation format carries. The Platform Verifier MUST reject an
@@ -1196,9 +1205,10 @@ the constructions that role implements.
   it in another, both stay eligible. Replacing any field of the exact
   Submission after deriving the local identity fields discards those fields
   and requires derivation from the replacement Submission. A profile whose
-  Attestation Count is nonzero and which pins no
-  Notary Service or no attestation format is ineligible, while a profile
-  whose Attestation Count is zero stays eligible pinning neither.
+  Attestation Count is nonzero and which defines no attestation protocol,
+  format, or required security properties is invalid. A destination chain
+  cannot support it without selecting a compatible Notary Service. A profile
+  whose Attestation Count is zero remains valid without either.
 - TEST-COMMON-11 (exercises REQ-COMMON-21, REQ-COMMON-21A, REQ-COMMON-21B, REQ-COMMON-21C):
   The Platform Verifier rejects an authenticated foreign authority, method,
   or path. The request constructor refuses a media type or `redirect_uri`
