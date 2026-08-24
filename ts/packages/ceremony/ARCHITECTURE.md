@@ -216,7 +216,7 @@ serialization of `ceremonyId`, not a second identifier:
 
 ```ts
 interface CeremonyNavigation {
-  href: string   // /oauth/redirect#launch(ceremonyId, platformId, verifierVersion)
+  href: string   // /api/v1/ceremony/popup#launch(ceremonyId, platformId, verifierVersion)
   target: string
 }
 
@@ -301,16 +301,18 @@ interface ServerConfig {
 
 The application-scoped client fetches this record once with native `fetch` and
 validates it through `@libid/ceremony/protocol`; there is no configuration
-module. The fetch requires an exact browser `Origin`. `redirectUri` is the registered HTTPS URL with
-path exactly `/oauth/redirect`, no credentials, query, or fragment. Loopback
-development may use HTTP. Each platform entry contains its public client ID and
+module. The fetch requires an exact browser `Origin`. `redirectUri` is the
+registered HTTPS URL on the configured server origin, with no credentials,
+query, or fragment. Its path is deployment-configurable and defaults to
+`/auth/v1/callback`; loopback development may use HTTP. Each platform entry contains its public client ID and
 a nonempty, duplicate-free set of supported verifier versions. List order has
 no meaning: the client chooses the newest version according to its closed local
 implementation table from the intersection. Platform entries contain no credentials.
 
 `allowedAppOrigins` is deployment configuration, not a public `ServerConfig`
 field. The server uses the same canonical set for exact request-origin CORS and
-embeds it into every `/oauth/redirect` document. It is never derived from that
+embeds it into the byte-identical popup document served at both
+`/api/v1/ceremony/popup` and the configured `redirectUri` path. It is never derived from a
 request's `Origin` or `Referer`.
 
 The client freezes the selected platform, verifier version, client ID, and
@@ -321,7 +323,7 @@ dispatch without fetching configuration again.
 ### Prover deployment assets
 
 Only libID-owned prover release assets are deployment data embedded into
-`/oauth/prove`, not frontend `ServerConfig` or ceremony input:
+`/api/v1/ceremony/prover`, not frontend `ServerConfig` or ceremony input:
 
 ```ts
 type ProverArtifactKind =
@@ -344,11 +346,11 @@ interface ProverAssets {
 }
 ```
 
-The server generates each `/oauth/prove` document with one exact, validated
+The server generates each `/api/v1/ceremony/prover` document with one exact, validated
 `ProverAssets` value containing only circuit and notarization-client release
 locations. Its bootstrap passes that value and its already-cleared
 closed fragment input to the imported prover entrypoint. This is the prover-side equivalent of embedding
-`allowedAppOrigins` into `/oauth/redirect`: request values cannot add or replace
+`allowedAppOrigins` into the popup document: request values cannot add or replace
 a profile or URL, and the prover never fetches
 `ServerConfig`. The document contains every still-supported deployed profile,
 but a ceremony fetches only its selected platform/version profile.
@@ -454,7 +456,7 @@ conflicting kinds is invalid. Platform modules define each verifier version's
 exact libID artifact kinds, digests, and SRS size and reject a missing,
 duplicate, or additional deployment artifact before fetching.
 
-`/oauth/prove` has three closed fragment forms. The bootstrap copies and clears
+`/api/v1/ceremony/prover` has three closed fragment forms. The bootstrap copies and clears
 the fragment before importing the root module or using storage or the network:
 
 - `fetch(ceremonyId, platformId, verifierVersion)` creates the warmup iframe;
@@ -664,12 +666,13 @@ Application origin
   durable Job and retained WindowProxy
               │ authenticated postMessage
               ▼
-Application redirect origin: /oauth/redirect
+Application redirect origin: /api/v1/ceremony/popup
+  configurable alias for provider returns (default /auth/v1/callback)
   fixed URL-clearing bootstrap + libid-ceremony-popup.js
   non-isolated ceremony popup UI and controller
               │ bound parent/child channel or ceremony-ID channel
               ▼
-Application redirect origin: /oauth/prove
+Application redirect origin: /api/v1/ceremony/prover
   libid-ceremony-prover.js + workers/WASM
   warmup in every browser; isolated for proving
               │
@@ -681,23 +684,27 @@ The deployed route surface is:
 
 ```text
 GET  /_libid/config
-GET  /oauth/redirect
-GET  /oauth/prove
-POST /oauth/github/token  server-provided when GitHub is enabled
+GET  /api/v1/ceremony/popup
+GET  {callbackPath}                 byte-identical popup alias; default /auth/v1/callback
+GET  /api/v1/ceremony/prover
+POST /api/v1/ceremony/github-token  server-provided when GitHub is enabled
 ```
 
-`/oauth/redirect` is the one registered callback for every enabled platform and
-the shared launch document. It is top-level and non-isolated so it can
-authenticate and communicate with the application opener. `/oauth/prove` is
+`/api/v1/ceremony/popup` is the shared launch document. The configured
+`redirectUri` path, defaulting to `/auth/v1/callback`, is its registered OAuth
+callback alias: the server directly serves the same bytes and headers at both
+paths rather than issuing an HTTP redirect. The popup
+document is top-level and non-isolated so it can authenticate and communicate
+with the application opener. `/api/v1/ceremony/prover` is
 the single prover document used first for warmup and later for proving. Neither
 route depends on application business logic or stores ceremony state.
 Warmup adds no server route or response variant: both invocations receive the
-same `/oauth/prove` HTML and the same immutable prover module. The
+same `/api/v1/ceremony/prover` HTML and the same immutable prover module. The
 Window branch starts warmup on load and begins proof execution only after a
 valid `PopupProve`; no request parameter selects a mode.
 
 Before user activation, the composition prepares an action-specific real
-anchor whose `href` is `/oauth/redirect` with a closed fragment containing only
+anchor whose `href` is `/api/v1/ceremony/popup` with a closed fragment containing only
 the ceremony ID, platform ID, and selected verifier version, and whose target
 is a unique non-reserved browsing-context name. On activation it calls
 `window.open('about:blank', target)` synchronously and suppresses anchor
@@ -717,7 +724,7 @@ consent-overlapped warmup. `PopupFetchingProver` lets the fallback bind and
 retain its `WindowProxy` before OAuth, after which both paths use the same
 navigation, continuity, callback, and proving protocol.
 
-After the provider callback, that redirect document creates one `/oauth/prove`
+After the provider callback, that redirect document creates one `/api/v1/ceremony/prover`
 iframe which remains the prover coordinator for the rest of its lifetime. The
 coordinator runs the prover itself when DIP gives it isolation, or relays the
 same protocol to a top-level isolated prover window opened by the user's
@@ -731,7 +738,7 @@ coordinator through a same-origin `BroadcastChannel` derived from that ID. The
 ceremony ID routes the live same-origin channel; it is not a separate
 confidentiality boundary.
 
-Every redirect document first loads `/oauth/prove` in a same-origin iframe.
+Every redirect document first loads `/api/v1/ceremony/prover` in a same-origin iframe.
 That document may warm assets without isolation or credentials. Its
 `libid-ceremony-prover.js` Window branch registers the same module URL as a
 module service worker. The redirect gives the child a closed
@@ -750,7 +757,7 @@ to the fallback window; iframe isolation is not a credential-confidentiality
 boundary.
 
 The module worker and both documents share one origin and a scope covering
-`/oauth/`. COOP changes only top-level opener relationships: it does not
+`/api/v1/ceremony/`. COOP changes only top-level opener relationships: it does not
 partition the service-worker registration, Cache Storage, or the same-origin
 channel. Consequently the COOP-isolated popup fallback joins the same in-flight
 fetches as the warmup iframe. The prover requests dependencies normally; the
@@ -866,7 +873,7 @@ type PopupMessage =
 
 On an initial launch, the redirect exact-validates and clears its fragment's
 ceremony ID, platform ID, and verifier version, then loads
-`/oauth/prove#fetch(ceremonyId, platformId, platformVerifierVersion)`. The
+`/api/v1/ceremony/prover#fetch(ceremonyId, platformId, platformVerifierVersion)`. The
 child captures and clears that fragment before importing the root module or using the
 network, resolves exactly that profile from its server-embedded `ProverAssets`
 and code-pinned toolchain assets, asks the service worker to start or join only
@@ -975,12 +982,12 @@ sequenceDiagram
 
     U->>A: Start identification
     alt Scripted launch
-        A->>C: Open about:blank and navigate to /oauth/redirect#launch profile
+        A->>C: Open about:blank and navigate to /api/v1/ceremony/popup#launch profile
     else Real-anchor fallback
-        A->>C: Let anchor navigate its named context to /oauth/redirect#launch profile
+        A->>C: Let anchor navigate its named context to /api/v1/ceremony/popup#launch profile
     end
     C->>C: Capture and clear ceremonyId, platformId, verifierVersion
-    C->>P: Embed /oauth/prove#fetch(ceremonyId, platformId, verifierVersion)
+    C->>P: Embed /api/v1/ceremony/prover#fetch(ceremonyId, platformId, verifierVersion)
     P->>P: Capture and clear fragment, then select profile
     P->>P: Start or join only the selected artifact fetches
     P-->>C: PopupFetchingProver(protocolVersion, ceremonyId, platformId, verifierVersion)
@@ -988,9 +995,9 @@ sequenceDiagram
     A->>A: Validate versions, profile, and popup source
     A->>C: Navigate retained popup to provider URL
     C->>O: Provider navigation
-    O->>C: Return to /oauth/redirect
+    O->>C: Return to configured callback alias
     Note right of C: Bound capture, then clear URL before module load or later requests
-    C->>P: Load /oauth/prove and start or join warmup
+    C->>P: Load /api/v1/ceremony/prover and start or join warmup
     C->>A: PopupUserDecided(version)
     A->>A: Match retained popup and claim Ceremony
     A-->>C: PopupAuthenticateOrigin(ceremonyId)
@@ -1011,7 +1018,7 @@ sequenceDiagram
             P-->>C: PopupProverWindowRequired
             C-->>U: Expose Continue proving
             U->>C: Activate Continue proving
-            C->>W: Open /oauth/prove#ceremonyId
+            C->>W: Open /api/v1/ceremony/prover#ceremonyId
             W->>W: Clear fragment and check isolation
             W-->>P: PopupProverWindowReady(ceremonyId) over BroadcastChannel
             P-->>W: Forward retained PopupProve once
@@ -1061,8 +1068,11 @@ application verifies the proof and commits its composition-owned successor.
 
 ## Redirect ingress
 
-The same fixed `/oauth/redirect` response handles success, provider denial,
-malformed input, unknown state, and the initial shared launch. It contains no
+The same fixed popup response is served at `/api/v1/ceremony/popup` for the
+initial shared launch and at the configured callback alias, default
+`/auth/v1/callback`, for OAuth success, provider denial, malformed input, and
+unknown state. The alias is not an HTTP redirect.
+The response contains no
 request-derived HTML, header, script URL, origin, platform, or mode.
 
 Its fixed inline bootstrap bounds the combined raw query and fragment to
@@ -1131,7 +1141,7 @@ second interpretation of the capture.
 When qualified, the coordinator proves in place. Otherwise it retains
 `PopupProve` in memory and sends `PopupProverWindowRequired` only to its exact
 parent. The ceremony popup renders the real **Continue proving** anchor and
-opens no window without that user activation. The top-level `/oauth/prove`
+opens no window without that user activation. The top-level `/api/v1/ceremony/prover`
 window clears its ceremony-ID fragment, validates isolation and shared memory,
 then sends `PopupProverWindowReady(ceremonyId)` over the scoped
 `BroadcastChannel`. The coordinator exact-matches that ID and forwards its
@@ -1254,14 +1264,14 @@ Popup closure alone is never success, failure, denial, or cancellation.
 ## Prover warmup
 
 Every ceremony attempts consent-overlapped prover warmup. It is fixed behavior,
-not configuration or action input. The shared launch popup loads `/oauth/prove`.
+not configuration or action input. The shared launch popup loads `/api/v1/ceremony/prover`.
 The prover Window branch registers its own deployed
 `libid-ceremony-prover.js` module URL as a module service worker and asks it to
 start only the selected platform/version profile's artifact single flights.
 This reuses the same route, artifact, and prover implementation used later for
 proving; there is no warmup route, artifact, or mode flag.
 
-The `/oauth/prove` bootstrap exact-validates its server-embedded `ProverAssets`.
+The `/api/v1/ceremony/prover` bootstrap exact-validates its server-embedded `ProverAssets`.
 For warmup, its Window branch accepts only the closed, cleared
 `#fetch(ceremonyId, platformId, verifierVersion)` fragment and selects exactly
 one matching profile, combining its libID-owned deployment entries with the
@@ -1309,8 +1319,8 @@ a checkpoint.
 | Response | Required policy |
 |---|---|
 | `/_libid/config` | exact `ServerConfig`; `Cache-Control: no-store`; exact request-origin CORS; no wildcard or credentials |
-| `/oauth/redirect` | top-level non-isolated deployment-generated document embedding the canonical allowed-origin set; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
-| `/oauth/prove` | the one deployment-generated warmup/proving document embedding exact libID-owned `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `COEP: require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
+| `/api/v1/ceremony/popup`, configured callback alias (default `/auth/v1/callback`) | byte-identical top-level non-isolated deployment-generated popup document embedding the canonical allowed-origin set; callback is a direct alias, not an HTTP redirect; `COOP: unsafe-none`; no-store/no-referrer; `frame-ancestors 'none'`; `frame-src 'self'` only for DIP; `connect-src 'self'`; exact integrity-pinned root module |
+| `/api/v1/ceremony/prover` | the one deployment-generated warmup/proving document embedding exact libID-owned `ProverAssets`; `Document-Isolation-Policy: isolate-and-require-corp`; `COOP: same-origin`; `COEP: require-corp`; no-store/no-referrer; same-origin framing only for DIP; exact script, worker, and network sources |
 | server platform routes | prover-only exact method, body, and origin; reject redirects; no-store; bounded time/size; credential log redaction |
 
 Both documents start from `default-src 'none'`, `object-src 'none'`,
@@ -1318,8 +1328,8 @@ Both documents start from `default-src 'none'`, `object-src 'none'`,
 only inline executable and is pinned by its exact deployment-generated CSP
 hash. Root modules use immutable URLs, SRI, CORS, and COEP-compatible response
 policy. The deployment-fixed same-origin `libid-ceremony-prover.js` URL already
-loaded by `/oauth/prove` is also its module-service-worker registration URL; it
-permits a scope covering `/oauth/`. This adds no second prover artifact, route,
+loaded by `/api/v1/ceremony/prover` is also its module-service-worker registration URL; it
+permits a scope covering `/api/v1/ceremony/`. This adds no second prover artifact, route,
 or `ServerConfig` field. The server embeds only the configurable notary and
 circuit URLs in `ProverAssets`; platform-version code pins their digests, and
 the prover build pins its Noir and bb.js dependency graph. Opener,
