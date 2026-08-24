@@ -1345,7 +1345,6 @@ embedded manifest, and root module are served in all three cases.
 type CeremonyStage =
   | 'authorization'
   | 'oauth-validation'
-  | 'prover-activation'
   | 'proof-generation'
 
 interface PlatformStep {
@@ -1362,13 +1361,13 @@ interface CeremonyEvent {
 
 The application-side `Ceremony` client owns the common stage. It enters
 `authorization` when `proveUserIdentity()` starts, `oauth-validation` when an
-authenticated `PopupDeliverParams` selects the live Ceremony,
-`prover-activation` only while the popup waits for the fallback **Continue
-proving** activation, and `proof-generation` when proving starts. Immediate
-`Identity` construction completes `proof-generation`; it is not a separate
-progress stage. The popup reports
-its two prover lifecycle transitions over the authenticated channel, and the
-client confirms them before publishing them.
+authenticated `PopupDeliverParams` selects the live Ceremony, and
+`proof-generation` immediately before it sends `AppRequestProof`.
+`proof-generation` includes prover isolation selection, any fallback
+**Continue proving** activation, platform steps, proof delivery, and immediate
+`Identity` construction. The client publishes these transitions from its own
+control flow; no popup lifecycle message or platform-step inference changes the
+common stage.
 
 Each platform-ceremony-version module defines only its steps beside the code
 which performs them and emits `started` followed by exactly one `completed` or
@@ -1486,13 +1485,25 @@ launch profile, and callback input can only select an exact listed
 platform/version and cannot supply an asset URL or SRS size. The pinned bb.js
 module fixes the only admitted CRS origins.
 
-No request value is interpolated into CSP or another response header. Because
-a worker cannot directly load a cross-origin worker URL, the prover may create
+No request value is interpolated into CSP or another response header. The one
+byte-identical prover response therefore has one deployment-fixed
+`connect-src`: the closed union of exact origins required by every enabled
+platform/version profile. Selection after fragment clearing does not narrow or
+expand that response policy. The selected profile's closed implementation
+issues requests only to its own resolved exact URLs, and caller input cannot
+select another profile's origin.
+
+This is not browser-enforced cross-profile compartmentalization: a compromised
+prover root module can reach any origin in the CSP union. That module is already
+a code-supply-chain trust boundary. Stronger confinement would require a
+platform-specific response or isolated worker which alone receives the
+credential; it is not part of the static launch deployment.
+
+Because a worker cannot directly load a cross-origin worker URL, the prover may create
 only a local `blob:` bootstrap which imports the fixed immutable worker module
 and installs the same fixed bridge for nested workers. Its CSP permits that
 bootstrap, the deployment manifest's libID-asset origins, and the exact
-code-pinned toolchain network origins. Runtime fetches remain restricted to the
-selected profile's resolved exact URLs.
+code-pinned toolchain network origins.
 
 The application page must preserve an opener through the provider roundtrip.
 `COOP: unsafe-none` and `same-origin-allow-popups` are compatible; a strictly
