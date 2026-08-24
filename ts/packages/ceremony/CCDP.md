@@ -468,7 +468,7 @@ sequenceDiagram
         A->>A: Enter proof-generation
         A-->>C: AppRequestProof
         C->>P: Echo-check oauthReturn, then forward AppRequestProof once
-        Note over A,W: Before terminal, AppCancelCeremony flows downstream to the active prover; best effort, no acknowledgement
+        Note over A,W: Before terminal, AppCancelCeremony flows downstream to the active prover as best effort with no acknowledgement
         P->>P: Check isolation and SharedArrayBuffer
         alt DIP is not isolated
             P-->>C: ProverRequestIsolation
@@ -759,7 +759,7 @@ a checkpoint.
 ## Browser isolation consequences
 
 The exact document and asset headers are defined in
-[SERVER.md](SERVER.md#popup-and-callback-documents). They preserve the popup's
+[SERVER.md](SERVER.md#popup-document-and-callback-alias). They preserve the popup's
 opener while isolating the prover, make both bootstraps request-invariant, and
 admit only immutable package and configured prover assets.
 
