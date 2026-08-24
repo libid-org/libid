@@ -162,27 +162,21 @@ This is an application-owned instance, not a package-global singleton. Client
 creation fetches and exact-validates `CeremonyConfig`; a configured platform is
 enabled only when the installed package has a closed implementation and at
 least one advertised ceremony version in common.
-`supportedPlatforms` is an immutable `readonly PlatformId[]` derived
-from that same closed implementation table. It contains every platform compiled
-into the package release, exactly once, and has no mutable registration API.
-
-The launch release's closed local version table is:
-
-| Platform | Locally supported ceremony versions |
-|---|---|
-| `google` | `1` |
-| `x` | `1` |
-| `github` | `1` |
-
-No other local ceremony version is supported. A platform is therefore enabled
-at launch only when its validated `CeremonyConfig` entry advertises version `1`,
-and every created Ceremony for that platform freezes version `1`.
-
-The public catalog and client types are:
+The package has one closed platform/version catalog. `PlatformId` and the
+immutable public `supportedPlatforms` list derive from its keys; no second
+platform union or list exists:
 
 ```ts
-export type PlatformId = 'x' | 'github' | 'google'
-export declare const supportedPlatforms: readonly PlatformId[]
+const platformCeremonyVersions = {
+  google: [1],
+  x: [1],
+  github: [1],
+} as const satisfies Record<string, readonly PlatformCeremonyVersion[]>
+
+export type PlatformId = keyof typeof platformCeremonyVersions
+export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
+  Object.keys(platformCeremonyVersions) as PlatformId[],
+)
 
 interface CeremonyClient {
   readonly enabledPlatforms: readonly PlatformId[]
@@ -205,6 +199,11 @@ const ceremony = await ceremonies.new(jobId, {
   transactionData,
 })
 ```
+
+Adding a platform or local ceremony version changes this catalog and its closed
+implementation together. There is no mutable registration API. A configured
+platform is enabled only when its catalog entry and validated `CeremonyConfig`
+entry have a version in common; each Ceremony freezes the selected version.
 
 `enabledPlatforms` is the immutable intersection of `supportedPlatforms` and
 the exact platform keys in validated `CeremonyConfig` that have at least one

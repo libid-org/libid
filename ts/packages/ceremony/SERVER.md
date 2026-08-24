@@ -50,6 +50,10 @@ value drives configuration CORS and is embedded into the popup document. It is
 deployment data, never inferred from a request's `Origin`, `Referer`, query,
 fragment, or body.
 
+One deployment platform configuration generates both the public
+`CeremonyConfig` entries and the embedded prover profiles. They are projections
+of one enabled set, not independently maintained platform lists.
+
 Only libID-owned circuit and notarization-client locations are configurable
 prover assets. The ceremony package pins their expected identities. It pins the
 Aztec-distributed bb.js and Noir toolchain, including its worker, WebAssembly,
@@ -89,8 +93,10 @@ There is no request-time version negotiation.
 `GET /api/v1/ceremony/config` returns `application/json` with this exact record:
 
 ```ts
-type PlatformCeremonyVersion = number
-type PlatformId = 'google' | 'x' | 'github'
+import type {
+  PlatformCeremonyVersion,
+  PlatformId,
+} from '@libid/ceremony/protocol'
 
 interface PlatformConfig {
   clientId: string
@@ -238,17 +244,14 @@ the only HTTP exception. `notarizationClientUrl` selects the one libID-built
 notarization client shared by all notarized platform implementations. Its host
 is deployment configuration: an initial GitHub release URL and a later CDN URL
 have identical protocol meaning.
-`profiles` contains every still-supported deployed platform/version exactly
-once and selects its circuit descriptor through `circuitUrl`. A request,
-fragment, or browser message cannot add or replace either URL.
-
-The launch profiles require:
-
-| Platform | Configured assets used |
-|---|---|
-| Google | its `oidc_google` `circuitUrl` |
-| X | the shared `bearer-link` `circuitUrl` and global `notarizationClientUrl` |
-| GitHub | the same `bearer-link` `circuitUrl` and global `notarizationClientUrl` as X |
+`profiles` contains exactly one circuit entry for every enabled
+platform/version advertised by `CeremonyConfig`, restricted to the package's
+single closed catalog, and selects its circuit descriptor through `circuitUrl`.
+The closed
+[platform pipeline](ARCHITECTURE.md#platform-pipelines) determines whether it
+also fetches the global notarization client. The server schema does not
+redefine that platform inventory. A request, fragment, or browser message
+cannot add or replace either URL.
 
 The bootstrap bounds and copies its fragment, clears it before storage,
 rendering, errors, module loading, or network activity, and then exact-validates
