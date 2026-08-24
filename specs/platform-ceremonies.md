@@ -22,19 +22,18 @@ Terms are imported from
 
 ## 2. Ceremony profiles
 
-Each platform ceremony has an independently versioned immutable profile:
-`google/v1`, `x/v1`, `github/v1`. The profile's Platform Ceremony Version is
-carried in its Authorization Digest and Submission; launch profiles use
-`platformCeremonyVersion = 1`. A version covers the digest, OAuth construction,
-and platform-specific proof statement, not any Consumer Chain's verifier
-implementation.
+Each platform ceremony has an independently versioned immutable profile. Its
+Platform Ceremony Version is carried in its Authorization Digest and
+Submission. Each platform section defines its own launch version. A version
+covers the digest, OAuth construction, and platform-specific proof statement,
+not any Consumer Chain's verifier implementation.
 
 Each profile also fixes the attestation list of common REQ-COMMON-41 and the
-digest-binding method of common REQ-COMMON-02C. `google/v1` verifies no
-attestation and binds the digest as a public proof input; `x/v1` and
-`github/v1` each verify two attestations — a token or token-exchange session
-and an identity session — and bind the digest through the revealed
-`code_verifier` of common REQ-COMMON-15A.
+digest-binding method of common REQ-COMMON-02C. Google verifies no attestation
+and binds the digest as a public proof input; X and GitHub each verify two
+attestations — a token or token-exchange session and an identity session — and
+bind the digest through the revealed `code_verifier` of common
+REQ-COMMON-15A.
 
 - REQ-PLAT-01:
   The Canonical Runtime MUST select and retain one exact profile for the live
@@ -182,6 +181,8 @@ block an otherwise valid authority operation.
   nothing else.
 
 ## 3. Google OIDC ceremony
+
+The Google profile defined here uses `platformCeremonyVersion = 1`.
 
 Google uses direct authentication-only OIDC and has no server-side token
 exchange. Identity evidence is the signed ID Token delivered in the redirect
@@ -377,9 +378,11 @@ qualification of browser bandwidth, latency, memory, battery,
 WebSocket-to-TCP bridging, and mobile suspension. Adopting it requires a new
 ceremony profile whenever it changes the proof statement, attestation format,
 ceremony behavior, or security assumptions; it is not deployment configuration
-under `x/v1` or `github/v1`.
+under the X or GitHub profile.
 
 ## 5. X ceremony
+
+The X profile defined here uses `platformCeremonyVersion = 1`.
 
 X uses a public client with S256 PKCE and two browser-owned TLSNotary
 sessions.
@@ -456,7 +459,7 @@ range indistinguishable from a `refresh_token` value.
 
 Those reveals and the in-circuit `code_verifier` opening of REQ-COMMON-15
 reduce the hidden request surface, but revealing a range does not reject a form
-delimiter inside it. `x/v1` therefore retains ASM-PROV-07 as a soundness
+delimiter inside it. The X profile therefore retains ASM-PROV-07 as a soundness
 dependency.
 
 - REQ-PLAT-29A (upholds SP-CLIENT-01):
@@ -619,6 +622,8 @@ belong in a proof.
 
 ## 6. GitHub ceremony
 
+The GitHub profile defined here uses `platformCeremonyVersion = 1`.
+
 GitHub Token Service: The deployment-owned confidential-client component that
 performs the GitHub token exchange inside a notarized TLS session and returns
 the bearer, its opening, and the resulting attestation through the semantic
@@ -769,7 +774,7 @@ The GitHub Token Service, which holds the client secret, runs the exchange
 inside a notarized TLS session and returns the resulting attestation. The
 `client_secret` range stays redacted behind that attestation's range
 commitment, so the browser never receives the secret. The attestation is
-verified by the compatible Notary Service selected for `github/v1`, exactly
+verified by the compatible Notary Service selected for the GitHub profile, exactly
 as the `/user` attestation is.
 
 The token-exchange attestation reveals exactly the ranges needed to bind it to
@@ -829,7 +834,7 @@ response header. Revealing more would widen exposure without adding a check.
 
 - REQ-PLAT-44 (upholds SP-EXCHANGE-01):
   The Canonical Runtime MUST verify the returned token-exchange attestation
-  locally against the `github/v1` profile's pinned notary key and attestation
+  locally against the GitHub profile's pinned notary key and attestation
   format before using the bearer. Necessity: the browser checks what it got
   back before spending a `/user` session on it; the Notary Service decision
   the Consumer Chain relies on is separate.
@@ -837,7 +842,7 @@ response header. Revealing more would widen exposure without adding a check.
   The GitHub Token Service MUST return an attestation carrying the
   configured notary's signature and revealing the token request's method and
   path. The Platform Verifier MUST compare those two revealed values with the
-  `github/v1` profile. The Platform Verifier MUST compare the authority that
+  GitHub profile. The Platform Verifier MUST compare the authority that
   attestation authenticates with the same profile, per common REQ-COMMON-21A.
   Necessity: the authority is never a revealed range,
   because the transcript carries it only in a prover-composed `Host` header.
@@ -871,7 +876,7 @@ while GitHub consumes a duplicate. The layout tiling accounts for every
 transcript byte, every body range other than the secret is revealed, and the
 opened secret is delimiter-free per REQ-PLAT-35. These checks reduce hidden
 surface but do not prove the decoded form grammar or reject duplicates inside
-revealed values. `github/v1` therefore retains ASM-PROV-07 as a soundness
+revealed values. The GitHub profile therefore retains ASM-PROV-07 as a soundness
 dependency. The server-produced token-exchange attestation carries the
 commitments while
 keeping the client secret from the browser.
@@ -926,7 +931,7 @@ REQ-COMMON-18A requires.
   response bytes by their full field delimiters, rejecting a transcript in
   which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. The Platform Verifier MUST reject a noncanonical `id`
-  encoding. The `github/v1` profile fixes the structural byte following the
+  encoding. The GitHub profile fixes the structural byte following the
   `id` integer token, which common REQ-COMMON-19D leaves to the profile, as
   `,` or `}` and no other byte. The Platform Verifier MUST reject any other
   following byte. Necessity: the terminator is what proves the revealed digits
@@ -944,7 +949,7 @@ REQ-COMMON-18A requires.
   bearer commitment of the token-exchange attestation and the
   `Authorization` bearer commitment of the `/user` attestation. The Platform Verifier MUST
   compare the method and path revealed in each attestation, and
-  the authority each attestation authenticates, with the `github/v1` profile.
+  the authority each attestation authenticates, with the GitHub profile.
 
 - REQ-PLAT-52A (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST expose exactly these two GitHub public inputs:
