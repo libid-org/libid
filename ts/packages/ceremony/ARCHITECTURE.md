@@ -104,7 +104,7 @@ the minimum information needed to:
 
 - bind messages to the expected `WindowProxy`, browser-stamped origin, and live
   ceremony;
-- return the OAuth capture only to the application which retained that
+- return the OAuth parameters only to the application which retained that
   ceremony;
 - move proving input into whichever isolated placement the browser supports;
 - relay advisory progress, cancellation, and proof delivery without sharing
@@ -282,7 +282,7 @@ The package-facing API surface is:
 |---|---|
 | `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization and `OAuthProof` construction, local evidence decoding, `CCDPMessage`, and `CCDPVersion` |
 | `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `CeremonyConfig` fetch, and stateful `Ceremony` orchestration |
-| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(capture, allowedAppOrigins)` to the cleared redirect document |
+| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(query, fragment, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
 
 The API below and the CCDP records are the launch surface.
@@ -546,7 +546,7 @@ those retained fields and the proof and attestations returned by the prover.
 The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
 resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
-classified the capture as success and local checks succeeded; only Consumer
+classified the provider parameters as success and local checks succeeded; only Consumer
 acceptance makes Identity authoritative. Callers cannot supply or override
 Identity fields.
 
@@ -651,15 +651,11 @@ interface AppAuthenticateOrigin {
   ceremonyId: string
 }
 
-interface OAuthRedirectCapture {
-  query: string
-  fragment: string
-}
-
 interface PopupDeliverParams {
   type: 'popup-deliver-params'
   ceremonyId: string
-  capture: OAuthRedirectCapture
+  query: string
+  fragment: string
 }
 ```
 
@@ -668,7 +664,7 @@ malformed, or duplicate OAuth `state` changes no live state and produces no
 application message. After extracting exactly one syntactically valid state,
 the callback popup sends `PopupRequestAuthentication`. It asks the
 retained application to prove continuity before the popup releases the captured
-redirect; it exposes neither the ceremony ID nor that capture and does not
+redirect parameters; it exposes neither the ceremony ID nor those parameters and does not
 classify approval, denial, or malformed platform fields. The client
 accepts it only from the retained popup source at the configured server origin
 and expected protocol version, then returns its retained ceremony ID in
@@ -681,11 +677,11 @@ bounded query and fragment in `PopupDeliverParams` to that exact source
 and origin. The message has no origin or version field: the browser supplies the
 origin, and the client already validated the returned popup's version. A
 different allowed application occupying the opener receives neither the
-ceremony ID nor the redirect capture. No callback-time binding record or
+ceremony ID nor the redirect parameters. No callback-time binding record or
 storage is needed.
 
 If no valid `AppAuthenticateOrigin` arrives within
-`REDIRECT_OPENER_TIMEOUT_MS = 30_000`, the popup clears its in-memory capture,
+`REDIRECT_OPENER_TIMEOUT_MS = 30_000`, the popup clears its in-memory query and fragment,
 severs the opener, and renders the same fixed unapproved-application result as
 an invalid opener origin. It renders no callback value and performs no
 navigation with it.
@@ -700,7 +696,8 @@ interface AppRequestProof {
   platformCeremonyVersion: PlatformCeremonyVersion
   clientId: string
   redirectUri: string
-  capture: OAuthRedirectCapture
+  query: string
+  fragment: string
   codeVerifier: string | null
 }
 ```
@@ -710,17 +707,17 @@ The application-scoped client selects the live `Ceremony` from the authenticated
 the composition. An unknown, stale, replayed, or post-reload ceremony ID changes
 no live state and causes cleanup through `AppCancelCeremony`. Otherwise the client
 atomically claims the state and uses that Ceremony's platform/version parser to
-exact-validate the capture's transport and fields.
+exact-validate the query/fragment transport and fields.
 
 A malformed or mismatched result rejects the Ceremony. A valid provider denial
 resolves `{ status: 'denied' }`. Both paths send `AppCancelCeremony` for popup cleanup.
 A valid acceptance constructs `AppRequestProof` from the live ceremony ID,
 selected platform/version, frozen client and redirect, derived code verifier, and
-unchanged capture. The application origin is trusted for this transient input;
+unchanged query and fragment. The application origin is trusted for this transient input;
 the protocol does not try to hide it from other scripts executing in that
 origin.
 
-The popup byte-matches the echoed capture to its retained capture, validates the
+The popup byte-matches the echoed query and fragment to its retained values, validates the
 closed platform/version and PKCE shape, and forwards the exact
 `AppRequestProof` once to its coordinator iframe. The claimed client entry, one-shot Ceremony, and
 popup state machine prevent duplicate proving. The composition's final Job CAS
@@ -795,7 +792,7 @@ interface AbortCeremony {
 `AppCancelCeremony` is the parameterless downstream command used when the
 application no longer wants the ceremony to continue, including explicit cancellation,
 provider denial, invalid callback classification, or retired Job authority.
-Before `AppRequestProof`, the popup clears its capture and attempts to close,
+Before `AppRequestProof`, the popup clears its retained query and fragment and attempts to close,
 rendering one fixed fallback if closing fails. Afterwards it also cancels
 reachable proving work.
 
@@ -852,14 +849,14 @@ sequenceDiagram
     A->>C: Navigate retained popup to provider URL
     C->>O: Provider navigation
     O->>C: Return to configured callback alias
-    Note right of C: Bound capture, then clear URL before module load or later requests
+    Note right of C: Bound query and fragment, then clear URL before module load or later requests
     C->>P: Load /api/v1/ceremony/prover and start or join prefetch
     C->>A: PopupRequestAuthentication(version)
     A->>A: Match retained popup and claim Ceremony
     A-->>C: AppAuthenticateOrigin(ceremonyId)
     C->>C: Match opener, allowed browser origin, and OAuth state
-    C->>A: PopupDeliverParams(ceremonyId, capture)
-    Note over A,C: Before AppRequestProof, AppCancelCeremony always clears the capture and closes or renders the fixed fallback
+    C->>A: PopupDeliverParams(ceremonyId, query, fragment)
+    Note over A,C: Before AppRequestProof, AppCancelCeremony always clears the parameters and closes or renders the fixed fallback
     alt Invalid callback or setup
         A->>A: Reject Ceremony
         A-->>C: AppCancelCeremony
@@ -868,7 +865,7 @@ sequenceDiagram
         A-->>C: AppCancelCeremony
     else Valid provider success
         A-->>C: AppRequestProof
-        C->>P: Echo-check capture and forward AppRequestProof once
+        C->>P: Echo-check query and fragment, then forward AppRequestProof once
         P->>P: Check isolation and SharedArrayBuffer
         alt DIP is not isolated
             P-->>C: ProverRequestIsolation
@@ -939,11 +936,12 @@ both with `history.replaceState`, and only then integrity-loads
 
 ```ts
 declare function startPopup(
-  capture: OAuthRedirectCapture,
+  query: string,
+  fragment: string,
   allowedAppOrigins: readonly string[],
 ): void
 
-startPopup(capture, allowedAppOrigins)
+startPopup(query, fragment, allowedAppOrigins)
 ```
 
 An empty query plus the closed launch fragment containing ceremony ID, platform
@@ -958,14 +956,14 @@ comes from request `Origin`, `Referer`, query, fragment, or a client message.
 Redirect servers suppress query strings in access logs, traces, analytics, and
 errors.
 
-`OAuthRedirectCapture.query` and `.fragment` are the exact captured
-`location.search` and `location.hash` strings, including a leading delimiter
+`query` and `fragment` are the exact captured `location.search` and
+`location.hash` strings, including a leading delimiter
 when nonempty. After loading, the popup extracts the single routing state,
 authenticates the opener through `AppAuthenticateOrigin`, and exact-validates the returned
 `AppRequestProof` ID, platform, ceremony version, client ID, redirect URI, unchanged
-capture, and PKCE shape before using the credential.
+query and fragment, and PKCE shape before using the credential.
 The application client's selected platform/version parser classifies the
-capture. It rejects a Google ID Token at or after its signed `exp`; mutable
+parameters. It rejects a Google ID Token at or after its signed `exp`; mutable
 X/GitHub proof lifetimes are enforced only by the Platform Verifier. Google
 accepts a nonempty fragment and empty query; X and GitHub accept a nonempty
 query and empty fragment.
@@ -973,11 +971,11 @@ query and empty fragment.
 An unsupported or invalid input discovered after `AppRequestProof`
 clears the return, sends popup-to-application `AbortCeremony(reason)`, and renders
 **Application updated—return and try again**. An unknown or stale ceremony does
-not send `AppAuthenticateOrigin`; an authenticated capture rejected by the
+not send `AppAuthenticateOrigin`; authenticated parameters rejected by the
 selected platform/version parser makes the application send `AppCancelCeremony`. The
 popup clears the result, attempts to close, and renders one fixed fallback
 message if closing fails. A wrong opener origin, authentication timeout, or
-redirect capture without a valid bounded ceremony ID sends no callback value.
+redirect parameters without a valid bounded ceremony ID send no callback value.
 
 ### Popup/prover channel
 
@@ -985,15 +983,15 @@ The popup/prover boundary reuses the closed `CCDPMessage` union. The ceremony
 popup always forwards the application's exact `AppRequestProof` once to its
 coordinator iframe. On receipt, the coordinator checks isolation and
 shared-memory availability before any credential-bearing network request. Its
-bounded `capture` preserves the provider-returned query
-and fragment unchanged; `platformId` and `platformCeremonyVersion` select its
+bounded `query` and `fragment` preserve the provider-returned values unchanged;
+`platformId` and `platformCeremonyVersion` select its
 exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
 verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
 the Ceremony Client from its validated `CeremonyConfig`. The ceremony popup,
 coordinator, and active fallback window exact-validate the record where they
 receive it. Client classification and prover credential
 extraction use the same closed platform/version parser; the prover admits no
-second interpretation of the capture.
+second interpretation of the parameters.
 
 When qualified, the coordinator proves in place. Otherwise it retains
 `AppRequestProof` in memory and sends `ProverRequestIsolation` only to its exact
