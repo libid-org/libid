@@ -582,8 +582,8 @@ boundaries exist; this section defines their ordered messages.
 A message name starts with the component which creates it: `App`, `Popup`, or
 `Prover`, followed by its action. Intermediaries forward a message unchanged, so
 the prefix records its original creator rather than its latest transport hop.
-The origin-neutral `Abort` is the sole exception because authenticated channel
-direction already supplies its meaning.
+`AbortCeremony` is the sole origin-prefix exception because popup and prover
+share the same upstream technical-failure contract.
 
 Every receiver exact-validates message shape, direction, source, origin, and
 current phase. Unknown, replayed, out-of-order, or post-terminal messages change
@@ -704,12 +704,12 @@ interface AppRequestProof {
 The application-scoped client selects the live `Ceremony` from the authenticated
 `PopupDeliverParams`; it does not query IndexedDB or reveal the ID to
 the composition. An unknown, stale, replayed, or post-reload ceremony ID changes
-no live state and causes cleanup through `Abort`. Otherwise the client
+no live state and causes cleanup through `AppCancelCeremony`. Otherwise the client
 atomically claims the state and uses that Ceremony's platform/version parser to
 exact-validate the capture's transport and fields.
 
 A malformed or mismatched result rejects the Ceremony. A valid provider denial
-resolves `{ status: 'denied' }`. Both paths send `Abort` for popup cleanup.
+resolves `{ status: 'denied' }`. Both paths send `AppCancelCeremony` for popup cleanup.
 A valid acceptance constructs `AppRequestProof` from the live ceremony ID,
 selected platform/version, frozen client and redirect, derived code verifier, and
 unchanged capture. The application origin is trusted for this transient input;
@@ -775,22 +775,34 @@ assembly. Their detailed semantics are defined under
 [progress, cancellation, and recovery](#progress-cancellation-and-recovery) and
 the [popup/prover channel](#popupprover-channel).
 
-### Abort
+### Cancellation and technical failure
 
 ```ts
-interface Abort {
-  type: 'abort'
+interface AppCancelCeremony {
+  type: 'app-cancel-ceremony'
+}
+
+interface AbortCeremony {
+  type: 'abort-ceremony'
+  reason: string
 }
 ```
 
-`Abort` is parameterless and terminal for the current live direction. From the
-application it cancels reachable work or cleans up a denied or invalid OAuth
-return; from the popup or prover it reports technical failure and rejects the
-live Ceremony. Before `AppRequestProof`, the popup clears its capture and
-attempts to close, rendering one fixed fallback if closing fails. Afterwards it also
-cancels reachable proving work. Direction supplies the meaning, so Abort has no
-reason field, ceremony ID, acknowledgement, or response. Context loss may
-produce no Abort at all.
+`AppCancelCeremony` is the parameterless downstream command used when the
+application no longer wants the ceremony to continue, including explicit cancellation,
+provider denial, invalid callback classification, or retired Job authority.
+Before `AppRequestProof`, the popup clears its capture and attempts to close,
+rendering one fixed fallback if closing fails. Afterwards it also cancels
+reachable proving work.
+
+`AbortCeremony` is the upstream technical-failure message created by the popup
+or prover. Its `reason` is a sanitized diagnostic string, not a stable
+machine-readable code or raw exception. The application rejects the live
+Ceremony for every `AbortCeremony`. A closed reason enum may replace the string
+once implementation experience identifies stable, actionable failure
+categories; launch does not guess them in advance. Neither message carries a
+ceremony ID, acknowledgement, or response. Context loss may produce neither
+message.
 
 ### Closed message union
 
@@ -801,11 +813,12 @@ type PopupMessage =
   | AppAuthenticateOrigin
   | PopupDeliverParams
   | AppRequestProof
+  | AppCancelCeremony
   | ProverRequestIsolation
   | ProverConfirmIsolation
   | ProverNotifyEvent
   | ProverDeliverProof
-  | Abort
+  | AbortCeremony
 ```
 
 ### End-to-end sequence
@@ -842,13 +855,13 @@ sequenceDiagram
     A-->>C: AppAuthenticateOrigin(ceremonyId)
     C->>C: Match opener, allowed browser origin, and OAuth state
     C->>A: PopupDeliverParams(ceremonyId, capture)
-    Note over A,C: Before AppRequestProof, Abort always clears the capture and closes or renders the fixed fallback
+    Note over A,C: Before AppRequestProof, AppCancelCeremony always clears the capture and closes or renders the fixed fallback
     alt Invalid callback or setup
         A->>A: Reject Ceremony
-        A-->>C: Abort
+        A-->>C: AppCancelCeremony
     else Valid provider denial
         A->>A: Resolve IdentityResult(denied)
-        A-->>C: Abort
+        A-->>C: AppCancelCeremony
     else Valid provider success
         A-->>C: AppRequestProof
         C->>P: Echo-check capture and forward AppRequestProof once
@@ -868,9 +881,9 @@ sequenceDiagram
                 A->>A: Authenticate, attach stage, and publish CeremonyEvent
             end
             alt Prover-window failure
-                W-->>P: Abort
-                P-->>C: Forward Abort
-                C-->>A: Forward Abort
+                W-->>P: AbortCeremony(reason)
+                P-->>C: Forward AbortCeremony
+                C-->>A: Forward AbortCeremony
                 A->>A: Reject Ceremony
             else Proof generated
                 W-->>P: ProverDeliverProof
@@ -885,8 +898,8 @@ sequenceDiagram
                 A->>A: Authenticate, attach stage, and publish CeremonyEvent
             end
             alt Prover failure
-                P-->>C: Abort
-                C-->>A: Forward Abort
+                P-->>C: AbortCeremony(reason)
+                C-->>A: Forward AbortCeremony
                 A->>A: Reject Ceremony
             else Proof generated
                 P-->>C: ProverDeliverProof
@@ -954,10 +967,10 @@ accepts a nonempty fragment and empty query; X and GitHub accept a nonempty
 query and empty fragment.
 
 An unsupported or invalid input discovered after `AppRequestProof`
-clears the return, sends popup-to-application `Abort`, and renders
+clears the return, sends popup-to-application `AbortCeremony(reason)`, and renders
 **Application updated—return and try again**. An unknown or stale ceremony does
 not send `AppAuthenticateOrigin`; an authenticated capture rejected by the
-selected platform/version parser makes the application send `Abort`. The
+selected platform/version parser makes the application send `AppCancelCeremony`. The
 popup clears the result, attempts to close, and renders one fixed fallback
 message if closing fails. A wrong opener origin, authentication timeout, or
 redirect capture without a valid bounded ceremony ID sends no callback value.
@@ -986,8 +999,9 @@ window clears its ceremony-ID fragment, validates isolation and shared memory,
 then sends `ProverConfirmIsolation(ceremonyId)` over the scoped
 `BroadcastChannel`. The coordinator exact-matches that ID and forwards its
 retained `AppRequestProof` once. Unknown, stale, duplicate, pre-request, or wrong-ID
-readiness changes no state. Before Ready, the only other accepted window message
-is `Abort`, reporting that the top-level document itself could not qualify;
+readiness changes no state. Before isolation confirmation, the only other
+accepted window message is `AbortCeremony(reason)`, reporting that the top-level
+document could not qualify;
 the coordinator forwards it upstream as a terminal technical failure.
 
 The prover does not receive the expected Authorization Digest. Google exposes
@@ -996,19 +1010,19 @@ attested code verifier. The Consumer verification path matches that binding to
 the Authorization Digest it recomputes from the OAuth proof.
 
 After `AppRequestProof`, the active proving placement sends zero or more
-`ProverNotifyEvent` records followed by exactly one `ProverDeliverProof`. Either
-side may instead send parameterless `Abort`: downstream means cancellation
-and upstream means terminal failure. Thus the ceremony popup may cancel its
-coordinator, and the coordinator may cancel its fallback window; either active
-prover reports failure in the reverse direction.
-The coordinator validates and forwards window events, delivery, and Abort
-unchanged to the ceremony popup, which forwards them to the application.
+`ProverNotifyEvent` records followed by exactly one `ProverDeliverProof`. The
+application may instead send parameterless `AppCancelCeremony` downstream. The
+popup and coordinator forward it to cancel reachable proving work. Either active
+prover may send `AbortCeremony(reason)` upstream for terminal technical failure.
+The coordinator validates and forwards window events, delivery, and
+`AbortCeremony` unchanged to the ceremony popup, which forwards them to the application.
 Context loss may produce no terminal message. Unknown fields or types, invalid
 order, messages after terminal, and messages outside the bound channel change
 no state.
 
 The one-shot channel scopes every message to one ceremony. `AppRequestProof` and proof
-delivery carry the ceremony ID; Abort does not duplicate it. The DIP path binds
+delivery carry the ceremony ID; `AppCancelCeremony` and `AbortCeremony` do not
+duplicate it. The DIP path binds
 the exact parent/child `WindowProxy` and browser-stamped origin. The fallback
 window uses the cleared ceremony-ID fragment only to derive its same-origin
 `BroadcastChannel` with the coordinator. All browser boundaries share
@@ -1030,7 +1044,7 @@ performs the dependent `/user` notarization. `platforms/github` implements the n
 specification owns their exact shape and proof semantics.
 
 Neither placement persists credential-bearing state. Inputs and workers are
-cleared after proof delivery, Abort, failure, or context destruction.
+cleared after proof delivery, AbortCeremony, failure, or context destruction.
 
 ## Prover implementation
 
@@ -1166,7 +1180,7 @@ input map exists, `witness` covers ACVM execution and constraint solving, and
 `proof` covers bb.js proof generation.
 
 For each code, the platform module emits `started`, followed by `completed`
-before starting the next code or `failed` immediately before Abort. A cache hit
+before starting the next code or `failed` immediately before AbortCeremony. A cache hit
 still emits the same sequence. OAuth, isolation, delivery, and preview
 construction are represented elsewhere and do not add platform steps.
 
@@ -1371,15 +1385,16 @@ through `proveUserIdentity()`; acceptance proceeds to `AppRequestProof`.
 
 The coordinator/window same-origin `BroadcastChannel` supplies routing inside
 the trusted deployment, not separate sender authentication, durable state, or
-proof authority. A same-origin `Abort` can stop only the current run; it
+proof authority. A same-origin `AppCancelCeremony` can stop only the current run; it
 cannot produce Identity or any later application effect. Missing, duplicated,
 or reordered progress affects only UI. The visible prover remains the fallback
 when an isolated-popup engine cannot relay progress reliably.
 
 Cancellation first retires the application job. If the authenticated channel
-is live, the application sends `Abort`; the ceremony popup marks the
-ceremony canceled and forwards Abort to the coordinator iframe. The coordinator
-cancels local work or relays Abort to its active prover window, which attempts
+is live, the application sends `AppCancelCeremony`; the ceremony popup marks the
+ceremony canceled and forwards `AppCancelCeremony` to the coordinator iframe.
+The coordinator cancels local work or relays `AppCancelCeremony` to its active
+prover window, which attempts
 to close itself. The popup removes the coordinator, clears memory, and
 terminates reachable workers/connections.
 Cancellation is best effort: remote stateless work may finish, but no result is
