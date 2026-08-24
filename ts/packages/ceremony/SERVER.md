@@ -59,13 +59,20 @@ and common-reference-string dependency graph, in code.
 
 An integrating server exposes:
 
-| Method | Route | Availability | Purpose |
-|---|---|---|---|
-| `GET` | `/api/v1/ceremony/config` | always | public application configuration |
-| `GET` | `/api/v1/ceremony/popup` | always | initial ceremony popup document |
-| `GET` | configured callback path, default `/auth/v1/callback` | always | direct byte-identical alias of the popup document and registered OAuth `redirect_uri` |
-| `GET` | `/api/v1/ceremony/prover` | always | shared prefetch, prover coordinator, and isolated-prover document |
-| `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation |
+| Method | Route | Availability | Purpose | Origin enforcement |
+|---|---|---|---|---|
+| `GET` | `/api/v1/ceremony/config` | always | public application configuration | server exact-checks request `Origin` against `allowedAppOrigins` and returns exact noncredentialed CORS |
+| `GET` | `/api/v1/ceremony/popup` | always | initial ceremony popup document | none at HTTP ingress; loaded popup exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
+| `GET` | configured callback path, default `/auth/v1/callback` | always | direct byte-identical alias of the popup document and registered OAuth `redirect_uri` | none at HTTP ingress; loaded popup performs the same browser-side check after provider return |
+| `GET` | `/api/v1/ceremony/prover` | always | shared prefetch, prover coordinator, and isolated-prover document | none at HTTP ingress; the fixed public document binds through CCDP and same-origin popup/prover channels after loading |
+| `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | server requires `Origin` to equal the configured ceremony server origin and rejects cross-origin preflight |
+
+Server-side request-origin enforcement is used only where the browser reliably
+sends an authoritative `Origin`. Top-level and iframe navigation may omit it,
+and the OAuth callback may identify the provider rather than the application;
+`Referer` is never an authority input. The fixed popup, callback, and prover
+documents therefore remain public and request-invariant, with authority
+established by their browser protocol after loading.
 
 No preparation, continuation, polling, status, result, cancellation, browser
 TLS bridge, or proof-recovery route exists. Unsupported methods fail without
