@@ -137,20 +137,20 @@ const ceremonies = await createCeremonyClient({
 This is an application-owned instance, not a package-global singleton. Client
 creation fetches and exact-validates `ServerConfig`; a configured platform is
 enabled only when the installed package has a closed implementation and at
-least one advertised verifier version in common.
+least one advertised ceremony version in common.
 `supportedPlatforms` is an immutable `readonly PlatformId[]` derived
 from that same closed implementation table. It contains every platform compiled
 into the package release, exactly once, and has no mutable registration API.
 
 The launch release's closed local version table is:
 
-| Platform | Locally supported verifier versions |
+| Platform | Locally supported ceremony versions |
 |---|---|
 | `google` | `1` |
 | `x` | `1` |
 | `github` | `1` |
 
-No other local verifier version is supported. A platform is therefore enabled
+No other local ceremony version is supported. A platform is therefore enabled
 at launch only when its validated `ServerConfig` entry advertises version `1`,
 and every created Ceremony for that platform freezes version `1`.
 
@@ -184,9 +184,9 @@ const ceremony = await ceremonies.new(jobId, {
 
 `enabledPlatforms` is the immutable intersection of `supportedPlatforms` and
 the exact platform keys in validated `ServerConfig` that have at least one
-verifier version in common with the installed implementation. Catalog order is
+ceremony version in common with the installed implementation. Catalog order is
 stable discovery order, not a product ranking; applications may present another order.
-Neither array contains OAuth clients, verifier versions, server configuration,
+Neither array contains OAuth clients, ceremony versions, server configuration,
 or display metadata.
 
 The composition selects a Chain Profile and operation per ceremony and supplies
@@ -194,7 +194,7 @@ their exact 32-byte `chainId` and `operationDomain` hashes with bounded
 `transactionData`. During `new`, the client exact-validates and copies both
 hashes without deriving or interpreting them, then treats `transactionData` as opaque. It requires
 the selected platform to be enabled by validated `ServerConfig`, chooses the
-newest locally preferred verifier version also advertised for that platform,
+newest locally preferred ceremony version also advertised for that platform,
 generates a fresh 32-byte authorization nonce, computes the authorization
 digest, and freezes all of those values before constructing OAuth or allowing
 provider navigation.
@@ -207,7 +207,7 @@ authorization, but its unpredictability and one-use handling provide browser
 continuity: the initial popup discloses it to the initiating app, the
 post-OAuth popup withholds it, and `PopupAuthenticateOrigin` must return it.
 
-`new` chooses the platform verifier version, generates a fresh authorization
+`new` chooses the platform ceremony version, generates a fresh authorization
 nonce, derives the code verifier by the normative PKCE construction where
 required, and constructs the authorization request with
 `state=ceremonyId`, registers that ID to this live `Ceremony`, and returns only
@@ -216,7 +216,7 @@ serialization of `ceremonyId`, not a second identifier:
 
 ```ts
 interface CeremonyNavigation {
-  href: string   // /api/v1/ceremony/popup#launch(ceremonyId, platformId, verifierVersion)
+  href: string   // /api/v1/ceremony/popup#launch(ceremonyId, platformId, ceremonyVersion)
   target: string
 }
 
@@ -242,7 +242,7 @@ present, `proveUserIdentity()` immediately navigates that `WindowProxy` to
 `navigation.href` and exact-matches the first popup message against it. When
 absent, the package opens or navigates nothing; the real anchor reaches the
 same URL and the client binds its browser-stamped `MessageEvent.source` after
-matching `PopupFetchingProver`'s ceremony ID, platform ID, and verifier version
+matching `PopupFetchingProver`'s ceremony ID, platform ID, and ceremony version
 to the live Ceremony. Both paths then
 retain the same source through OAuth. There is no nullable popup value or
 mutable `setPopup` API.
@@ -285,11 +285,11 @@ required by the no-ceremony-recovery launch scope.
 The application server exposes public configuration:
 
 ```ts
-type PlatformVerifierVersion = number
+type PlatformCeremonyVersion = number
 
 interface PlatformConfig {
   clientId: string
-  verifierVersions: readonly PlatformVerifierVersion[]
+  ceremonyVersions: readonly PlatformCeremonyVersion[]
 }
 
 interface ServerConfig {
@@ -305,7 +305,7 @@ module. The fetch requires an exact browser `Origin`. `redirectUri` is the
 registered HTTPS URL on the configured server origin, with no credentials,
 query, or fragment. Its path is deployment-configurable and defaults to
 `/auth/v1/callback`; loopback development may use HTTP. Each platform entry contains its public client ID and
-a nonempty, duplicate-free set of supported verifier versions. List order has
+a nonempty, duplicate-free set of supported ceremony versions. List order has
 no meaning: the client chooses the newest version according to its closed local
 implementation table from the intersection. Platform entries contain no credentials.
 
@@ -315,7 +315,7 @@ embeds it into the byte-identical popup document served at both
 `/api/v1/ceremony/popup` and the configured `redirectUri` path. It is never derived from a
 request's `Origin` or `Referer`.
 
-The client freezes the selected platform, verifier version, client ID, and
+The client freezes the selected platform, ceremony version, client ID, and
 redirect URI in the live Ceremony. `PopupProve` carries those values; the popup
 applies its existing opener-origin validation and closed platform/version
 dispatch without fetching configuration again.
@@ -337,7 +337,7 @@ interface ProverArtifact {
 
 interface ProverProfile {
   platformId: PlatformId
-  platformVerifierVersion: PlatformVerifierVersion
+  platformCeremonyVersion: PlatformCeremonyVersion
   artifacts: readonly ProverArtifact[]
 }
 
@@ -452,14 +452,14 @@ code-pinned toolchain assets, then keys ordinary artifact single flights and
 Cache Storage entries by canonical URL; a repeated URL joins the existing
 request or cache hit. CRS single flights are keyed by curve and point count and
 complete through bb.js's IndexedDB cache. One deployment URL mapped to
-conflicting kinds is invalid. Platform modules define each verifier version's
+conflicting kinds is invalid. Platform modules define each ceremony version's
 exact libID artifact kinds, digests, and SRS size and reject a missing,
 duplicate, or additional deployment artifact before fetching.
 
 `/api/v1/ceremony/prover` has three closed fragment forms. The bootstrap copies and clears
 the fragment before importing the root module or using storage or the network:
 
-- `fetch(ceremonyId, platformId, verifierVersion)` creates the warmup iframe;
+- `fetch(ceremonyId, platformId, ceremonyVersion)` creates the warmup iframe;
 - an empty fragment creates the returned-callback coordinator iframe; and
 - a bare ceremony ID creates the top-level fallback prover window.
 
@@ -481,8 +481,9 @@ repository owns the exact proof relation and ABI. Launch uses these artifacts:
 Those links pin the current launch source snapshot. Deployment consumes the
 matching compiled ACIR/ABI and manifest from a
 [`libid-circuits` release](https://github.com/libid-org/libid-circuits/releases),
-not source or an application-selected URL. A profile is unavailable until its
-circuit release and matching Consumer verifier are both deployed.
+not source or an application-selected URL. A profile is available when the
+ceremony package and its matching circuit release are deployed. Whether a
+chain-specific Consumer accepts the resulting `OAuthProof` is independent.
 
 All three pipelines use one proving engine. The platform module builds the
 closed Noir input map, the Noir/ACVM runtime solves the witness, and the
@@ -611,8 +612,13 @@ type IdentityResult =
 
 ```
 
-`PlatformVerifierVersion` is an unsigned 16-bit integer selected by the ceremony client
-from the versions advertised in server configuration, never by the caller.
+`PlatformCeremonyVersion` is an unsigned 16-bit integer selected by the ceremony client
+from the versions advertised in server configuration, never by the caller. It
+versions one platform's complete ceremony semantics: authorization-digest
+construction, OAuth request and return handling, platform proof construction,
+and assembly of the final `OAuthProof`. It does not version a chain, Registry,
+or verifier contract; multiple chain-specific Consumers may accept the same
+ceremony output.
 `authorizationNonce` is exactly 32 cryptographically random bytes. For X and
 GitHub it also supplies the secret input to PKCE and is not exposed before the
 token exchange completes. Exact authorization encoding is delegated to the
@@ -636,7 +642,7 @@ acceptance makes Identity authoritative. Callers cannot supply or override
 Identity fields.
 
 The live `Ceremony` privately retains its ID, copied operation inputs, selected
-platform and verifier version, authorization nonce and digest, OAuth client and
+platform and ceremony version, authorization nonce and digest, OAuth client and
 redirect, derived code verifier, and popup. A restart creates a fresh Ceremony
 with a fresh nonce, digest, and verifier. After proof acceptance, the Job may
 store the accepted `IdentityResult` and its public `OAuthProof` fields. Before
@@ -705,7 +711,7 @@ valid `PopupProve`; no request parameter selects a mode.
 
 Before user activation, the composition prepares an action-specific real
 anchor whose `href` is `/api/v1/ceremony/popup` with a closed fragment containing only
-the ceremony ID, platform ID, and selected verifier version, and whose target
+the ceremony ID, platform ID, and selected ceremony version, and whose target
 is a unique non-reserved browsing-context name. On activation it calls
 `window.open('about:blank', target)` synchronously and suppresses anchor
 navigation only if a usable handle is returned; `proveUserIdentity()` then
@@ -742,12 +748,12 @@ Every redirect document first loads `/api/v1/ceremony/prover` in a same-origin i
 That document may warm assets without isolation or credentials. Its
 `libid-ceremony-prover.js` Window branch registers the same module URL as a
 module service worker. The redirect gives the child a closed
-`#fetch(ceremonyId, platformId, verifierVersion)` bootstrap fragment. The child
+`#fetch(ceremonyId, platformId, ceremonyVersion)` bootstrap fragment. The child
 clears it before importing the root module or using the network, selects that
 profile from its server-embedded libID-asset manifest and code-pinned toolchain
 assets, and asks the worker to start only those artifact single flights. The
 ceremony ID is retained only for the readiness response;
-the proving implementation receives only the selected platform and verifier version. After
+the proving implementation receives only the selected platform and ceremony version. After
 the flights exist or the bounded startup attempt determines that warmup is
 unavailable, the child returns `PopupFetchingProver` and the redirect forwards
 it to the client. It never waits for download completion. On a provider return,
@@ -796,7 +802,7 @@ interface PopupFetchingProver {
   type: 'popup-fetching-prover'
   ceremonyId: string
   platformId: PlatformId
-  platformVerifierVersion: PlatformVerifierVersion
+  platformCeremonyVersion: PlatformCeremonyVersion
 }
 
 interface PopupUserDecided {
@@ -824,7 +830,7 @@ interface PopupProve {
   type: 'popup-prove'
   ceremonyId: string
   platformId: PlatformId
-  platformVerifierVersion: PlatformVerifierVersion
+  platformCeremonyVersion: PlatformCeremonyVersion
   clientId: string
   redirectUri: string
   capture: OAuthRedirectCapture
@@ -872,14 +878,14 @@ type PopupMessage =
 ```
 
 On an initial launch, the redirect exact-validates and clears its fragment's
-ceremony ID, platform ID, and verifier version, then loads
-`/api/v1/ceremony/prover#fetch(ceremonyId, platformId, platformVerifierVersion)`. The
+ceremony ID, platform ID, and ceremony version, then loads
+`/api/v1/ceremony/prover#fetch(ceremonyId, platformId, platformCeremonyVersion)`. The
 child captures and clears that fragment before importing the root module or using the
 network, resolves exactly that profile from its server-embedded `ProverAssets`
 and code-pinned toolchain assets, asks the service worker to start or join only
 those artifact fetches, and returns
 `PopupFetchingProver(popupProtocolVersion, ceremonyId, platformId,
-platformVerifierVersion)` after the single flights exist or the bounded attempt
+platformCeremonyVersion)` after the single flights exist or the bounded attempt
 determines that warmup is unavailable. The redirect accepts this only from its
 exact child and forwards it unchanged to `window.opener`, trying only the
 server-embedded allowed origins as exact `targetOrigin` values. A missing or
@@ -888,7 +894,7 @@ still follows the cold proving path. Warmup requires no opener response or
 origin authentication.
 
 The application accepts `PopupFetchingProver` only from the exact configured
-redirect origin and a matching live ceremony ID, platform ID, and verifier
+redirect origin and a matching live ceremony ID, platform ID, and ceremony
 version. A scripted launch additionally requires
 `MessageEvent.source === expectedPopup`; a real-anchor launch binds that source
 to the matching Ceremony. The client exact-validates the popup protocol version,
@@ -986,11 +992,11 @@ sequenceDiagram
     else Real-anchor fallback
         A->>C: Let anchor navigate its named context to /api/v1/ceremony/popup#launch profile
     end
-    C->>C: Capture and clear ceremonyId, platformId, verifierVersion
-    C->>P: Embed /api/v1/ceremony/prover#fetch(ceremonyId, platformId, verifierVersion)
+    C->>C: Capture and clear ceremonyId, platformId, ceremonyVersion
+    C->>P: Embed /api/v1/ceremony/prover#fetch(ceremonyId, platformId, ceremonyVersion)
     P->>P: Capture and clear fragment, then select profile
     P->>P: Start or join only the selected artifact fetches
-    P-->>C: PopupFetchingProver(protocolVersion, ceremonyId, platformId, verifierVersion)
+    P-->>C: PopupFetchingProver(protocolVersion, ceremonyId, platformId, ceremonyVersion)
     C-->>A: Forward PopupFetchingProver unchanged
     A->>A: Validate versions, profile, and popup source
     A->>C: Navigate retained popup to provider URL
@@ -1090,7 +1096,7 @@ startPopup(capture, allowedAppOrigins)
 ```
 
 An empty query plus the closed launch fragment containing ceremony ID, platform
-ID, and verifier version is the initial shared launch. Provider callbacks
+ID, and ceremony version is the initial shared launch. Provider callbacks
 instead carry their platform's closed query/fragment grammar, including only
 the same ceremony ID as OAuth `state`. The
 bootstrap clears even malformed or oversized input before rendering. It performs no
@@ -1105,7 +1111,7 @@ errors.
 `location.search` and `location.hash` strings, including a leading delimiter
 when nonempty. After loading, the popup extracts the single routing state,
 authenticates the opener through `PopupAuthenticateOrigin`, and exact-validates the returned
-`PopupProve` ID, platform, verifier version, client ID, redirect URI, unchanged
+`PopupProve` ID, platform, ceremony version, client ID, redirect URI, unchanged
 capture, and PKCE shape before using the credential.
 The application client's selected platform/version parser classifies the
 capture. It rejects a Google ID Token at or after its signed `exp`; mutable
@@ -1129,7 +1135,7 @@ popup always forwards the application's exact `PopupProve` once to its
 coordinator iframe. On receipt, the coordinator checks isolation and
 shared-memory availability before any credential-bearing network request. Its
 bounded `capture` preserves the provider-returned query
-and fragment unchanged; `platformId` and `platformVerifierVersion` select its
+and fragment unchanged; `platformId` and `platformCeremonyVersion` select its
 exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
 verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
 the Ceremony Client from its validated `ServerConfig`. The ceremony popup,
@@ -1223,7 +1229,7 @@ progress stage. The popup reports
 its two prover lifecycle transitions over the authenticated channel, and the
 client confirms them before publishing them.
 
-Each platform-verifier-version module defines only its steps beside the code
+Each platform-ceremony-version module defines only its steps beside the code
 which performs them and emits `started` followed by exactly one `completed` or
 `failed`. It cannot select a common stage. The prover validates only the bounded
 string and status shape, stamps `timestamp` as non-negative safe-integer Unix
@@ -1273,7 +1279,7 @@ proving; there is no warmup route, artifact, or mode flag.
 
 The `/api/v1/ceremony/prover` bootstrap exact-validates its server-embedded `ProverAssets`.
 For warmup, its Window branch accepts only the closed, cleared
-`#fetch(ceremonyId, platformId, verifierVersion)` fragment and selects exactly
+`#fetch(ceremonyId, platformId, ceremonyVersion)` fragment and selects exactly
 one matching profile, combining its libID-owned deployment entries with the
 toolchain assets pinned by the prover build. The fragment can select a manifest
 profile but cannot supply an asset URL. The ceremony ID is only echoed in readiness; it is not
@@ -1361,11 +1367,18 @@ exposure and cross-application confusion, not malicious deployment authority.
 
 ## Versioning and compatibility
 
-`PlatformVerifierVersion` versions one platform proof implementation and its
-OAuth grammar, progress catalog, circuit, witness, verifier, and notary-proof
-behavior. `PlatformConfig.verifierVersions` advertises what the deployment
-accepts; the client selects its newest locally preferred member of that set,
-and every live ceremony pins it.
+`PlatformCeremonyVersion` versions one platform's authorization digest, OAuth
+grammar, progress catalog, circuit, witness, proof pieces, and final
+`OAuthProof` assembly. `PlatformConfig.ceremonyVersions` advertises what the
+deployment can execute; the client selects its newest locally preferred member
+of that set, and every live ceremony pins it. Chain-specific contract and
+Registry versions are outside this boundary and independently decide which
+ceremony outputs they accept.
+
+The launch protocol intentionally does not split digest, OAuth, proof, and
+output-shape versions. A proof change normally changes the assembled
+`OAuthProof`; a rare compatible internal change does not justify another
+public compatibility axis.
 
 `PopupProtocolVersion` changes only when the shared browser message union or
 its application/popup or popup/prover semantics break. One package release may
