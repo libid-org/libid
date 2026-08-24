@@ -1,7 +1,8 @@
 # `@libid/ceremony` test plan
 
-This plan tests the `@libid/ceremony` implementation architecture in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+This plan tests the `@libid/ceremony` package architecture in
+[ARCHITECTURE.md](ARCHITECTURE.md) and its browser protocol in
+[CCDP.md](CCDP.md).
 Normative proof and platform behavior come from the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md).
