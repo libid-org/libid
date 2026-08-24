@@ -445,11 +445,14 @@ sequenceDiagram
     participant P as Prover iframe / coordinator
     participant W as Optional isolated prover window
 
-    U->>A: Start identification
-    alt Scripted launch
-        A->>C: Open about:blank and navigate to /api/v1/ceremony/popup#launch profile
-    else Real-anchor fallback
-        A->>C: Let anchor navigate its named context to /api/v1/ceremony/popup#launch profile
+    U->>A: Activate identity control
+    A->>A: Synchronously attempt window.open(about:blank, target)
+    alt WindowProxy returned
+        A->>A: Prevent anchor navigation and call proveUserIdentity(expectedPopup)
+        A->>C: Navigate expectedPopup to navigation.href
+    else window.open returned null
+        A->>A: Call proveUserIdentity() without expectedPopup
+        A->>C: Let the same activation's anchor navigate to navigation.href
     end
     C->>C: Capture and clear ceremonyId, platformId, ceremonyVersion
     C->>P: Embed /api/v1/ceremony/prover#prefetch(ceremonyId, platformId, ceremonyVersion)
@@ -457,27 +460,29 @@ sequenceDiagram
     P->>P: Start or join only the selected artifact fetches
     P-->>C: ProverPrefetchingAssets(ccdpVersion, ceremonyId, platformId, ceremonyVersion)
     C-->>A: Forward ProverPrefetchingAssets unchanged
-    A->>A: Validate versions, profile, and popup source
-    A->>C: Navigate retained popup to provider URL
-    C->>O: Provider navigation
+    A->>A: Validate CCDP/platform versions and bind popup source
+    A->>O: Navigate retained popup to frozen provider URL
     O->>C: Return to configured callback alias
-    Note right of C: Bound query and fragment, then clear URL before module load or later requests
-    C->>P: Load /api/v1/ceremony/prover and start or join prefetch
-    C->>A: PopupRequestAuthentication(version)
-    A->>A: Match retained popup and claim Ceremony
+    Note right of C: Bound and copy query/fragment, then clear URL before module load or later requests
+    C->>P: Embed fresh /api/v1/ceremony/prover coordinator iframe
+    C->>A: PopupRequestAuthentication(ccdpVersion)
+    A->>A: Match retained popup and look up live Ceremony
     A-->>C: AppAuthenticateOrigin(ceremonyId)
     C->>C: Match opener, allowed browser origin, and OAuth state
     C->>A: PopupDeliverParams(ceremonyId, oauthReturn)
+    A->>A: Claim Ceremony, enter oauth-validation, and parse oauthReturn
     Note over A,C: Before AppRequestProof, AppCancelCeremony always clears the parameters and closes or renders the fixed fallback
-    alt Invalid callback or setup
+    alt Invalid or mismatched authenticated return
         A->>A: Reject Ceremony
         A-->>C: AppCancelCeremony
     else Valid provider denial
         A->>A: Resolve IdentityResult(denied)
         A-->>C: AppCancelCeremony
     else Valid provider success
+        A->>A: Enter proof-generation
         A-->>C: AppRequestProof
         C->>P: Echo-check oauthReturn, then forward AppRequestProof once
+        Note over A,W: Before terminal, AppCancelCeremony flows downstream to the active prover; best effort, no acknowledgement
         P->>P: Check isolation and SharedArrayBuffer
         alt DIP is not isolated
             P-->>C: ProverRequestIsolation
@@ -485,30 +490,37 @@ sequenceDiagram
             U->>C: Activate Continue proving
             C->>W: Open /api/v1/ceremony/prover#ceremonyId
             W->>W: Clear fragment and check isolation
-            W-->>P: ProverConfirmIsolation(ceremonyId) over BroadcastChannel
-            P-->>W: Forward retained AppRequestProof once
-            loop Zero or more progress events
-                W-->>P: ProverNotifyEvent(platform step)
-                P-->>C: Forward ProverNotifyEvent unchanged
-                C-->>A: Forward ProverNotifyEvent unchanged
-                A->>A: Authenticate, attach stage, and publish CeremonyEvent
-            end
-            alt Prover-window failure
+            alt Fallback cannot qualify
                 W-->>P: AbortCeremony(reason)
                 P-->>C: Forward AbortCeremony
                 C-->>A: Forward AbortCeremony
                 A->>A: Reject Ceremony
-            else Proof generated
-                W-->>P: ProverDeliverProof
-                P-->>C: Forward ProverDeliverProof unchanged
-                C-->>A: Validate and forward ProverDeliverProof unchanged
-                A->>A: Construct preview and resolve IdentityResult(accepted)
+            else Fallback is qualified
+                W-->>P: ProverConfirmIsolation(ceremonyId) over BroadcastChannel
+                P-->>W: Forward retained AppRequestProof once
+                loop Zero or more progress events
+                    W-->>P: ProverNotifyEvent(platform step)
+                    P-->>C: Forward ProverNotifyEvent unchanged
+                    C-->>A: Forward ProverNotifyEvent unchanged
+                    A->>A: Authenticate, attach current local stage, and publish CeremonyEvent
+                end
+                alt Prover-window failure
+                    W-->>P: AbortCeremony(reason)
+                    P-->>C: Forward AbortCeremony
+                    C-->>A: Forward AbortCeremony
+                    A->>A: Reject Ceremony
+                else Proof generated
+                    W-->>P: ProverDeliverProof
+                    P-->>C: Forward ProverDeliverProof unchanged
+                    C-->>A: Validate and forward ProverDeliverProof unchanged
+                    A->>A: Assemble OAuthProof and resolve IdentityResult(accepted)
+                end
             end
         else Prover is qualified
             loop Zero or more progress events
                 P-->>C: ProverNotifyEvent(platform step)
                 C-->>A: Forward ProverNotifyEvent unchanged
-                A->>A: Authenticate, attach stage, and publish CeremonyEvent
+                A->>A: Authenticate, attach current local stage, and publish CeremonyEvent
             end
             alt Prover failure
                 P-->>C: AbortCeremony(reason)
@@ -517,7 +529,7 @@ sequenceDiagram
             else Proof generated
                 P-->>C: ProverDeliverProof
                 C-->>A: Validate and forward ProverDeliverProof unchanged
-                A->>A: Construct preview and resolve IdentityResult(accepted)
+                A->>A: Assemble OAuthProof and resolve IdentityResult(accepted)
             end
         end
     end
