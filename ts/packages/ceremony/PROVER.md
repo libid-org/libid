@@ -209,7 +209,7 @@ outputs.
 `platforms/github` first sends the captured code and derived verifier to the
 fixed server token-exchange route. The server uses its confidential client
 secret, performs the token-exchange TLSNotary session, and returns the bounded
-access token, token attestation, and `bearerBlinder`: the canonical unpadded
+access token, token attestation, and `bearerOpening`: the canonical unpadded
 base64url encoding of the token session's exact 16-byte TLSNotary blinder. The
 browser exact-validates the selected version's token response, attestation,
 request bindings, and bearer opening before using the bearer in its own fixed

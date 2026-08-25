@@ -43,7 +43,7 @@ One deployment has these server-owned inputs:
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Popup and prover roots | Immutable module URLs, integrity values, and deployment-fixed CSP sources |
 | Prover assets | One exact immutable URL for the libID-built notarization client, one exact immutable circuit URL per platform/version, and one common Notary Service address |
-| Confidential platform settings | GitHub client secret, redirect URI, and other normative token-exchange settings when GitHub is enabled |
+| Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
 `allowedAppOrigins` uses set semantics and has no protocol maximum. The same
 value drives configuration CORS and is embedded into the popup document. It is
@@ -302,11 +302,53 @@ When GitHub is enabled, the server implements
 OAuth token exchange and token TLSNotary session synchronously and retains no
 state.
 
-The exact `TokenRequest` and `TokenResponse` codecs and their proof semantics
-come from the selected GitHub platform ceremony version in the normative
-platform specification. `@libid/ceremony/platforms/github` supplies the
-browser-side codecs and validation; the ceremony package supplies no server
-handler.
+The HTTP namespace fixes this JSON wire contract. The selected GitHub platform
+ceremony version fixes what the values mean and how the resulting evidence is
+verified, but does not redefine the route or JSON shape.
+
+```ts
+interface TokenRequest {
+  code: string
+  codeVerifier: string
+}
+
+interface EncodedNotaryAttestation {
+  attestedData: string // canonical unpadded base64url
+  signature: string    // canonical unpadded base64url
+}
+
+interface TokenResponse {
+  accessToken: string
+  tokenAttestation: EncodedNotaryAttestation
+  bearerOpening: string // canonical unpadded base64url
+}
+```
+
+Both records are JSON objects encoded as UTF-8. Member order and insignificant
+JSON whitespace have no meaning. Duplicate, missing, additional, or wrongly
+typed members are invalid. No `schema` member is carried because
+`/api/v1/ceremony/github-token` already versions this transport.
+
+`TokenRequest.code` is the exact GitHub authorization code captured by the
+popup. It is nonempty printable ASCII without whitespace or control bytes and
+is at most 1,024 bytes. `codeVerifier` is the Ceremony Client's exact PKCE code
+verifier and matches `[A-Za-z0-9_-]{43}`. Neither value is normalized before
+the server constructs the platform request.
+
+`TokenResponse.accessToken` is nonempty printable ASCII without whitespace or
+control bytes and is at most 4,096 bytes. `attestedData` is the nonempty,
+byte-exact attested-data record and decodes to at most 2 MiB; `signature`
+decodes to the exact 65-byte notary signature authenticating those bytes.
+`bearerOpening` decodes to exactly 16 bytes. Every byte string uses the RFC 4648
+URL-safe alphabet without padding; noncanonical encodings are invalid. The
+entire encoded response body is at most 3 MiB.
+
+The returned token, attestation, and opening are one result: the uniquely
+framed bearer commitment in `tokenAttestation.attestedData` equals
+`SHA256(accessToken || bearerOpening)`. The server preserves the attested data
+and signature byte-for-byte. The browser exact-validates the complete response,
+including this correlation and the selected GitHub ceremony's attestation
+rules, before beginning its dependent `/user` notarization.
 
 The route contract is:
 
@@ -314,8 +356,8 @@ The route contract is:
   `application/json`;
 - `Origin` exactly equals the configured server origin used by the popup and
   prover; cross-origin preflight and credentialed cross-origin use are rejected;
-- the request is an exact, bounded `TokenRequest`; unknown fields and malformed
-  JSON fail before token exchange;
+- the request is an exact, bounded `TokenRequest`; malformed UTF-8 or JSON and
+  invalid record fields fail before token exchange;
 - client ID, client secret, redirect URI, platform endpoint, notary, proxy, and
   destination come from server configuration, never caller input;
 - redirects are rejected and request duration and response size are bounded;
@@ -326,12 +368,8 @@ The route contract is:
 - failures return no partial credential, attestation, or caller-selected
   diagnostic content.
 
-The current response includes a canonical unpadded base64url `bearerBlinder`
-which decodes to exactly 16 bytes. The browser validates the complete response
-before beginning its dependent `/user` notarization.
-
 Timeout, duplicate request, process restart, or response loss leaves no server
-record. There is no action ID beyond the request's normative fields, no polling
+record. There is no action ID beyond the request fields, no polling
 or result route, and no server progress stream. Loss of the response requires a
 fresh browser ceremony.
 

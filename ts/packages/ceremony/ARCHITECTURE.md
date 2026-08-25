@@ -145,7 +145,7 @@ single flight and cache. `prover/notarization` is an internal leaf shared by
 the X and GitHub platform modules, not another package entrypoint or artifact.
 
 Server implementations are outside the package. `platforms/github` implements
-only the normative browser-side token request/response codecs and
+only the server-contract browser-side token request/response codecs and
 validation; the integrating server implements the required confidential
 endpoint.
 
