@@ -30,7 +30,7 @@ ServiceWorker
 
 The prover consumes one exact `AppRequestProof` after CCDP has authenticated
 the live ceremony and chosen a placement. It returns only bounded platform
-steps, the generated proof, attestations, or a sanitized technical failure.
+steps, one exact platform proof delivery, or a sanitized technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
@@ -40,12 +40,17 @@ Authorization Digest it recomputes from `OAuthProof`.
 
 The prover does not assemble or verify `OAuthProof`, construct `Identity`, call
 a Consumer, or persist credential-bearing state. The Ceremony Client combines
-the returned proof and attestations with its retained ceremony fields and
-derives the locally checked, non-authoritative preview. Prover inputs, workers,
-witnesses, and outputs are cleared after delivery, `AbortCeremony`, failure, or
-context destruction.
+the selected delivery variant with its retained ceremony fields and derives the
+locally checked, non-authoritative preview. Prover inputs, workers, witnesses,
+and outputs are cleared after delivery, `AbortCeremony`, failure, or context
+destruction.
 
-### X and GitHub delivery boundary
+### Proof delivery boundary
+
+Google delivers its proof bytes and the circuit's exact 56-element public-input
+vector. It delivers no attestation. The Ceremony Client adds the retained
+client identifier and common authorization fields to assemble the exact
+[`GoogleOAuthProof`](ARCHITECTURE.md#result-and-lifecycle).
 
 For X and GitHub, one `ProverDeliverProof` contains exactly the `bearer-link`
 proof bytes and two attestations ordered token session then identity session.
@@ -64,14 +69,21 @@ values from the corresponding verified attestations before checking the proof.
 The circuit proves only that one hidden bearer opens both commitments; PKCE
 binds the token exchange to the Authorization Digest outside the circuit.
 
-After delivery, the Ceremony Client assembles `OAuthProof` from the retained
-platform/version, operation domain, authorization nonce, and transaction data,
-plus the delivered proof and attestations. It does not add a chain ID,
-Authorization Digest, identity fields, code verifier, evidence time, circuit
-public inputs, verifier address, or verification-key field. Those values are
-respectively environment-sourced, recomputed, extracted from signed evidence,
-or selected by verifier governance. The exact record remains owned by the
-normative specification rather than being redefined here.
+The delivery-to-output mapping is closed. `ProverDeliverProof` always carries
+one `proof` payload; only that payload's closed type varies:
+
+| Platform | Prover delivery | Ceremony Client additions | OAuth proof |
+|---|---|---|---|
+| Google | `GoogleProof { honkProof, publicInputs }` | common fields, retained `clientId` | `GoogleOAuthProof` |
+| X | `BearerLinkProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `XOAuthProof` |
+| GitHub | `BearerLinkProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `GitHubOAuthProof` |
+
+The common fields are platform ID, the profile-pinned Platform Verifier
+Version, operation domain, authorization nonce, and transaction data. The
+exact records are defined in the
+[package architecture](ARCHITECTURE.md#result-and-lifecycle). The Ceremony
+Client adds no chain ID, Authorization Digest, identity sidecar, code verifier,
+evidence-time sidecar, verifier address, or verification-key field.
 
 The platform pipelines request the profile's exact reveals and commitments.
 Attestation authenticity, authority, method and path, request grammar,
@@ -103,11 +115,11 @@ Noir input map, the Noir ACIR virtual machine (ACVM) runtime solves the witness,
 and the circuit-compatible
 [Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.2.0/barretenberg/ts/bb.js)
 release generates an UltraHonk proof. bb.js returns raw proof bytes and an
-ordered flat array of field-valued public inputs inside the prover. The prover
-discards that internal array after generation and returns only the proof and
-attestations. The Consumer reconstructs the exact public inputs from the OAuth
-proof's authenticated fields and attestations; the browser does not duplicate
-the circuit ABI or verify the generated proof.
+ordered flat array of field-valued public inputs. Google delivers both as its
+only authenticated identity evidence. X and GitHub deliver the proof but not
+the array because their Platform Verifiers reconstruct its two semantic
+commitments from the submitted attestations. The browser does not verify the
+generated proof or define a second circuit ABI.
 
 X and GitHub additionally use the browser TLSNotary bundle built by the
 [`libid-org/notary` build script](https://github.com/libid-org/notary/blob/e0ce1f1e0bedcde54740d1af70d4eaf9b439a9fb/scripts/build-tlsn-wasm.sh)
@@ -135,10 +147,10 @@ The semantic groups flatten to exactly 56 bb.js public-input fields. The module
 derives the candidate authorization digest from the signed nonce; the circuit
 re-encodes it as the exact unpadded base64url nonce and verifies the RS256
 signature and signed claims. The module then generates one proof and returns it
-with an empty attestation list. The Ceremony Client derives the local identity
-preview and OAuth-proof fields from its retained ID Token, frozen client
-identifier, and the JWK selected by `kid`; only Consumer verification makes
-them authoritative.
+with the exact 56-element public-input vector and no attestation. The Ceremony
+Client exact-validates that vector, adds its retained client identifier, and
+derives the local identity preview from the same proof outputs; only Consumer
+verification makes them authoritative.
 
 ### X
 
@@ -160,8 +172,9 @@ nonempty printable ASCII of at most 128 bytes and exposes exactly the two
 32-byte bearer commitments, token first and identity second; Noir flattens them
 to 64 bb.js public-input fields. Delivery contains only the proof and the two
 attestations in the same token/identity order. Identity fields and the
-authorization digest are authenticated by the attestations and Platform
-Verifier, not duplicated as circuit outputs.
+authorization digest are derived by the Platform Verifier from the verified
+attestations and submitted authorization fields, not duplicated as circuit
+outputs.
 
 ### GitHub
 

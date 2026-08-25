@@ -354,6 +354,44 @@ dispatch without fetching configuration again.
 ## Result and lifecycle
 
 ```ts
+type OAuthProof = GoogleOAuthProof | XOAuthProof | GitHubOAuthProof
+
+interface GoogleProof {
+  honkProof: Uint8Array
+  publicInputs: readonly Uint8Array[] // exactly 56 canonical 32-byte fields
+}
+
+interface BearerLinkProof {
+  honkProof: Uint8Array
+  tokenAttestation: NotaryAttestation
+  identityAttestation: NotaryAttestation
+}
+
+interface GoogleOAuthProof extends GoogleProof {
+  platformId: 'google'
+  platformVerifierVersion: number  // unsigned 16-bit integer
+  operationDomain: Uint8Array      // exactly 32 bytes
+  authorizationNonce: Uint8Array   // exactly 32 bytes
+  transactionData: Uint8Array      // bounded opaque bytes
+  clientId: string                 // exact signed aud bytes
+}
+
+interface XOAuthProof extends BearerLinkProof {
+  platformId: 'x'
+  platformVerifierVersion: number
+  operationDomain: Uint8Array
+  authorizationNonce: Uint8Array
+  transactionData: Uint8Array
+}
+
+interface GitHubOAuthProof extends BearerLinkProof {
+  platformId: 'github'
+  platformVerifierVersion: number
+  operationDomain: Uint8Array
+  authorizationNonce: Uint8Array
+  transactionData: Uint8Array
+}
+
 interface Identity {
   oauthProof: OAuthProof
   platformId: PlatformId
@@ -377,6 +415,11 @@ construction, OAuth request and return handling, platform proof construction,
 and assembly of the final `OAuthProof`. It does not version a chain, Registry,
 or verifier contract; multiple chain-specific Consumers may accept the same
 ceremony output.
+Each selected platform ceremony module pins the `platformVerifierVersion` it
+places in `OAuthProof`; launch profiles pin `1`. `PlatformCeremonyVersion`
+selects the complete browser implementation and is not another submitted
+field. The caller and server configuration cannot select a verifier version
+independently.
 `authorizationNonce` is exactly 32 cryptographically random bytes. For X and
 GitHub the Ceremony Client derives the code verifier from the Authorization
 Digest and that nonce, sends only the derived verifier to the prover, and
@@ -385,18 +428,32 @@ retains the nonce until the token exchange has completed. The accepted
 reproduce the binding. Exact authorization and PKCE encoding are delegated to
 the normative ceremony specification.
 
-`OAuthProof` is the exact closed normative record: proof, attestations, and the
-public authorization fields the Consumer will verify. Its platform-specific
-shape is not redefined here. It contains neither chain ID nor Authorization
-Digest: the Proof Verifier observes the former from its chain environment and
-recomputes the latter.
+These are the exact closed platform records assembled by
+`@libid/ceremony/protocol`. `NotaryAttestation` reuses the pinned notary
+client's exact attested-data-and-signature record and serialization; the
+ceremony does not define a second representation. Every numeric and byte field
+is exact-shape and bounds checked. Unknown fields are rejected.
+
+Google carries the exact signed `aud` bytes because its proof exposes only
+their digest. Its 56-element `publicInputs` vector is the circuit-defined
+ordered encoding of the recomputed Authorization Digest, client digest,
+`userId`, raw email, signed `exp`, and signing modulus. X and GitHub carry no
+public-input vector: the Platform Verifier reconstructs their two bearer
+commitments from the verified attestations. Their client identifier, identity,
+and evidence time likewise come only from those signed attestation bytes.
+
+No record contains chain ID or Authorization Digest: the Proof Verifier
+observes the former from its chain environment and recomputes the latter. No
+record adds a verifier address, verification key, validity bound, normalized
+handle, or a second copy of any field already authenticated by a proof or
+attestation.
 `@libid/ceremony/protocol`
 checks that exact `OAuthProof` against the live Ceremony's retained
 authorization fields, derives
 the identity preview from locally validated platform evidence, enforces the
 platform's canonical encodings and configured client, and
 returns `Identity` with the same `OAuthProof`. The client constructs it from
-those retained fields and the proof and attestations returned by the prover.
+those retained fields and the selected proof payload returned by the prover.
 The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
 resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
@@ -436,7 +493,7 @@ CRS policy, and proof-generation compatibility.
 
 This package architecture retains only the boundary: the Ceremony Client sends
 one authenticated `AppRequestProof` through CCDP and receives bounded progress,
-a proof and attestations, or a technical failure. The client assembles
+one platform proof payload, or a technical failure. The client assembles
 `OAuthProof` and `Identity`; the prover does not own application Jobs, Consumer
 verification, or post-ceremony effects.
 

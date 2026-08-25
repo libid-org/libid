@@ -366,19 +366,21 @@ interface ProverNotifyEvent {
 interface ProverDeliverProof {
   type: 'prover-deliver-proof'
   ceremonyId: string
-  proof: Uint8Array
-  attestations: readonly Uint8Array[]
+  proof: GoogleProof | BearerLinkProof
 }
 ```
 
 After `AppRequestProof`, the active prover sends zero or more bounded
 `ProverNotifyEvent` records followed by one `ProverDeliverProof`, unless the run
 aborts. The coordinator and popup validate and forward them without adding
-proof or application state. Progress is advisory; delivery contains only the
-generated proof and attestations needed for application-side `OAuthProof`
-assembly. Their detailed semantics are defined under
+proof or application state. The live platform selects the exact delivery
+payload: `GoogleProof` contains the Honk proof and 56 public-input fields, while
+`BearerLinkProof` contains the Honk proof and ordered token/identity
+attestations. No platform discriminator is repeated because `ceremonyId`
+already selects the live platform and version. Progress is advisory. Detailed
+semantics are defined under
 [progress, cancellation, and recovery](#progress-cancellation-and-recovery) and
-the [popup/prover channel](#popupprover-channel).
+the [prover delivery boundary](PROVER.md#proof-delivery-boundary).
 
 ### Cancellation and technical failure
 
