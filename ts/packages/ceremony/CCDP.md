@@ -366,19 +366,18 @@ interface ProverNotifyEvent {
 interface ProverDeliverProof {
   type: 'prover-deliver-proof'
   ceremonyId: string
-  proof: GoogleProof | BearerLinkProof
+  proof: unknown
 }
 ```
 
 After `AppRequestProof`, the active prover sends zero or more bounded
 `ProverNotifyEvent` records followed by one `ProverDeliverProof`, unless the run
-aborts. The coordinator and popup validate and forward them without adding
-proof or application state. The live platform selects the exact delivery
-payload: `GoogleProof` contains the Honk proof and 56 public-input fields, while
-`BearerLinkProof` contains the Honk proof and ordered token/identity
-attestations. No platform discriminator is repeated because `ceremonyId`
-already selects the live platform and version. Progress is advisory. Detailed
-semantics are defined under
+aborts. CCDP validates only the envelope and ceremony ID, then forwards the
+structured-clone `proof` value unchanged. It neither knows nor dispatches
+platform proof types. The Ceremony Client uses the platform and version already
+selected by `ceremonyId` to exact-validate the unknown value as that platform's
+proof type. Adding a platform therefore does not change CCDP. Progress is
+advisory. Detailed semantics are defined under
 [progress, cancellation, and recovery](#progress-cancellation-and-recovery) and
 the [prover delivery boundary](PROVER.md#proof-delivery-boundary).
 

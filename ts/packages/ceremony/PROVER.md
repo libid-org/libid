@@ -52,8 +52,9 @@ vector. It delivers no attestation. The Ceremony Client adds the retained
 client identifier and common authorization fields to assemble the exact
 [`GoogleOAuthProof`](ARCHITECTURE.md#result-and-lifecycle).
 
-For X and GitHub, one `ProverDeliverProof` contains exactly the `bearer-link`
-proof bytes and two attestations ordered token session then identity session.
+For X and GitHub, `ProverDeliverProof.proof` is a `BearerLinkProof` containing
+exactly the `bearer-link` proof bytes and two attestations ordered token session
+then identity session.
 Each attestation preserves the byte-exact attested-data serialization and its
 associated signature as produced by the pinned notary client. The signature
 covers exactly those attested-data bytes, including server identity, evidence
@@ -62,21 +63,28 @@ normalize or reserialize the attested data, project selected fields into
 sidecars, or accept a caller-supplied replacement.
 
 The link circuit's two 32-byte bearer commitments are public inputs to the
-circuit, ordered token then identity. They are not fields in
-`ProverDeliverProof` or the assembled `OAuthProof`: the prover discards bb.js's
+circuit, ordered token then identity. They are not fields in the decoded
+`BearerLinkProof` or the assembled `OAuthProof`: the prover discards bb.js's
 flattened public-input array, and the Platform Verifier reconstructs the two
 values from the corresponding verified attestations before checking the proof.
 The circuit proves only that one hidden bearer opens both commitments; PKCE
 binds the token exchange to the Authorization Digest outside the circuit.
 
-The delivery-to-output mapping is closed. `ProverDeliverProof` always carries
-one `proof` payload; only that payload's closed type varies:
+The platform delivery-to-output mapping is closed, but CCDP treats `proof` as
+an unknown structured-clone value:
 
 | Platform | Prover delivery | Ceremony Client additions | OAuth proof |
 |---|---|---|---|
 | Google | `GoogleProof { honkProof, publicInputs }` | common fields, retained `clientId` | `GoogleOAuthProof` |
 | X | `BearerLinkProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `XOAuthProof` |
 | GitHub | `BearerLinkProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `GitHubOAuthProof` |
+
+Each platform ceremony module constructs its exact proof object in the prover
+and owns the matching runtime validator used by the Ceremony Client. The
+validator is selected from the live Ceremony, not from a discriminator inside
+the value. It rejects unknown fields, malformed arrays and bytes, and
+profile-bound violations. CCDP never changes when another platform proof type
+is added.
 
 The common fields are platform ID, the profile-pinned Platform Verifier
 Version, operation domain, authorization nonce, and transaction data. The

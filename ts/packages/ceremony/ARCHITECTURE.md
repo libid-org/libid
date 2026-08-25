@@ -111,18 +111,20 @@ Launch publishes one `@libid/ceremony` package:
 
 ```text
 @libid/ceremony
-├── protocol    pure records, codecs, authorization, proof assembly, wire version
+├── protocol    shared records, CCDP codecs, authorization, proof primitives, wire version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── popup       source entrypoint for libid-ceremony-popup.js
 ├── prover      source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
-└── platforms   versioned browser OAuth, progress, witness, and proving modules
+└── platforms   versioned OAuth, proof types, progress, witness, and proving modules
 ```
 
 `protocol` is the pure leaf imported by the client, popup, prover, platform
 implementations, and native-wallet confirmation. It performs no browser,
-storage, network, or cryptographic proof-verification work. It owns the closed
-`OAuthProof` construction and local evidence-validation helpers so the
-application client and native wallet use the same implementation. `popup` and `prover` are build entrypoints, not
+storage, network, or cryptographic proof-verification work. It owns common
+`OAuthProof` construction primitives and CCDP validation. Each platform module
+owns its proof type and validator, exact proof assembly, and local evidence
+validation so the application client and native wallet use the same
+implementation. `popup` and `prover` are build entrypoints, not
 separately versioned packages. They emit `libid-ceremony-popup.js`,
 `libid-ceremony-prover.js`, and immutable worker/WASM assets from one compatible
 package release. The prover artifact runs in both Window and ServiceWorker
@@ -157,7 +159,7 @@ The package-facing API surface is:
 
 | Export or entrypoint | Contract |
 |---|---|
-| `@libid/ceremony/protocol` | closed records, exact codecs and validators, authorization and `OAuthProof` construction, local evidence decoding, `CCDPMessage`, and `CCDPVersion` |
+| `@libid/ceremony/protocol` | shared records and validators, authorization and proof primitives, `CCDPMessage`, and `CCDPVersion` |
 | `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `CeremonyConfig` fetch, and stateful `Ceremony` orchestration |
 | `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
@@ -206,15 +208,15 @@ export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
 
 interface CeremonyClient {
   readonly enabledPlatforms: readonly PlatformId[]
-  new: (
+  new: <P extends PlatformId>(
     ceremonyId: string,
     input: {
       chainId: Uint8Array
-      platformId: PlatformId
+      platformId: P
       operationDomain: Uint8Array
       transactionData: Uint8Array
     },
-  ) => Promise<Ceremony>
+  ) => Promise<Ceremony<P>>
 }
 
 const jobId = crypto.randomUUID()
@@ -270,11 +272,11 @@ interface CeremonyNavigation {
   target: string
 }
 
-interface Ceremony {
+interface Ceremony<P extends PlatformId = PlatformId> {
   readonly navigation: CeremonyNavigation
 
   onEvent(listener: (event: CeremonyEvent) => void): () => void
-  proveUserIdentity(options?: { expectedPopup: WindowProxy }): Promise<IdentityResult>
+  proveUserIdentity(options?: { expectedPopup: WindowProxy }): Promise<IdentityResult<P>>
   cancel(): Promise<void>
 }
 ```
@@ -354,8 +356,6 @@ dispatch without fetching configuration again.
 ## Result and lifecycle
 
 ```ts
-type OAuthProof = GoogleOAuthProof | XOAuthProof | GitHubOAuthProof
-
 interface GoogleProof {
   honkProof: Uint8Array
   publicInputs: readonly Uint8Array[] // exactly 56 canonical 32-byte fields
@@ -392,9 +392,17 @@ interface GitHubOAuthProof extends BearerLinkProof {
   transactionData: Uint8Array
 }
 
-interface Identity {
-  oauthProof: OAuthProof
-  platformId: PlatformId
+interface OAuthProofByPlatform {
+  google: GoogleOAuthProof
+  x: XOAuthProof
+  github: GitHubOAuthProof
+}
+
+type OAuthProof = OAuthProofByPlatform[PlatformId]
+
+interface Identity<P extends PlatformId = PlatformId> {
+  oauthProof: OAuthProofByPlatform[P]
+  platformId: P
   clientId: string
   userId: string
   handle: string
@@ -402,11 +410,17 @@ interface Identity {
   authorizationDigest: Uint8Array
 }
 
-type IdentityResult =
-  | { status: 'accepted'; identity: Identity }
+type IdentityResult<P extends PlatformId = PlatformId> =
+  | { status: 'accepted'; identity: Identity<P> }
   | { status: 'denied' }
 
 ```
+
+The platform type selected in `CeremonyClient.new` flows through `Ceremony`,
+`IdentityResult`, and `OAuthProofByPlatform`. A literal platform input therefore
+returns its exact proof type; a dynamic `PlatformId` returns the corresponding
+union. Adding a platform extends this client-side map and its platform module,
+not CCDP.
 
 `PlatformCeremonyVersion` is an unsigned 16-bit integer selected by the ceremony client
 from the versions advertised in ceremony configuration, never by the caller. It
@@ -453,7 +467,8 @@ authorization fields, derives
 the identity preview from locally validated platform evidence, enforces the
 platform's canonical encodings and configured client, and
 returns `Identity` with the same `OAuthProof`. The client constructs it from
-those retained fields and the selected proof payload returned by the prover.
+those retained fields after the selected platform module exact-validates the
+unknown proof value returned by the prover.
 The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
 resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
@@ -493,9 +508,10 @@ CRS policy, and proof-generation compatibility.
 
 This package architecture retains only the boundary: the Ceremony Client sends
 one authenticated `AppRequestProof` through CCDP and receives bounded progress,
-one platform proof payload, or a technical failure. The client assembles
-`OAuthProof` and `Identity`; the prover does not own application Jobs, Consumer
-verification, or post-ceremony effects.
+one structured-clone proof value, or a technical failure. CCDP does not know
+platform proof types. The selected platform module validates the value, and the
+client assembles `OAuthProof` and `Identity`; the prover does not own
+application Jobs, Consumer verification, or post-ceremony effects.
 
 ## Progress, cancellation, and recovery
 
