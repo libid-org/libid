@@ -321,13 +321,17 @@ the protocol does not try to hide it from other scripts executing in that
 origin. The Ceremony Client retains the authorization nonce; only its derived
 code verifier crosses the prover boundary.
 
-The popup byte-matches the echoed `oauthReturn` fields to its retained values, validates the
-closed platform/version and PKCE shape, and forwards the exact
-`AppRequestProof` once to its coordinator iframe. The claimed client entry, one-shot Ceremony, and
-popup state machine prevent duplicate proving. The composition's final Job CAS
-prevents a late result from producing an application effect. No separate OAuth
-state, job revision, composition discriminator, wallet state, or connector
-crosses this protocol.
+The popup byte-matches the echoed `oauthReturn` fields to its retained values,
+validates the generic CCDP shape and bounds, and forwards the exact
+`AppRequestProof` once to its coordinator iframe. It cannot validate the
+platform, version, client, redirect, or PKCE policy: the returned document has
+no launch record or `CeremonyConfig`, and deliberately fetches neither. The
+authenticated client has already selected those values, and the prover applies
+the selected platform/version parser before credential use. The claimed client
+entry, one-shot Ceremony, and popup state machine prevent duplicate proving.
+The composition's final Job CAS prevents a late result from producing an
+application effect. No separate OAuth state, job revision, composition
+discriminator, wallet state, or connector crosses this protocol.
 
 ### Isolated prover-window fallback
 
@@ -501,9 +505,10 @@ the same ceremony ID as OAuth `state`.
 `oauthReturn.query` and `.fragment` are the exact captured `location.search`
 and `location.hash` strings, including a leading delimiter
 when nonempty. After loading, the popup extracts the single routing state,
-authenticates the opener through `AppAuthenticateOrigin`, and exact-validates the returned
-`AppRequestProof` ID, platform, ceremony version, client ID, redirect URI, unchanged
-query and fragment, and PKCE shape before using the credential.
+authenticates the opener through `AppAuthenticateOrigin`, and exact-validates
+the returned `AppRequestProof` ID and unchanged query and fragment before
+forwarding it. It checks the remaining fields only against the generic CCDP
+shape and bounds.
 The application client's selected platform/version parser classifies the
 parameters. It rejects a Google ID Token at or after its signed `exp`; mutable
 X/GitHub proof lifetimes are enforced only by the Platform Verifier. Google
@@ -529,11 +534,12 @@ bounded `oauthReturn` preserves the provider-returned query and fragment unchang
 `platformId` and `platformCeremonyVersion` select its
 exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
 verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
-the Ceremony Client from its validated `CeremonyConfig`. The ceremony popup,
-coordinator, and active fallback window exact-validate the record where they
-receive it. Client classification and prover credential
-extraction use the same closed platform/version parser; the prover admits no
-second interpretation of the parameters.
+the Ceremony Client from its validated `CeremonyConfig`. The ceremony popup
+validates only the generic record and echoed OAuth return. The coordinator and
+active fallback window apply the selected platform/version validator before
+credential use. Client classification and prover credential extraction use the
+same closed platform/version parser; the prover admits no second interpretation
+of the parameters.
 
 When qualified, the coordinator proves in place. Otherwise it retains
 `AppRequestProof` in memory and sends `ProverRequestIsolation` only to its exact

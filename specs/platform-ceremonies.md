@@ -821,11 +821,11 @@ response header. Revealing more would widen exposure without adding a check.
   the bearer and are what ties the circuit to the two verified attestations.
 
 - REQ-PLAT-44 (upholds SP-EXCHANGE-01):
-  The Canonical Runtime MUST verify the returned token-exchange attestation
-  locally against the `github` profile's pinned notary key and attestation
-  format before using the bearer. Necessity: the browser checks what it got
-  back before spending a `/user` session on it; the Notary Service decision
-  the chain relies on is separate.
+  The Canonical Runtime MUST validate the returned token-exchange attestation's
+  exact format and correlation before using the bearer. It MAY additionally
+  verify the signature locally when it has an independently trusted notary
+  key. This local signature check is defense in depth; the Platform Verifier's
+  verification remains authoritative.
 - REQ-PLAT-45 (upholds SP-EXCHANGE-01):
   The Token-Exchange Service MUST return an attestation carrying the
   configured notary's signature and revealing the token request's method and
@@ -1076,11 +1076,13 @@ Platform Verifier, Notary Service, Consumer.
   or revealing the bearer range instead of committing it, is rejected; and no proof exposes the bearer or a value it can be recovered
   from.
 - TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-48A, REQ-PLAT-49, REQ-PLAT-50):
-  A token-exchange attestation with a bad notary signature, a foreign
-  endpoint, a foreign client, a foreign `code_verifier`, a foreign serialized
-  `redirect_uri`, or a bearer that does not
-  open the commitment under the returned `bearerOpening` is discarded in each
-  case, and no resume record is written.
+  A token-exchange attestation with malformed encoding or correlation, a
+  foreign endpoint, a foreign client, a foreign `code_verifier`, a foreign
+  serialized `redirect_uri`, or a bearer that does not open the commitment
+  under the returned `bearerOpening` is discarded in each case, and no resume
+  record is written. When optional local signature verification is enabled, a
+  bad notary signature is discarded at the same point; otherwise the Platform
+  Verifier rejects it authoritatively.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A, REQ-PLAT-52B):
   A GitHub proof whose bearer commitment public input differs from the
   commitment in either submitted attestation is rejected; substituting one

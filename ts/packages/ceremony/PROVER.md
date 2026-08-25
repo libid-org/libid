@@ -225,9 +225,11 @@ fixed server token-exchange route. The server uses its confidential client
 secret, performs the token-exchange TLSNotary session, and returns the bounded
 access token, token attestation, and `bearerOpening`: the canonical unpadded
 base64url encoding of the token session's exact 16-byte TLSNotary blinder. The
-browser exact-validates the selected version's token response, attestation,
-request bindings, and bearer opening before using the bearer in its own fixed
-`/user` TLSNotary session. That session commits the bearer and reveals the
+browser exact-validates the selected version's token response, attestation
+encoding and correlation, request bindings, and bearer opening before using
+the bearer in its own fixed `/user` TLSNotary session. Local verification of
+the notary signature is optional defense in depth; the downstream Platform
+Verifier remains authoritative. That session commits the bearer and reveals the
 canonical `id` and `login` ranges. The server route itself is defined in
 [SERVER.md](SERVER.md#github-token-endpoint).
 

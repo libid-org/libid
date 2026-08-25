@@ -181,6 +181,33 @@ bytes, twenty `b` bytes, and ten `c` bytes; the two commitments are 32 bytes of
 
 ## Session lifecycle
 
+### Network transport
+
+`notaryAddress` is the deployment's canonical HTTPS origin. The adapter changes
+only its scheme from `https` to `wss` and opens the exact
+`/notarize-proxy` path with no query. For the testnet deployment this is:
+
+```text
+https://notary.testnet.lib.id
+    -> wss://notary.testnet.lib.id/notarize-proxy
+```
+
+The same WebSocket carries the complete TLSNotary Proxy byte stream and the
+final attestation. This flow performs no `POST /session`, carries no
+`sessionId`, and polls no HTTP endpoint; the live channel is the correlation.
+Redirects, credentials, query parameters, fragments, and any path other than
+`/notarize-proxy` are rejected.
+
+After both TLSNotary drivers finish, the Notary Service writes one outer frame:
+a four-byte unsigned big-endian length followed by that many UTF-8 JSON bytes.
+The JSON object contains exactly `attested_data` and `notary_signature`, each an
+array of integer bytes in `[0, 255]`. The frame is at most 10 MiB;
+`attested_data` remains subject to `MAX_ATTESTED_DATA_BYTES`, and
+`notary_signature` is exactly 65 bytes. The adapter maps those fields to the
+internal camel-case `NotaryAttestation` without changing either byte string,
+then requires end-of-stream. A malformed length or UTF-8/JSON value, unknown or
+duplicate field, trailing byte, second frame, or missing close fails.
+
 ```mermaid
 sequenceDiagram
     participant M as Platform module
@@ -190,7 +217,7 @@ sequenceDiagram
     participant P as Platform HTTPS server
 
     M->>T: notarize(request, selectReveals)
-    T->>N: Open configured Proxy WebSocket
+    T->>N: Open wss://<notary-origin>/notarize-proxy
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)
     N-->>W: TLSNotary setup messages (Proxy profile)
@@ -215,11 +242,10 @@ sequenceDiagram
 
 `finish()` releases each TLSNotary driver from its side of the original
 JavaScript `IoChannel`. Once its verifier finishes, the Notary Service writes
-exactly one bounded `NotaryAttestation` on that same channel and closes it; it
-reads no application-level request. The verified session already supplies all
-signed data, so no ceremony ID, request ID, platform, or token/identity tag
-crosses this boundary. A missing response, a second response, trailing bytes,
-or a channel that does not close fails.
+the one length-prefixed `NotaryAttestation` on that same channel and closes it;
+it reads no application-level request. The verified session already supplies
+all signed data, so no ceremony ID, request ID, platform, or token/identity tag
+crosses this boundary.
 
 The adapter is also indifferent to application sequencing. Platform code
 retains which call produced each result; the identity request naturally waits

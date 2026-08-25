@@ -248,9 +248,12 @@ the only HTTP exception. `notarizationClientUrl` selects the one libID-built
 notarization client shared by all notarized platform implementations. Its host
 is deployment configuration: an initial GitHub release URL and a later CDN URL
 have identical protocol meaning.
-`notaryAddress` is the one canonical secure Notary Service network address
-shared by every notarized session in the deployment. It is not the
-`notarizationClientUrl` release asset. `profiles` contains exactly one circuit entry for every enabled
+`notaryAddress` is one canonical absolute HTTPS origin with no credentials,
+path, query, or fragment, shared by every notarized session in the deployment.
+The testnet value is `https://notary.testnet.lib.id`; the browser derives
+`wss://notary.testnet.lib.id/notarize-proxy` by replacing `https` with `wss` and
+appending the fixed path. It is not the `notarizationClientUrl` release asset.
+`profiles` contains exactly one circuit entry for every enabled
 platform/version advertised by `CeremonyConfig`, restricted to the package's
 single closed catalog, and selects its circuit descriptor through `circuitUrl`.
 The common address is embedded deployment data and cannot be supplied or
@@ -346,9 +349,11 @@ entire encoded response body is at most 3 MiB.
 The returned token, attestation, and opening are one result: the uniquely
 framed bearer commitment in `tokenAttestation.attestedData` equals
 `SHA256(accessToken || bearerOpening)`. The server preserves the attested data
-and signature byte-for-byte. The browser exact-validates the complete response,
-including this correlation and the selected GitHub ceremony's attestation
-rules, before beginning its dependent `/user` notarization.
+and signature byte-for-byte. Before beginning its dependent `/user`
+notarization, the browser exact-validates the response encoding, correlation,
+and open request bindings required by the selected GitHub ceremony. Local
+signature verification is optional; downstream verification remains
+authoritative.
 
 The route contract is:
 

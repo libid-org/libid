@@ -400,9 +400,11 @@ in `@libid/ceremony/client`; no separate configuration module exists. Popup and
 prover do not fetch it.
 
 The client freezes the selected platform, ceremony version, client ID, and
-redirect URI in the live Ceremony. `AppRequestProof` carries those values; the popup
-applies its existing opener-origin validation and closed platform/version
-dispatch without fetching configuration again.
+redirect URI in the live Ceremony. `AppRequestProof` carries those values. The
+popup authenticates the opener, validates the generic CCDP record and
+byte-matches the returned OAuth parameters; it neither fetches configuration
+nor imports the platform catalog. The authenticated client and selected prover
+module own platform/version, client, redirect, and PKCE validation.
 
 ## Result and lifecycle
 
