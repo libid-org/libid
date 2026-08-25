@@ -45,6 +45,40 @@ derives the locally checked, non-authoritative preview. Prover inputs, workers,
 witnesses, and outputs are cleared after delivery, `AbortCeremony`, failure, or
 context destruction.
 
+### X and GitHub delivery boundary
+
+For X and GitHub, one `ProverDeliverProof` contains exactly the `bearer-link`
+proof bytes and two attestations ordered token session then identity session.
+Each attestation preserves the byte-exact attested-data serialization and its
+associated signature as produced by the pinned notary client. The signature
+covers exactly those attested-data bytes, including server identity, evidence
+time, transcript lengths, reveals, and commitments. The prover does not
+normalize or reserialize the attested data, project selected fields into
+sidecars, or accept a caller-supplied replacement.
+
+The link circuit's two 32-byte bearer commitments are public inputs to the
+circuit, ordered token then identity. They are not fields in
+`ProverDeliverProof` or the assembled `OAuthProof`: the prover discards bb.js's
+flattened public-input array, and the Platform Verifier reconstructs the two
+values from the corresponding verified attestations before checking the proof.
+The circuit proves only that one hidden bearer opens both commitments; PKCE
+binds the token exchange to the Authorization Digest outside the circuit.
+
+After delivery, the Ceremony Client assembles `OAuthProof` from the retained
+platform/version, operation domain, authorization nonce, and transaction data,
+plus the delivered proof and attestations. It does not add a chain ID,
+Authorization Digest, identity fields, code verifier, evidence time, circuit
+public inputs, verifier address, or verification-key field. Those values are
+respectively environment-sourced, recomputed, extracted from signed evidence,
+or selected by verifier governance. The exact record remains owned by the
+normative specification rather than being redefined here.
+
+The platform pipelines request the profile's exact reveals and commitments.
+Attestation authenticity, authority, method and path, request grammar,
+transcript tiling, bearer framing, identity extraction, and evidence time are
+Platform Verifier checks over those signed bytes, not additional prover outputs
+or locally authoritative checks.
+
 ## Platform pipelines
 
 The platform modules own witness construction and orchestration; the circuit

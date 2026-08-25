@@ -318,7 +318,8 @@ A valid acceptance constructs `AppRequestProof` from the live ceremony ID,
 selected platform/version, frozen client and redirect, derived code verifier, and
 unchanged `oauthReturn`. The application origin is trusted for this transient input;
 the protocol does not try to hide it from other scripts executing in that
-origin.
+origin. The Ceremony Client retains the authorization nonce; only its derived
+code verifier crosses the prover boundary.
 
 The popup byte-matches the echoed `oauthReturn` fields to its retained values, validates the
 closed platform/version and PKCE shape, and forwards the exact

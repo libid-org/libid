@@ -245,8 +245,8 @@ hashes without deriving or interpreting them, then treats `transactionData` as
 opaque. It requires the selected platform to be enabled by validated
 `CeremonyConfig`, chooses the newest locally preferred ceremony version also
 advertised for that platform, generates a fresh 32-byte authorization nonce,
-computes the authorization digest, and freezes all of those values before
-constructing OAuth or allowing provider navigation.
+computes the authorization digest and code verifier, and freezes all of those
+values before constructing OAuth or allowing provider navigation.
 
 `CeremonyClient.new(ceremonyId, input)` accepts a plain string which must be a
 lowercase UUIDv4. A composition normally generates one value and calls it
@@ -256,12 +256,13 @@ authorization, but its unpredictability and one-use handling provide browser
 continuity: the initial popup discloses it to the initiating app, the
 post-OAuth popup withholds it, and `AppAuthenticateOrigin` must return it.
 
-`new` chooses the platform ceremony version, generates a fresh authorization
-nonce, derives the code verifier by the normative Proof Key for Code Exchange
-(PKCE) construction where required, and constructs the authorization request
-with `state=ceremonyId`, registers that ID to this live `Ceremony`, and returns
-only after its navigation data is ready. OAuth `state` is a provider-facing
-serialization of `ceremonyId`, not a second identifier:
+`new` chooses the platform ceremony version, generates the fresh authorization
+nonce, derives the code verifier from it and the Authorization Digest by the
+normative Proof Key for Code Exchange (PKCE) construction where required, and
+constructs the authorization request with `state=ceremonyId`, registers that ID
+to this live `Ceremony`, and returns only after its navigation data is ready.
+OAuth `state` is a provider-facing serialization of `ceremonyId`, not a second
+identifier:
 
 ```ts
 interface CeremonyNavigation {
@@ -377,13 +378,18 @@ and assembly of the final `OAuthProof`. It does not version a chain, Registry,
 or verifier contract; multiple chain-specific Consumers may accept the same
 ceremony output.
 `authorizationNonce` is exactly 32 cryptographically random bytes. For X and
-GitHub it also supplies the secret input to PKCE and is not exposed before the
-token exchange completes. Exact authorization encoding is delegated to the
-normative ceremony specification.
+GitHub the Ceremony Client derives the code verifier from the Authorization
+Digest and that nonce, sends only the derived verifier to the prover, and
+retains the nonce until the token exchange has completed. The accepted
+`OAuthProof` then publishes `authorizationNonce` so the Platform Verifier can
+reproduce the binding. Exact authorization and PKCE encoding are delegated to
+the normative ceremony specification.
 
 `OAuthProof` is the exact closed normative record: proof, attestations, and the
 public authorization fields the Consumer will verify. Its platform-specific
-shape is not redefined here.
+shape is not redefined here. It contains neither chain ID nor Authorization
+Digest: the Proof Verifier observes the former from its chain environment and
+recomputes the latter.
 `@libid/ceremony/protocol`
 checks that exact `OAuthProof` against the live Ceremony's retained
 authorization fields, derives
