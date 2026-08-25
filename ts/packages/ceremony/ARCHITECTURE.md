@@ -622,7 +622,9 @@ type CeremonyStage =
 
 interface PlatformStep {
   code: string
+  label: string
   status: 'started' | 'completed' | 'failed'
+  progress: number
 }
 
 interface CeremonyEvent {
@@ -645,9 +647,13 @@ common stage.
 Each platform-ceremony-version prover leaf owns its closed diagnostic-span
 catalog and partial-order rules beside the code which performs it; it cannot
 select a common stage. Spans may overlap, and the client otherwise does not
-interpret that catalog. Neither common-stage nor platform-step events
-contain operation inputs, outputs, credentials, identities, witnesses, proofs,
-raw exceptions, or raw service errors.
+interpret that catalog. `label` is bounded package-owned display text for the
+current code, and `progress` is a finite monotonic value in `[0, 1)` derived by
+the prover from completed weighted leaf spans. It is advisory milestone
+progress, not elapsed time or an estimated completion time. Neither
+common-stage nor platform-step events contain operation inputs, outputs,
+credentials, identities, witnesses, proofs, raw exceptions, or raw service
+errors.
 
 `CeremonyEvent` is advisory. The application may project it into broader Job
 progress, but confirmation, submission, and finality remain outside this
@@ -658,13 +664,17 @@ ordering, cancellation propagation, and failure behavior.
 ## Versioning and compatibility
 
 `PlatformCeremonyVersion` versions one platform's authorization digest, OAuth
-grammar, progress catalog, circuit, witness, proof pieces, and final
+grammar, progress-code lifecycle, circuit, witness, proof pieces, and final
 `OAuthProof` assembly. `PlatformConfig.ceremonyVersions` advertises what the
 deployment can execute; the client selects the numerically greatest member also
 present in its closed local catalog, independent of list or object-key order,
 and every live ceremony pins it. Chain-specific contract and
 Registry versions are outside this boundary and independently decide which
 ceremony outputs they accept.
+
+Changing a status label or tuning presentation weights without changing the
+closed progress codes or their causal lifecycle is UI-compatible and does not
+increment `PlatformCeremonyVersion` or `CCDPVersion`.
 
 `platforms/authorization` is code reuse, not a second compatibility boundary.
 Each platform-version slice owns the helper inputs, outputs, and whether it

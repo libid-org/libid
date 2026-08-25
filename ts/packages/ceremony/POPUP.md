@@ -164,10 +164,11 @@ worker, cache, isolation, and proof behavior remain prover rules.
 
 While proof generation is active, the popup forwards valid
 `ProverNotifyEvent`, `ProverDeliverProof`, and `AbortCeremony` records from the
-bound coordinator to the authenticated application unchanged. It does not
-interpret platform steps or narrow the structured-clone proof. Proof delivery
-and technical abort are terminal. Progress is advisory and missing progress
-does not change authority.
+bound coordinator to the authenticated application unchanged. It validates and
+renders only the generic platform label and progress fields; it does not
+interpret platform code semantics or narrow the structured-clone proof. Proof
+delivery and technical abort are terminal. Progress is advisory and missing
+progress does not change authority.
 
 After proof dispatch, `AppCancelCeremony` is forwarded to reachable proving
 work before local teardown. Cancellation and worker termination are best
@@ -186,16 +187,25 @@ Every package-rendered popup view displays the libID logo. The bundled logo is
 static inline vector markup with no external reference. During active proving,
 the popup displays exactly one primary proving affordance:
 
-- an indeterminate, accessibly labelled loading bar while a qualified prover is
+- an accessibly labelled milestone-progress bar while a qualified prover is
   working; or
 - the real **Continue proving** button while user activation is required to
   open the isolated prover window.
 
-The bar is indeterminate because platform spans do not provide a defensible
-completion percentage. Platform events may update adjacent status text, but
-cannot set a percentage, remove the logo, or select another control. The button
-replaces the loading bar until activation; it is not shown as a second progress
-action.
+The prover's validated `PlatformStep.label` appears beside the bar and its
+monotonic `progress` value sets the filled target. The renderer transitions
+smoothly only to a newly reported target and animates a repeating shimmer at
+the active edge while work continues. It never invents intermediate progress,
+moves backwards, treats progress as an ETA, or reaches 100% before
+`ProverDeliverProof`. The label is inserted as text, never markup. Before the
+first platform event, the generic status is **Preparing proof** with an empty
+shimmering bar. Proof delivery alone fills the bar to 100%.
+
+The button replaces the loading bar until activation; it is not shown as a
+second progress action. After activation the bar returns and follows the
+fallback prover's forwarded events. The original popup and visible isolated
+prover therefore render the same progress values and status strings when relay
+is live; neither maintains an independent percentage model.
 
 The popup accepts no application HTML, component, stylesheet, renderer, script
 URL, callback value, proof value, or raw exception as markup. It has no launch

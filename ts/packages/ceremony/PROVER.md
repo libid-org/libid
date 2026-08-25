@@ -250,7 +250,11 @@ exists.
 
 Each profile owns a closed catalog of advisory diagnostic spans after
 `AppRequestProof`. The Ceremony Client owns the common `proof-generation`
-stage; platform-version prover leaves emit only their version-owned spans.
+stage; platform-version prover leaves emit only their version-owned spans. Each
+catalog entry also owns one bounded user-facing label. Labels describe current
+work, such as **Loading proving assets**, **Connecting to notary**, **Preparing
+proof inputs**, or **Generating proof**; they never contain a credential,
+identity, URL, caller value, raw exception, or raw service error.
 
 Every profile includes these spans:
 
@@ -283,15 +287,30 @@ isolation, delivery, and preview construction are represented elsewhere and do
 not add platform steps. Events remain credential-free; implementations may
 derive durations from their prover-stamped timestamps.
 
+Each leaf span has one nonnegative presentation weight based initially on
+measured typical duration for that platform/version. Parent spans have zero
+weight so nested and parallel work is not counted twice. Leaf weights form one
+positive closed total. Every emitted event carries
+`progress = 0.95 * completedWeight / totalWeight`; a `started` event changes the
+label and shimmer but retains the last completed weight, while a `completed`
+event advances the monotonic target. Parallel completion order therefore cannot
+move progress backwards. `ProverDeliverProof`, outside `PlatformStep`, alone
+makes the renderer show `1`.
+
+Weights improve the rough visual distribution of milestones but make no time
+or completion guarantee. The renderer does not make the bar creep between
+events. Updating labels or weights is presentation tuning; changing codes or
+their causal lifecycle remains a platform-ceremony-version change.
+
 ### Visible prover presentation
 
 The coordinator iframe renders no competing ceremony UI. When the prover runs
 as the user-visible isolated window, its root module renders the same persistent
-libID logo, indeterminate proving bar, and local 15-second slow-proving notice
-defined by the [popup presentation contract](POPUP.md#script-owned-presentation).
-This keeps the active window authoritative for progress when relay is missed.
-The UI is package-owned and adds no prover message, proof timeout, or result
-state.
+libID logo, milestone-progress bar and labels, and local 15-second slow-proving
+notice defined by the [popup presentation](POPUP.md#script-owned-presentation)
+and [slow-proving guidance](POPUP.md#slow-proving-guidance). This keeps the
+active window authoritative for progress when relay is missed. The UI is
+package-owned and adds no prover message, proof timeout, or result state.
 
 ## Shared toolchain and assets
 

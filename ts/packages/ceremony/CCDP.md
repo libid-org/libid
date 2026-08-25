@@ -383,7 +383,11 @@ aborts. The closed `CCDPMessage` union uses the default
 then forwards the structured-clone `proof` value unchanged. It neither knows nor
 dispatches platform proof types. After receipt, the platform catalog uses the
 platform and version already selected by `ceremonyId` to validate and narrow the
-message. Adding a platform therefore does not change CCDP. Progress is advisory.
+message. Adding a platform therefore does not change CCDP. `PlatformStep.label`
+is nonempty package-owned display text of at most 96 UTF-8 bytes with no control
+characters. `PlatformStep.progress` is finite, remains in `[0, 1)`, and never
+decreases within a ceremony; only local handling of `ProverDeliverProof` renders
+completion as `1`. Progress is advisory.
 Detailed semantics are defined under
 [progress, cancellation, and recovery](#progress-cancellation-and-recovery) and
 the [prover delivery boundary](PROVER.md#proof-delivery-boundary).
@@ -546,13 +550,15 @@ application-side stage transitions are defined by the
 only the platform step and prover timestamp; the common stage remains local to
 the application-side client.
 
-CCDP treats a validated `PlatformStep` as opaque and carries its prover-stamped
-non-negative safe-integer Unix-millisecond timestamp. Coordinator and popup
-forward it unchanged. The client accepts it only from the authenticated live
-ceremony during its local `proof-generation` stage. CCDP neither orders
-concurrent spans nor permits operation inputs, outputs, credentials,
-identities, witnesses, proofs, raw exceptions, or raw service errors in an
-event. Exact span semantics are defined by
+CCDP treats a validated `PlatformStep` as opaque beyond its generic bounds and
+monotonic progress invariant, and carries its prover-stamped non-negative
+safe-integer Unix-millisecond timestamp. Coordinator and popup forward it
+unchanged. The client accepts it only from the authenticated live ceremony
+during its local `proof-generation` stage. A regressing or out-of-range value
+changes no state. CCDP neither orders concurrent spans nor permits operation
+inputs, outputs, credentials, identities, witnesses, proofs, raw exceptions,
+raw service errors, or caller-supplied display text in an event. Exact span
+semantics are defined by
 [PROVER.md](PROVER.md#platform-progress).
 
 `CeremonyEvent` carries only advisory progress. OAuth denial is returned only
