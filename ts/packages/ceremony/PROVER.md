@@ -218,8 +218,8 @@ authoritative.
 3. Build the shared `bearer-link` witness from the private bearer, its length,
    and the two independent 16-byte TLSNotary blinders, then generate the proof.
 
-The token and identity TLS setup may overlap, but the identity request waits for
-the token exchange to produce the bearer. The circuit constrains the bearer to
+Token notarization completes before identity notarization starts because its
+request requires the returned bearer. The circuit constrains the bearer to
 nonempty printable ASCII of at most 128 bytes and exposes exactly the two
 32-byte bearer commitments, token first and identity second; Noir flattens them
 to 64 bb.js public-input fields. Delivery contains only the proof and the two
@@ -274,12 +274,12 @@ Profiles add these spans before the proof engine:
 | Profile | Platform-step codes |
 |---|---|
 | `google` | `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` |
-| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; parent `token-session` with `token-session-create` → `token-websocket-connect` → `token-prover-setup` → `token-provider-request` → `token-reveal`; parent `identity-session` with `identity-session-create` → `identity-websocket-connect` → `identity-prover-setup` → `identity-credential-wait` → `identity-provider-request` → `identity-reveal`; then `token-attestation` → `identity-attestation` → `circuit-inputs` |
+| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; parent `token-session` with `token-session-create` → `token-websocket-connect` → `token-prover-setup` → `token-provider-request` → `token-reveal`; then parent `identity-session` with `identity-session-create` → `identity-websocket-connect` → `identity-prover-setup` → `identity-provider-request` → `identity-reveal`; then `token-attestation` → `identity-attestation` → `circuit-inputs` |
 | `github` | `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` |
 
 `prover-readiness` covers awaiting selected artifact single flights; downloads
 may already have started during prefetch. X's token and identity session spans
-may overlap, but `identity-provider-request` waits for the bearer produced by
+are sequential because the identity session requires the bearer produced by
 the token session. GitHub exposes its one server request and local validation
 of the complete response, but no fictional server-internal progress.
 

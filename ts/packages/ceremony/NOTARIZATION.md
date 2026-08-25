@@ -278,10 +278,11 @@ all signed data, so no ceremony ID, request ID, platform, or token/identity tag
 crosses this boundary.
 
 The adapter is also indifferent to application sequencing. Platform code
-retains which call produced each result; the identity request naturally waits
-for the token exchange to produce its bearer, although independent TLS setup
-may overlap. The final Platform Verifier checks each attestation's exact
-authority, method, path, framing, and proof position rather than trusting
+retains which call produced each result; within one X ceremony, token
+notarization completes before identity notarization starts because the latter's
+request requires the bearer. Independent ceremonies may notarize concurrently
+on separate channels. The final Platform Verifier checks each attestation's
+exact authority, method, path, framing, and proof position rather than trusting
 browser execution order.
 
 ## Disclosure and commitments
