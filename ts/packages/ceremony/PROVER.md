@@ -47,14 +47,18 @@ destruction.
 
 ### Proof delivery boundary
 
-Google delivers its proof bytes and the circuit's exact 56-element public-input
-vector. It delivers no attestation. The Ceremony Client adds the retained
-client identifier and common authorization fields to assemble the exact
-[`GoogleOAuthProof`](ARCHITECTURE.md#result-and-lifecycle).
+Google delivers its proof bytes, the exact signed audience, subject, email and
+expiry, and the selected JWK modulus as `GoogleProof`. It delivers no
+attestation.
+The Ceremony Client exact-matches that client identifier to the live Ceremony
+and adds the common authorization fields to assemble `OAuthProof<'google'>`.
+The Google adapter flattens the named values into the circuit's 56 public-input
+fields only at the verifier/transaction-encoding boundary; the Ceremony Client
+does not verify the proof.
 
-For X and GitHub, `ProverDeliverProof.proof` is a `BearerLinkProof` containing
-exactly the `bearer-link` proof bytes and two attestations ordered token session
-then identity session.
+For X, `ProverDeliverProof.proof` is `XProof`; for GitHub it is `GitHubProof`.
+Each independently contains exactly the `bearer-link` proof bytes and two
+attestations ordered token session then identity session.
 Each attestation preserves the byte-exact attested-data serialization and its
 associated signature as produced by the pinned notary client. The signature
 covers exactly those attested-data bytes, including server identity, evidence
@@ -63,8 +67,8 @@ normalize or reserialize the attested data, project selected fields into
 sidecars, or accept a caller-supplied replacement.
 
 The link circuit's two 32-byte bearer commitments are public inputs to the
-circuit, ordered token then identity. They are not fields in the decoded
-`BearerLinkProof` or the assembled `OAuthProof`: the prover discards bb.js's
+circuit, ordered token then identity. They are not fields in `XProof`,
+`GitHubProof`, or the assembled `OAuthProof`: the prover discards bb.js's
 flattened public-input array, and the Platform Verifier reconstructs the two
 values from the corresponding verified attestations before checking the proof.
 The circuit proves only that one hidden bearer opens both commitments; PKCE
@@ -75,9 +79,9 @@ an unknown structured-clone value:
 
 | Platform | Prover delivery | Ceremony Client additions | OAuth proof |
 |---|---|---|---|
-| Google | `GoogleProof { honkProof, publicInputs }` | common fields, retained `clientId` | `GoogleOAuthProof` |
-| X | `BearerLinkProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `XOAuthProof` |
-| GitHub | `BearerLinkProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `GitHubOAuthProof` |
+| Google | `GoogleProof { honkProof, clientId, userId, email, tokenExpiresAt, signingKeyModulus }` | common fields | `OAuthProof<'google'>` |
+| X | `XProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'x'>` |
+| GitHub | `GitHubProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` |
 
 Each platform ceremony module constructs its exact proof object in the prover
 and owns the matching runtime validator used by the Ceremony Client. The
@@ -155,10 +159,12 @@ The semantic groups flatten to exactly 56 bb.js public-input fields. The module
 derives the candidate authorization digest from the signed nonce; the circuit
 re-encodes it as the exact unpadded base64url nonce and verifies the RS256
 signature and signed claims. The module then generates one proof and returns it
-with the exact 56-element public-input vector and no attestation. The Ceremony
-Client exact-validates that vector, adds its retained client identifier, and
-derives the local identity preview from the same proof outputs; only Consumer
-verification makes them authoritative.
+with the exact signed audience, subject, email and expiry plus the selected JWK
+modulus as `GoogleProof`, with no attestation or flattened public-input array. The
+Ceremony Client exact-validates their shape, matches the audience to its
+retained client identifier, and derives the local identity preview without
+verifying the Honk proof. Only Consumer verification makes the fields
+authoritative.
 
 ### X
 

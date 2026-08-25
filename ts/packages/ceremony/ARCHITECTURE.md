@@ -358,50 +358,42 @@ dispatch without fetching configuration again.
 ```ts
 interface GoogleProof {
   honkProof: Uint8Array
-  publicInputs: readonly Uint8Array[] // exactly 56 canonical 32-byte fields
+  clientId: string              // exact signed aud bytes
+  userId: string                // exact signed sub bytes
+  email: string                 // exact signed email bytes
+  tokenExpiresAt: number        // exact signed exp
+  signingKeyModulus: Uint8Array
 }
 
-interface BearerLinkProof {
+interface XProof {
   honkProof: Uint8Array
   tokenAttestation: NotaryAttestation
   identityAttestation: NotaryAttestation
 }
 
-interface GoogleOAuthProof extends GoogleProof {
-  platformId: 'google'
+interface GitHubProof {
+  honkProof: Uint8Array
+  tokenAttestation: NotaryAttestation
+  identityAttestation: NotaryAttestation
+}
+
+interface PlatformProofByPlatform {
+  google: GoogleProof
+  x: XProof
+  github: GitHubProof
+}
+
+interface OAuthProof<P extends PlatformId = PlatformId> {
+  platformId: P
   platformVerifierVersion: number  // unsigned 16-bit integer
   operationDomain: Uint8Array      // exactly 32 bytes
   authorizationNonce: Uint8Array   // exactly 32 bytes
   transactionData: Uint8Array      // bounded opaque bytes
-  clientId: string                 // exact signed aud bytes
+  proof: PlatformProofByPlatform[P]
 }
-
-interface XOAuthProof extends BearerLinkProof {
-  platformId: 'x'
-  platformVerifierVersion: number
-  operationDomain: Uint8Array
-  authorizationNonce: Uint8Array
-  transactionData: Uint8Array
-}
-
-interface GitHubOAuthProof extends BearerLinkProof {
-  platformId: 'github'
-  platformVerifierVersion: number
-  operationDomain: Uint8Array
-  authorizationNonce: Uint8Array
-  transactionData: Uint8Array
-}
-
-interface OAuthProofByPlatform {
-  google: GoogleOAuthProof
-  x: XOAuthProof
-  github: GitHubOAuthProof
-}
-
-type OAuthProof = OAuthProofByPlatform[PlatformId]
 
 interface Identity<P extends PlatformId = PlatformId> {
-  oauthProof: OAuthProofByPlatform[P]
+  oauthProof: OAuthProof<P>
   platformId: P
   clientId: string
   userId: string
@@ -417,10 +409,10 @@ type IdentityResult<P extends PlatformId = PlatformId> =
 ```
 
 The platform type selected in `CeremonyClient.new` flows through `Ceremony`,
-`IdentityResult`, and `OAuthProofByPlatform`. A literal platform input therefore
-returns its exact proof type; a dynamic `PlatformId` returns the corresponding
-union. Adding a platform extends this client-side map and its platform module,
-not CCDP.
+`IdentityResult`, and `OAuthProof`. A literal platform input therefore returns
+the corresponding `proof` type; a dynamic `PlatformId` returns the platform
+proof union. Adding a platform extends `PlatformProofByPlatform` and its
+platform module, not `OAuthProof` or CCDP.
 
 `PlatformCeremonyVersion` is an unsigned 16-bit integer selected by the ceremony client
 from the versions advertised in ceremony configuration, never by the caller. It
@@ -442,19 +434,24 @@ retains the nonce until the token exchange has completed. The accepted
 reproduce the binding. Exact authorization and PKCE encoding are delegated to
 the normative ceremony specification.
 
-These are the exact closed platform records assembled by
-`@libid/ceremony/protocol`. `NotaryAttestation` reuses the pinned notary
-client's exact attested-data-and-signature record and serialization; the
-ceremony does not define a second representation. Every numeric and byte field
-is exact-shape and bounds checked. Unknown fields are rejected.
+`OAuthProof<P>` is the single exact wrapper assembled by the Ceremony Client;
+only its nested `proof` varies by platform. Each platform integration owns that
+proof type and validator. `NotaryAttestation` reuses the pinned notary client's
+exact attested-data-and-signature record and serialization; the ceremony does
+not define a second representation. Every numeric and byte field is exact-shape
+and bounds checked. Unknown fields are rejected.
 
-Google carries the exact signed `aud` bytes because its proof exposes only
-their digest. Its 56-element `publicInputs` vector is the circuit-defined
-ordered encoding of the recomputed Authorization Digest, client digest,
-`userId`, raw email, signed `exp`, and signing modulus. X and GitHub carry no
-public-input vector: the Platform Verifier reconstructs their two bearer
-commitments from the verified attestations. Their client identifier, identity,
-and evidence time likewise come only from those signed attestation bytes.
+`GoogleProof` names the circuit's semantic public values rather than exposing
+bb.js's ordered field array. The Google adapter's pure
+`buildGooglePublicInputs(authorizationDigest, proof)` helper hashes and packs
+those values into the circuit's exact 56-field verifier input only at the
+verifier/transaction-encoding boundary. The Ceremony Client does not call it to
+verify the proof. Google has no attestation from which the Platform Verifier
+could recover these values, so they remain part of `GoogleProof`. `XProof` and
+`GitHubProof` need no equivalent fields: their Platform Verifiers reconstruct
+the two bearer commitments from their respective verified attestations. Their
+client identifier, identity, and evidence time likewise come only from those
+signed attestation bytes.
 
 No record contains chain ID or Authorization Digest: the Proof Verifier
 observes the former from its chain environment and recomputes the latter. No
