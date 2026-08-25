@@ -15,10 +15,12 @@ profile statements remain normative in the
 
 ## Boundary and rationale
 
-Launch uses the upstream TLSNotary WASM API behind one internal TypeScript
-adapter. The WASM client owns MPC-TLS; the adapter owns browser transport and
-attestation delivery; each closed platform-version module owns the HTTP request,
-response parsing, and transcript layout its Platform Verifier expects.
+Launch uses the upstream TLSNotary WASM API behind the internal
+`prover/notarization` TypeScript adapter. The browser-side TLSNotary Prover and
+the Notary Service's TLSNotary Verifier run MPC-TLS; the adapter owns browser
+transport and attestation delivery; each closed platform-version module owns
+the HTTP request, response parsing, and transcript layout its Platform Verifier
+expects.
 The adapter ships in `libid-ceremony-prover.js`; the separately fetched
 notarization-client release remains the pinned raw TLSNotary JavaScript/WASM
 bundle.
@@ -120,8 +122,8 @@ only each range and its private blinder.
 ```mermaid
 sequenceDiagram
     participant M as Platform module
-    participant T as TS notarization adapter
-    participant W as Raw TLSNotary WASM
+    participant T as Notarization Client
+    participant W as Browser TLSNotary Prover
     participant N as Notary Service
     participant P as Platform HTTPS server
 
@@ -152,10 +154,11 @@ sequenceDiagram
 ```
 
 `finish()` is the ownership boundary. On the browser side it resolves only
-after TLSNotary has released the original JavaScript `IoChannel`; on the notary
-side it returns the stream after the verifier has released it. Only then may
-the adapter and service exchange the application-level attestation request and
-response without racing TLSNotary's session drivers.
+after the TLSNotary Prover has released the original JavaScript `IoChannel`;
+on the service side it returns the stream after the TLSNotary Verifier has
+released it. Only then may the adapter and service exchange the
+application-level attestation request and response without racing either
+TLSNotary session driver.
 
 The application-level request selects only `token` or `identity`, which lets
 the configured Notary Service apply the corresponding signed operation tag. It
@@ -165,11 +168,12 @@ output and deployment configuration.
 
 ## Disclosure and commitment selection
 
-The notary does not decide what the prover discloses. After the provider
-responds, the platform module sees its local complete transcript and returns a
-layout. The adapter supplies that layout to `Prover.reveal`; TLSNotary proves to
-the notary that every revealed byte and commitment belongs at its claimed
-transcript offset.
+The Notary Service does not decide what the browser-side prover discloses.
+After the provider responds, the platform module sees its local complete
+transcript and returns a layout. The adapter supplies that layout to
+`Prover.reveal`; the browser-side TLSNotary Prover and the Notary Service's
+TLSNotary Verifier establish that every revealed byte and commitment belongs
+at its claimed transcript offset.
 
 Each selector states only its ascending, non-overlapping revealed ranges. One
 shared helper derives the commitments as their complement over `[0, length)`:

@@ -115,7 +115,9 @@ Launch publishes one `@libid/ceremony` package:
 ├── ccdp        cross-document records, codecs, validation, and wire version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── popup       source entrypoint for libid-ceremony-popup.js
-├── prover      source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
+├── prover
+│   ├── index          source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
+│   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    closed platform/version catalog and derived public result types
     ├── authorization  shared digest and PKCE helpers used under platform-version policy
@@ -139,7 +141,8 @@ separately versioned packages. They emit `libid-ceremony-popup.js`,
 package release. The prover artifact runs in both Window and ServiceWorker
 contexts: its Window branch runs prefetch, coordinates proving, and executes the
 active prover placement, while its ServiceWorker branch owns the shared asset
-single flight and cache.
+single flight and cache. `prover/notarization` is an internal leaf shared by
+the X and GitHub platform modules, not another package entrypoint or artifact.
 
 Server implementations are outside the package. `platforms/github` implements
 only the normative browser-side token request/response codecs and
@@ -156,6 +159,8 @@ client, prover, native wallet ───> platforms/index
                                       │
                                       ▼
                          platforms/authorization
+
+platforms/{x,github} ───> prover/notarization
 
 client, popup, prover, platforms/index ───> ccdp
 wallet-client ─────────> client + ceremony + wallet/protocol

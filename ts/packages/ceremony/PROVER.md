@@ -109,12 +109,13 @@ make browser acceptance authoritative.
 
 ## Browser notarization
 
-X and GitHub use one internal TypeScript adapter over the pinned raw TLSNotary
-WASM API. Platform-version modules supply their exact request, response parser,
-and transcript layout; the adapter owns the shared session, reveal, reclaimed
-channel, attestation-delivery, and commitment-correlation mechanics. The full
-boundary, disclosure model, three browser sessions, and GitHub server token
-session are defined in [NOTARIZATION.md](NOTARIZATION.md).
+X and GitHub use `prover/notarization`, one internal TypeScript adapter over
+the pinned raw TLSNotary WASM API. Platform-version modules supply their exact
+request, response parser, and transcript layout; the adapter owns the shared
+session, reveal, reclaimed-channel, attestation-delivery, and
+commitment-correlation mechanics. The full boundary, disclosure model, three
+browser sessions, and GitHub server token session are defined in
+[NOTARIZATION.md](NOTARIZATION.md).
 
 ## Platform pipelines
 
