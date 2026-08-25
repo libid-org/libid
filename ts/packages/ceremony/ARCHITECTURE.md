@@ -377,30 +377,34 @@ interface GitHubProof {
   identityAttestation: NotaryAttestation
 }
 
-interface PlatformProofByPlatform {
+type ProofByPlatform = {
   google: GoogleProof
   x: XProof
   github: GitHubProof
 }
 
-interface OAuthProof<P extends PlatformId = PlatformId> {
-  platformId: P
-  platformVerifierVersion: number  // unsigned 16-bit integer
-  operationDomain: Uint8Array      // exactly 32 bytes
-  authorizationNonce: Uint8Array   // exactly 32 bytes
-  transactionData: Uint8Array      // bounded opaque bytes
-  proof: PlatformProofByPlatform[P]
-}
+type OAuthProof<P extends PlatformId = PlatformId> = {
+  [K in P]: {
+    platformId: K
+    platformVerifierVersion: number  // unsigned 16-bit integer
+    operationDomain: Uint8Array      // exactly 32 bytes
+    authorizationNonce: Uint8Array   // exactly 32 bytes
+    transactionData: Uint8Array      // bounded opaque bytes
+    proof: ProofByPlatform[K]
+  }
+}[P]
 
-interface Identity<P extends PlatformId = PlatformId> {
-  oauthProof: OAuthProof<P>
-  platformId: P
-  clientId: string
-  userId: string
-  handle: string
-  metadataObservedAt: number
-  authorizationDigest: Uint8Array
-}
+type Identity<P extends PlatformId = PlatformId> = {
+  [K in P]: {
+    oauthProof: OAuthProof<K>
+    platformId: K
+    clientId: string
+    userId: string
+    handle: string
+    metadataObservedAt: number
+    authorizationDigest: Uint8Array
+  }
+}[P]
 
 type IdentityResult<P extends PlatformId = PlatformId> =
   | { status: 'accepted'; identity: Identity<P> }
@@ -411,8 +415,40 @@ type IdentityResult<P extends PlatformId = PlatformId> =
 The platform type selected in `CeremonyClient.new` flows through `Ceremony`,
 `IdentityResult`, and `OAuthProof`. A literal platform input therefore returns
 the corresponding `proof` type; a dynamic `PlatformId` returns the platform
-proof union. Adding a platform extends `PlatformProofByPlatform` and its
-platform module, not `OAuthProof` or CCDP.
+proof union. The mapped-union form preserves the relationship between each
+`platformId` and proof type when a dynamic result is narrowed. Adding a platform
+extends `ProofByPlatform` and its platform module, not `OAuthProof` or CCDP.
+
+Callers do not supply a generic explicitly. A static platform literal flows
+through `new` and `proveUserIdentity()`:
+
+```ts
+const ceremony = await ceremonies.new(jobId, {
+  chainId,
+  platformId: 'google',
+  operationDomain,
+  transactionData,
+})
+
+const result = await ceremony.proveUserIdentity()
+if (result.status === 'accepted') {
+  result.identity.oauthProof.proof.email // GoogleProof
+}
+```
+
+Composition wrappers preserve the same inference by carrying the generic:
+
+```ts
+async function proveWithJob<P extends PlatformId>(
+  ceremony: Ceremony<P>,
+): Promise<IdentityResult<P>> {
+  // Composition-owned Job logic may run around this call.
+  return ceremony.proveUserIdentity()
+}
+```
+
+Accepting only `PlatformId` or returning unparameterized `IdentityResult`
+intentionally widens the result to the platform union.
 
 `PlatformCeremonyVersion` is an unsigned 16-bit integer selected by the ceremony client
 from the versions advertised in ceremony configuration, never by the caller. It
