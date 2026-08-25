@@ -42,7 +42,7 @@ One deployment has these server-owned inputs:
 | `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned popup |
 | Callback path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Popup and prover roots | Immutable module URLs, integrity values, and deployment-fixed CSP sources |
+| Popup and prover roots | Immutable module URLs, integrity values, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
 | Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
@@ -151,6 +151,12 @@ request path, `Origin`, `Referer`, query, fragment, platform, or ceremony. The
 document is top-level, non-isolated, and non-frameable so it preserves the
 application opener through OAuth.
 
+The HTML is a security shell, not a UI template. It contains the clearing
+bootstrap and one empty mount point, but no ceremony view, branding markup,
+loading control, or normal-operation stylesheet. After clearing, the root
+module creates the complete package UI. Only the bootstrap's fixed textual
+module-load failure can render without it.
+
 ### Ingress bootstrap
 
 The document contains one CSP-hashed inline bootstrap. Before storage,
@@ -207,6 +213,8 @@ The shared popup response uses:
   `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
 - `frame-src 'self'` only for the prover iframe;
 - `connect-src 'self'`;
+- `style-src` permitting only the exact hash of the stylesheet text installed
+  by the immutable popup root;
 - one exact hash for the inline clearing bootstrap and only the exact
   integrity-pinned root-module source; and
 - no broad `https:`, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
@@ -294,6 +302,8 @@ The prover response uses:
   `base-uri 'none'`, and `form-action 'none'`;
 - the exact root, worker, `blob:`, WebAssembly, and network sources needed by
   the pinned prover graph; and
+- `style-src` permitting only the exact hash of the stylesheet text installed
+  by the immutable prover root; and
 - no broad scheme, request-derived source, JavaScript `'unsafe-inline'`, or
   `'unsafe-eval'` source beyond the exact hashed clearing bootstrap.
 
@@ -395,6 +405,11 @@ assets. Every content-addressed response has:
 - `Cache-Control: public, max-age=31536000, immutable`; and
 - no redirect, opaque response, partial response, or mutable alias in an
   admitted fetch path.
+
+Popup/prover markup, stylesheet text, and the inline libID logo are compiled
+into their root modules. The package release publishes their exact stylesheet
+hashes for CSP construction; it publishes no separate popup HTML template,
+logo, stylesheet, theme, or renderer artifact.
 
 Popup and prover HTML may embed deployment-specific values but is invariant
 within that deployment release and remains `no-store`. A production deployment

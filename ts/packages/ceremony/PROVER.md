@@ -283,6 +283,16 @@ isolation, delivery, and preview construction are represented elsewhere and do
 not add platform steps. Events remain credential-free; implementations may
 derive durations from their prover-stamped timestamps.
 
+### Visible prover presentation
+
+The coordinator iframe renders no competing ceremony UI. When the prover runs
+as the user-visible isolated window, its root module renders the same persistent
+libID logo, indeterminate proving bar, and local 15-second slow-proving notice
+defined by the [popup presentation contract](POPUP.md#script-owned-presentation).
+This keeps the active window authoritative for progress when relay is missed.
+The UI is package-owned and adds no prover message, proof timeout, or result
+state.
+
 ## Shared toolchain and assets
 
 The integrating server embeds the exact `ProverAssets` value defined in

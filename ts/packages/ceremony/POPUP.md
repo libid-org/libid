@@ -24,7 +24,7 @@ The popup owns:
 - authenticating a returned callback before releasing its parameters;
 - creating and binding the post-callback prover coordinator;
 - relaying valid CCDP messages without interpreting platform proofs; and
-- fixed native UI, one-shot transitions, cleanup, and best-effort closure.
+- script-owned native UI, one-shot transitions, cleanup, and best-effort closure.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
@@ -174,12 +174,61 @@ work before local teardown. Cancellation and worker termination are best
 effort; late output is ignored after the popup becomes terminal. Popup closure
 alone never means success, denial, cancellation, or failure.
 
-The popup renders only fixed native DOM owned by the package. It accepts no
-application HTML, component, stylesheet, script URL, callback value, proof
-value, or raw exception as markup. The launch UI is limited to fixed waiting,
-**Continue proving**, failure, and close-fallback states. A sanitized
-`AbortCeremony.reason` is diagnostic input to the application, not arbitrary
-popup markup.
+### Script-owned presentation
+
+The server document contains no ceremony markup or stylesheet beyond an empty
+mount point. `libid-ceremony-popup.js` creates every package-rendered view and
+installs one exact package-owned stylesheet whose bytes and CSP hash ship as
+build metadata. The stylesheet and libID logo are bundled into the root module;
+they add no browser asset request or independently deployable UI artifact.
+
+Every package-rendered popup view displays the libID logo. The bundled logo is
+static inline vector markup with no external reference. During active proving,
+the popup displays exactly one primary proving affordance:
+
+- an indeterminate, accessibly labelled loading bar while a qualified prover is
+  working; or
+- the real **Continue proving** button while user activation is required to
+  open the isolated prover window.
+
+The bar is indeterminate because platform spans do not provide a defensible
+completion percentage. Platform events may update adjacent status text, but
+cannot set a percentage, remove the logo, or select another control. The button
+replaces the loading bar until activation; it is not shown as a second progress
+action.
+
+The popup accepts no application HTML, component, stylesheet, renderer, script
+URL, callback value, proof value, or raw exception as markup. It has no launch
+theme or customization API. A server operator can replace trusted document or
+module bytes, but that is a different implementation which must satisfy the
+same browser conformance contract, not application customization. The clearing
+bootstrap may render only a fixed textual load failure after clearing the URL,
+because the package UI is unavailable when its root module cannot load.
+
+### Slow-proving guidance
+
+The visible proving surface starts a local monotonic timer when active proving
+starts. On the DIP path this is when the popup dispatches `AppRequestProof`; a
+subsequent `ProverRequestIsolation` stops that timer while the UI waits for user
+activation. On the fallback path the popup restarts it when the user activates
+**Continue proving**, and the isolated prover window starts its own timer when
+it receives `AppRequestProof`.
+
+If proving remains active after `SLOW_PROVING_HINT_MS = 15_000`, the loading
+view adds a nonblocking **Still proving** notice. It says that Vanadium users may
+optionally allow JavaScript JIT for this site through site controls and
+permissions for faster proving, while keeping the current window open and
+continuing to wait. The hint does not claim JIT is the cause, user-agent sniff,
+request a permission, navigate, reload, cancel, or weaken proving. Enabling a
+site permission may help a later attempt; reloading the current one loses its
+one-shot ceremony.
+
+The timer and notice are presentation only. They emit no CCDP message or public
+`CeremonyEvent`, change no timeout, and do not affect proof authority. Success,
+failure, cancellation, or teardown removes the timer and notice.
+
+A sanitized `AbortCeremony.reason` is diagnostic input to the application, not
+arbitrary popup markup.
 
 Terminal cleanup clears retained query and fragment bytes, removes the prover
 child, listeners, and channels, severs references which are no longer needed,
