@@ -256,7 +256,8 @@ also carries exactly one canonical HTTPS `notaryServiceUrl`; a profile that
 does not notarize in the browser must omit it. This is the Notary Service
 network endpoint, not the `notarizationClientUrl` release asset. It is embedded
 deployment data and cannot be supplied or replaced by a request, fragment, or
-browser message. The closed
+browser message. Its browser use is defined in
+[NOTARIZATION.md](NOTARIZATION.md). The closed
 [platform pipeline](PROVER.md#platform-pipelines) determines whether it
 also fetches the global notarization client. The server schema does not
 redefine that platform inventory. A request, fragment, or browser message

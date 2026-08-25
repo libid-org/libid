@@ -9,6 +9,8 @@ The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document placement and messages are
 defined by [CCDP.md](CCDP.md). The integrating server's prover route, embedded
 `ProverAssets`, and response headers are defined in [SERVER.md](SERVER.md).
+TLSNotary sessions, transcript disclosure, and attestation delivery are defined
+in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md).
@@ -105,96 +107,14 @@ prover outputs. GitHub repeats the token-session subset specified below as a
 local precondition before using a server-returned bearer; that repeat does not
 make browser acceptance authoritative.
 
-## Browser notarization client
+## Browser notarization
 
-The notarization-client release is a libID wrapper around the TLSNotary WASM
-prover, not the raw TLSNotary `Prover` API. The selected platform-version module
-initializes it with that profile's deployment-fixed Notary Service URL and calls
-one `notarize` operation. Applications, popup messages, OAuth responses, and
-ceremony inputs cannot select that URL.
-
-The browser client supports exactly the three launch sessions that execute in
-the browser:
-
-```ts
-type BrowserNotarizationInput =
-  | {
-      platformId: 'x'
-      platformCeremonyVersion: 1
-      session: 'token'
-      code: string
-      codeVerifier: string
-      clientId: string
-      redirectUri: string
-    }
-  | {
-      platformId: 'x'
-      platformCeremonyVersion: 1
-      session: 'identity'
-      accessToken: string
-    }
-  | {
-      platformId: 'github'
-      platformCeremonyVersion: 1
-      session: 'identity'
-      accessToken: string
-    }
-
-interface NotaryAttestation {
-  attestedData: Uint8Array
-  signature: Uint8Array
-}
-
-interface TokenNotarizationResult {
-  accessToken: string
-  bearerBlinder: Uint8Array // exactly 16 bytes; private witness
-  attestation: NotaryAttestation
-}
-
-interface IdentityNotarizationResult {
-  bearerBlinder: Uint8Array // exactly 16 bytes; private witness
-  attestation: NotaryAttestation
-}
-```
-
-`notarize` returns `TokenNotarizationResult` for the token input and
-`IdentityNotarizationResult` for either identity input. TypeScript overloads or
-a generic conditional return may preserve that relationship; they do not
-change the runtime union above.
-
-The caller supplies only values that vary per ceremony. The selected
-platform-version implementation inside the client owns the provider authority,
-URL, method, header order, body grammar, transcript bounds, session tag, and
-reveal/commit layout. Launch always uses TLSNotary Proxy mode and SHA-256 range
-commitments. A caller-supplied target URL or arbitrary request would bypass the
-profile whose exact bytes the Platform Verifier later checks, while a URL alone
-could not express X's token POST or any authenticated identity request.
-
-The client owns the complete session: create the TLSNotary prover, connect to
-the Notary Service, send the profile request, select the profile layout,
-finalize, receive the attestation over the reclaimed authenticated session,
-and close it. It returns no session ID, transcript, ranges, HTTP response, raw
-TLSNotary object, or commitment hash. For the token session it extracts and
-bounds only the access token needed by the next session. For an identity
-session the caller already holds that token.
-
-Before returning, the client requires the unique bearer commitment in the
-byte-exact attestation to equal `SHA256(accessToken || bearerBlinder)`. The raw
-TLSNotary reveal result's duplicate commitment is checked and discarded. The
-original attested-data and signature bytes are returned without re-encoding;
-the blinder is retained only as private circuit witness. A malformed response,
-layout, opening, attestation frame, or mismatch rejects the operation without a
-partial result.
-
-The wrapper maps TLSNotary progress into the platform module's diagnostic spans
-and contains no credential in an event. Cancellation terminates the worker and
-returns no partial result. These controls do not add fields to the data union.
-
-GitHub's confidential token exchange is deliberately outside this WASM API. It
-runs the equivalent token-session construction in the integrating server's
-Rust handler because only that handler holds the GitHub client secret. It uses
-the same attested-data codec and token transcript layout and returns its browser
-response through the server contract.
+X and GitHub use one internal TypeScript adapter over the pinned raw TLSNotary
+WASM API. Platform-version modules supply their exact request, response parser,
+and transcript layout; the adapter owns the shared session, reveal, reclaimed
+channel, attestation-delivery, and commitment-correlation mechanics. The full
+boundary, disclosure model, three browser sessions, and GitHub server token
+session are defined in [NOTARIZATION.md](NOTARIZATION.md).
 
 ## Platform pipelines
 
@@ -290,25 +210,9 @@ fixed server token-exchange route. The server uses its confidential client
 secret, performs the token-exchange TLSNotary session, and returns the bounded
 access token, token attestation, and `bearerBlinder`: the canonical unpadded
 base64url encoding of the token session's exact 16-byte TLSNotary blinder. The
-browser validates the complete response before using the bearer in its own
-fixed `/user` TLSNotary session. It:
-
-- exact-validates and bounds the response, access token, attested-data,
-  signature, and 16-byte blinder;
-- verifies the signature over the original attested-data bytes against the
-  GitHub ceremony version's pinned notary key;
-- decodes those bytes without re-encoding them and requires the pinned format,
-  GitHub platform, token-session tag, token authority, method, path, and exact
-  transcript layout;
-- exact-matches the revealed code, client identifier, redirect URI, and code
-  verifier against the values retained for this Ceremony; and
-- requires `SHA256(accessToken || bearerBlinder)` to equal the uniquely framed
-  bearer commitment in that attestation.
-
-Any failure discards the whole response and starts no `/user` session. Passing
-these checks is a local precondition, not authoritative proof acceptance; the
-Consumer's Platform Verifier independently authenticates and interprets the
-same unchanged attestation. The browser-owned `/user` session then commits the
+browser performs the exact pre-identity checks defined in
+[NOTARIZATION.md](NOTARIZATION.md#github-server-token-session) before using the
+bearer in its own fixed `/user` TLSNotary session. That session commits the
 bearer and reveals the canonical `id` and `login` ranges.
 
 The module then runs the same `bearer-link` circuit with the token-exchange and

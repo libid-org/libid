@@ -9,7 +9,8 @@ to verify.
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
 in [CCDP.md](CCDP.md), and the prover subsystem is defined in
-[PROVER.md](PROVER.md).
+[PROVER.md](PROVER.md). Browser TLSNotary sessions and signed-attestation
+handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The integrating server's routes, deployment inputs, and response policy are
 defined in [SERVER.md](SERVER.md). These documents are implementation
 architecture, not part of the normative protocol specification.
