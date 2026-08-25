@@ -164,11 +164,15 @@ verify the generated proof or define a second circuit ABI.
 X and GitHub additionally use the browser TLSNotary bundle built by the
 [`libid-org/notary` build script](https://github.com/libid-org/notary/blob/e0ce1f1e0bedcde54740d1af70d4eaf9b439a9fb/scripts/build-tlsn-wasm.sh)
 and published in [`libid-org/notary` releases](https://github.com/libid-org/notary/releases).
-That release contains the JavaScript wrapper, WASM, and worker bootstrap. The
-global `ProverAssets.notarizationClientUrl` selects the immutable client
-release. GitHub releases may host the initial asset; moving it to a CDN changes
-only deployment configuration. Neither an application nor `AppRequestProof`
-selects a notary, circuit, or bb.js version.
+The browser distribution exposes `tlsn_wasm.js` and its sibling
+`tlsn_wasm_bg.wasm`; the worker bootstrap is embedded in the module. The global
+`ProverAssets.notarizationClientUrl` selects the immutable JavaScript module,
+and the prover derives the WASM URL by replacing only its final path component
+with `tlsn_wasm_bg.wasm`. Each remains a normal, independently cached response;
+the browser never downloads or unpacks a release archive. GitHub releases may
+host the initial pair; moving the same pinned bytes to a CDN changes only
+deployment configuration. Neither an application nor `AppRequestProof` selects
+a notary, circuit, or bb.js version.
 
 ### Google
 
@@ -361,16 +365,17 @@ and bb.js prover remain one circuit release and verifier rollout. The selected
 bb.js bytes also fix the only CRS origins admitted by the
 [prover response policy](SERVER.md#prover-response-policy).
 
-Deployment embeds one global notarization-client URL and one circuit URL for
-each closed platform/version. Platform-version code pins the expected digest
-for each libID artifact. Noir and Aztec-distributed bb.js code, workers, WASM,
-CRS locations, and the shared SRS size remain closed ceremony-build constants.
-The deployment neither computes nor configures them and does not copy, slice,
-or reimplement the CRS downloader.
+Deployment embeds one global notarization-client module URL and one circuit URL
+for each closed platform/version. The module's fixed sibling name resolves its
+WASM, and platform-version code pins both expected digests as one compatible
+release. Noir and Aztec-distributed bb.js code, workers, WASM, CRS locations,
+and the shared SRS size remain closed ceremony-build constants. The deployment
+neither computes nor configures them and does not copy, slice, or reimplement
+the CRS downloader.
 
 X and GitHub use the same immutable circuit URL and the same global
-notarization-client URL. Platform modules reject missing, duplicate, additional,
-or digest-mismatched profiles before fetching.
+notarization-client module/WASM pair. Platform modules reject missing,
+duplicate, additional, or digest-mismatched profiles before fetching.
 
 ## Prefetch and cache lifecycle
 
@@ -396,9 +401,10 @@ flights, rejects a manifest conflict, and extends the initiating worker event
 through completion. Those loaders use bb.js's fixed CRS endpoints and IndexedDB
 cache. Merely importing bb.js is not CRS prefetch.
 
-As soon as those single flights exist or the bounded startup attempt fails,
-without waiting for download completion, the prefetch child emits
-`ProverPrefetchingAssets`. A later coordinator or prover window resolves the
+As soon as the registration/start attempt settles, without waiting for download
+completion, the prefetch child emits `ProverPrefetchingAssets`. Registration or
+startup failure records no weaker mode and leaves proving on the identical cold
+path. A later coordinator or prover window resolves the
 same profile using the exact `AppRequestProof` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
 asks the service worker to finish or restart the fixed CRS single flights;

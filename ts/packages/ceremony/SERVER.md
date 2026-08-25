@@ -42,7 +42,7 @@ One deployment has these server-owned inputs:
 | Callback path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Popup and prover roots | Immutable module URLs, integrity values, and deployment-fixed CSP sources |
-| Prover assets | One exact immutable URL for the libID-built notarization client, one exact immutable circuit URL per platform/version, and one common Notary Service address |
+| Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
 `allowedAppOrigins` uses set semantics and has no protocol maximum. The same
@@ -244,10 +244,14 @@ interface ProverAssets {
 
 Every URL string is a canonical absolute HTTPS URL for one immutable,
 content-identified release asset. The explicit loopback development profile is
-the only HTTP exception. `notarizationClientUrl` selects the one libID-built
-notarization client shared by all notarized platform implementations. Its host
-is deployment configuration: an initial GitHub release URL and a later CDN URL
-have identical protocol meaning.
+the only HTTP exception. `notarizationClientUrl` is the immutable URL of the
+libID-built `tlsn_wasm.js` ES module shared by all notarized platform
+implementations. Its only companion is the separate sibling
+`tlsn_wasm_bg.wasm`, resolved with
+`new URL('tlsn_wasm_bg.wasm', notarizationClientUrl)`. Both files are one pinned
+release, use independent immutable HTTP cache entries, and must share their
+versioned directory. An archive is not a browser artifact. The configured host
+may initially be a GitHub release and later a CDN without changing the contract.
 `notaryAddress` is one canonical absolute HTTPS origin with no credentials,
 path, query, or fragment, shared by every notarized session in the deployment.
 The testnet value is `https://notary.testnet.lib.id`; the browser derives

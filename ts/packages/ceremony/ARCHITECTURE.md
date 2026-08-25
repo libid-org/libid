@@ -296,8 +296,8 @@ their exact 32-byte `chainId` and `operationDomain` hashes with bounded
 `transactionData`. During `new`, the client exact-validates and copies both
 hashes without deriving or interpreting them, then treats `transactionData` as
 opaque. It requires the selected platform to be enabled by validated
-`CeremonyConfig`, chooses the newest locally preferred ceremony version also
-advertised for that platform, generates a fresh 32-byte authorization nonce,
+`CeremonyConfig`, chooses the numerically greatest ceremony version supported
+both locally and by that platform, generates a fresh 32-byte authorization nonce,
 computes the authorization digest and code verifier, and freezes all of those
 values before constructing OAuth or allowing provider navigation.
 
@@ -643,8 +643,9 @@ ordering, cancellation propagation, and failure behavior.
 `PlatformCeremonyVersion` versions one platform's authorization digest, OAuth
 grammar, progress catalog, circuit, witness, proof pieces, and final
 `OAuthProof` assembly. `PlatformConfig.ceremonyVersions` advertises what the
-deployment can execute; the client selects its newest locally preferred member
-of that set, and every live ceremony pins it. Chain-specific contract and
+deployment can execute; the client selects the numerically greatest member also
+present in its closed local catalog, independent of list or object-key order,
+and every live ceremony pins it. Chain-specific contract and
 Registry versions are outside this boundary and independently decide which
 ceremony outputs they accept.
 

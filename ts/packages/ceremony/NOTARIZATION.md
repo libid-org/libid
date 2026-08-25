@@ -22,7 +22,8 @@ Keeping platform logic in TypeScript avoids rebuilding a custom WASM facade
 for every profile change without creating a security boundary: the prover
 origin loads both TypeScript and WASM. The adapter still isolates upstream API
 churn from platform code. It ships inside `libid-ceremony-prover.js`; the
-separately fetched notarization-client asset is the pinned upstream bundle.
+separately fetched notarization client is the pinned `tlsn_wasm.js` module and
+its deterministic sibling `tlsn_wasm_bg.wasm`.
 
 The enclosing prover supplies the deployment's common `notaryAddress` when the
 module starts. Applications, ceremony inputs, OAuth responses, and CCDP

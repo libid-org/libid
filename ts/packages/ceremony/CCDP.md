@@ -223,12 +223,12 @@ ID, platform ID, and ceremony version, then loads
 `/api/v1/ceremony/prover#prefetch(ceremonyId, platformId,
 platformCeremonyVersion)`. The child clears that fragment, resolves the exact
 profile, and asks the prover subsystem to start its selected-profile prefetch.
-It returns `ProverPrefetchingAssets` after that work is registered or the
-bounded prefetch attempt is unavailable; it does not wait for downloads to
-finish. The popup accepts the message only from its exact child and forwards it
-unchanged to `window.opener` using only server-embedded allowed origins. A
-missing or invalid profile or silent child fails before OAuth; ordinary cache
-or fetch failure continues on the cold proving path.
+It returns `ProverPrefetchingAssets` after the registration/start attempt
+settles; it does not wait for downloads to finish. The popup accepts the message
+only from its exact child and forwards it unchanged to `window.opener` using
+only server-embedded allowed origins. A missing or invalid profile or document
+load failure rejects before OAuth; ordinary registration, cache, or fetch
+failure continues on the cold proving path. CCDP defines no prefetch timeout.
 
 The application accepts `ProverPrefetchingAssets` only from the configured
 server origin with its live ceremony ID, platform, version, and expected source. A
@@ -635,12 +635,13 @@ isolated fallback uses a bare ceremony ID. These fragments select document
 bootstrap roles; they are not server variants or CCDP messages and never carry
 an asset URL.
 
-The prefetch child emits `ProverPrefetchingAssets` once the selected work has
-started or its bounded startup path is unavailable, without waiting for the
-downloads to finish. A missing profile or silent child fails before OAuth; an
-ordinary fetch failure changes latency only and follows the same cold proving
-path. Fetching, caching, navigation survival, and warm/cold failure semantics
-are defined in [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
+The prefetch child emits `ProverPrefetchingAssets` once its selected
+registration/start attempt settles, without waiting for downloads to finish. A
+missing profile or document load failure rejects before OAuth; an ordinary
+registration or fetch failure changes latency only and follows the same cold
+proving path. CCDP adds no timeout. Fetching, caching, navigation survival, and
+warm/cold failure semantics are defined in
+[PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
 
 ## Browser isolation consequences
 
