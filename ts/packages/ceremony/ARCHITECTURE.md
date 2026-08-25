@@ -115,7 +115,11 @@ Launch publishes one `@libid/ceremony` package:
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── popup       source entrypoint for libid-ceremony-popup.js
 ├── prover      source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
-└── platforms   versioned OAuth, proof types, progress, witness, and proving modules
+└── platforms
+    ├── index    closed catalog and derived public platform/result types
+    ├── google   Google proof type, validator, OAuth, progress, witness, and proving
+    ├── x        X proof type, validator, OAuth, progress, witness, and proving
+    └── github   GitHub proof type, validator, OAuth, progress, witness, and proving
 ```
 
 `protocol` is the pure leaf imported by the client, popup, prover, platform
@@ -123,8 +127,10 @@ implementations, and native-wallet confirmation. It performs no browser,
 storage, network, or cryptographic proof-verification work. It owns common
 `OAuthProof` construction primitives and CCDP validation. Each platform module
 owns its proof type and validator, exact proof assembly, and local evidence
-validation so the application client and native wallet use the same
-implementation. `popup` and `prover` are build entrypoints, not
+validation. `platforms/index` is the only aggregator: it imports those modules,
+derives the catalog and public result types, and is re-exported by the package
+root and client API. Individual platform modules never import the aggregator,
+so `protocol` remains a leaf. `popup` and `prover` are build entrypoints, not
 separately versioned packages. They emit `libid-ceremony-popup.js`,
 `libid-ceremony-prover.js`, and immutable worker/WASM assets from one compatible
 package release. The prover artifact runs in both Window and ServiceWorker
@@ -140,13 +146,18 @@ endpoint.
 The dependency direction is closed:
 
 ```text
-ceremony/{client,popup,prover,platforms}
-                     │
-                     ▼
-            ceremony/protocol
+client, prover, native wallet
+              │
+              ▼
+       platforms/index
+              │
+              ▼
+ platforms/{google,x,github}
+              │
+              ▼
+           protocol
 
-client ────────────────> ceremony
-wallet ────────────────> ceremony/protocol
+popup ─────────────────> protocol
 wallet-client ─────────> client + ceremony + wallet/protocol
 ```
 
@@ -159,8 +170,9 @@ The package-facing API surface is:
 
 | Export or entrypoint | Contract |
 |---|---|
+| `@libid/ceremony` | `PlatformId`, `supportedPlatforms`, `ProofByPlatform`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform catalog |
 | `@libid/ceremony/protocol` | shared records and validators, authorization and proof primitives, `CCDPMessage`, and `CCDPVersion` |
-| `@libid/ceremony/client` | immutable supported/enabled platform discovery, application-scoped `CeremonyClient`, `CeremonyConfig` fetch, and stateful `Ceremony` orchestration |
+| `@libid/ceremony/client` | application-scoped `CeremonyClient`, `CeremonyConfig` fetch, stateful `Ceremony` orchestration, and convenience re-exports of the public catalog/result types |
 | `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
 
@@ -190,20 +202,26 @@ This is an application-owned instance, not a package-global singleton. Client
 creation fetches and exact-validates `CeremonyConfig`; a configured platform is
 enabled only when the installed package has a closed implementation and at
 least one advertised ceremony version in common.
-The package has one closed platform/version catalog. `PlatformId` and the
-immutable public `supportedPlatforms` list derive from its keys; no second
-platform union or list exists:
+The package has one closed platform-module catalog. `PlatformId`, immutable
+`supportedPlatforms`, and `ProofByPlatform` all derive from the same keys and
+validator return types; no second platform union, version list, or proof map
+exists:
 
 ```ts
-const platformCeremonyVersions = {
-  google: [1],
-  x: [1],
-  github: [1],
-} as const satisfies Record<string, readonly PlatformCeremonyVersion[]>
+import * as google from './platforms/google'
+import * as x from './platforms/x'
+import * as github from './platforms/github'
 
-export type PlatformId = keyof typeof platformCeremonyVersions
+const platforms = { google, x, github } as const
+
+export type PlatformId = keyof typeof platforms
+
+export type ProofByPlatform = {
+  [P in PlatformId]: ReturnType<(typeof platforms)[P]['validateProof']>
+}
+
 export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
-  Object.keys(platformCeremonyVersions) as PlatformId[],
+  Object.keys(platforms) as PlatformId[],
 )
 
 interface CeremonyClient {
@@ -375,12 +393,6 @@ interface GitHubProof {
   honkProof: Uint8Array
   tokenAttestation: NotaryAttestation
   identityAttestation: NotaryAttestation
-}
-
-type ProofByPlatform = {
-  google: GoogleProof
-  x: XProof
-  github: GitHubProof
 }
 
 type OAuthProof<P extends PlatformId = PlatformId> = {
