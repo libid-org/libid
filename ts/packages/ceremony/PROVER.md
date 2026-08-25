@@ -84,11 +84,11 @@ an unknown structured-clone value:
 | GitHub | `GitHubProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` |
 
 Each platform ceremony module constructs its exact proof object in the prover
-and owns the matching runtime validator used by the Ceremony Client. The
+and owns the matching runtime validator dispatched by `platforms/index`. The
 validator is selected from the live Ceremony, not from a discriminator inside
 the value. It rejects unknown fields, malformed arrays and bytes, and
-profile-bound violations. CCDP never changes when another platform proof type
-is added.
+profile-bound violations, then returns a typed `ProverDeliverProof`. CCDP never
+changes when another platform proof type is added.
 
 The common fields are platform ID, the profile-pinned Platform Verifier
 Version, operation domain, authorization nonce, and transaction data. The

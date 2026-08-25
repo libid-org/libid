@@ -220,6 +220,11 @@ export type ProofByPlatform = {
   [P in PlatformId]: ReturnType<(typeof platforms)[P]['validateProof']>
 }
 
+export declare function validateProofMessage<P extends PlatformId>(
+  platformId: P,
+  message: ProverDeliverProof,
+): ProverDeliverProof<ProofByPlatform[P]>
+
 export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
   Object.keys(platforms) as PlatformId[],
 )
@@ -245,6 +250,13 @@ const ceremony = await ceremonies.new(jobId, {
   transactionData,
 })
 ```
+
+`validateProofMessage` dispatches to the selected module's exact runtime
+validator and returns the generic CCDP envelope narrowed to that validator's
+derived proof type. Any implementation-only assertion needed to express the
+indexed dispatch to TypeScript remains behind this validated aggregation
+boundary; the Ceremony Client performs no cast. CCDP continues to use
+`ProverDeliverProof<unknown>` and does not import the catalog.
 
 Adding a platform or local ceremony version changes this catalog and its closed
 implementation together. There is no mutable registration API. A configured
@@ -506,14 +518,13 @@ observes the former from its chain environment and recomputes the latter. No
 record adds a verifier address, verification key, validity bound, normalized
 handle, or a second copy of any field already authenticated by a proof or
 attestation.
-`@libid/ceremony/protocol`
-checks that exact `OAuthProof` against the live Ceremony's retained
-authorization fields, derives
-the identity preview from locally validated platform evidence, enforces the
-platform's canonical encodings and configured client, and
-returns `Identity` with the same `OAuthProof`. The client constructs it from
-those retained fields after the selected platform module exact-validates the
-unknown proof value returned by the prover.
+The Ceremony Client uses shared protocol primitives and the selected platform
+module to check that exact `OAuthProof` against the live Ceremony's retained
+authorization fields, derive the identity preview from locally validated
+platform evidence, enforce the platform's canonical encodings and configured
+client, and return `Identity` with the same `OAuthProof`. It constructs the
+record from those retained fields after `validateProofMessage` returns the
+platform-typed proof value.
 The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
 resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser

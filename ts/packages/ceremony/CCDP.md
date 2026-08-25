@@ -363,21 +363,22 @@ interface ProverNotifyEvent {
   timestamp: number
 }
 
-interface ProverDeliverProof {
+interface ProverDeliverProof<Proof = unknown> {
   type: 'prover-deliver-proof'
   ceremonyId: string
-  proof: unknown
+  proof: Proof
 }
 ```
 
 After `AppRequestProof`, the active prover sends zero or more bounded
 `ProverNotifyEvent` records followed by one `ProverDeliverProof`, unless the run
-aborts. CCDP validates only the envelope and ceremony ID, then forwards the
-structured-clone `proof` value unchanged. It neither knows nor dispatches
-platform proof types. The Ceremony Client uses the platform and version already
-selected by `ceremonyId` to exact-validate the unknown value as that platform's
-proof type. Adding a platform therefore does not change CCDP. Progress is
-advisory. Detailed semantics are defined under
+aborts. The closed `CCDPMessage` union uses the default
+`ProverDeliverProof<unknown>`. CCDP validates only the envelope and ceremony ID,
+then forwards the structured-clone `proof` value unchanged. It neither knows nor
+dispatches platform proof types. After receipt, the platform catalog uses the
+platform and version already selected by `ceremonyId` to validate and narrow the
+message. Adding a platform therefore does not change CCDP. Progress is advisory.
+Detailed semantics are defined under
 [progress, cancellation, and recovery](#progress-cancellation-and-recovery) and
 the [prover delivery boundary](PROVER.md#proof-delivery-boundary).
 
