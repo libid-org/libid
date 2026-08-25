@@ -127,11 +127,11 @@ Noir input map, the Noir ACIR virtual machine (ACVM) runtime solves the witness,
 and the circuit-compatible
 [Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.2.0/barretenberg/ts/bb.js)
 release generates an UltraHonk proof. bb.js returns raw proof bytes and an
-ordered flat array of field-valued public inputs. Google delivers both as its
-only authenticated identity evidence. X and GitHub deliver the proof but not
-the array because their Platform Verifiers reconstruct its two semantic
-commitments from the submitted attestations. The browser does not verify the
-generated proof or define a second circuit ABI.
+ordered flat array of field-valued public inputs. Google delivers the proof and
+its named semantic public values, not that flattened array. X and GitHub deliver
+the proof but not the array because their Platform Verifiers reconstruct its two
+semantic commitments from the submitted attestations. The browser does not
+verify the generated proof or define a second circuit ABI.
 
 X and GitHub additionally use the browser TLSNotary bundle built by the
 [`libid-org/notary` build script](https://github.com/libid-org/notary/blob/e0ce1f1e0bedcde54740d1af70d4eaf9b439a9fb/scripts/build-tlsn-wasm.sh)
