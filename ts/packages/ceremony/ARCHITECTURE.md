@@ -617,9 +617,10 @@ authenticated `PopupDeliverParams` selects the live Ceremony, and
 control flow; no popup lifecycle message or platform-step inference changes the
 common stage.
 
-Each platform-ceremony-version module owns its ordered step catalog beside the
-code which performs it; it cannot select a common stage. The client otherwise
-does not interpret that catalog. Neither common-stage nor platform-step events
+Each platform-ceremony-version module owns its closed diagnostic-span catalog
+and partial-order rules beside the code which performs it; it cannot select a
+common stage. Spans may overlap, and the client otherwise does not interpret
+that catalog. Neither common-stage nor platform-step events
 contain operation inputs, outputs, credentials, identities, witnesses, proofs,
 raw exceptions, or raw service errors.
 

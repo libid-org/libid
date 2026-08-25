@@ -580,7 +580,8 @@ application-side stage transitions are defined by the
 only the platform step and prover timestamp; the common stage remains local to
 the application-side client.
 
-The exact step catalogs and emission lifecycle are defined by the
+The exact diagnostic-span catalogs, parent/dependency rules, and per-span
+emission lifecycle are defined by the
 [prover architecture](PROVER.md#platform-progress). CCDP treats a validated
 `PlatformStep` as opaque, carries its prover-stamped non-negative safe-integer
 Unix-millisecond timestamp in `ProverNotifyEvent`, and contains no common stage.
@@ -589,7 +590,8 @@ exact message through the coordinator, and the ceremony popup forwards it
 unchanged. The client accepts it only from the authenticated live ceremony
 while its local common stage is `proof-generation`, validates and preserves the
 prover timestamp, and publishes the resulting `CeremonyEvent`. Locally generated
-common-stage events use client timestamps. The client otherwise does not
+common-stage events use client timestamps. Concurrent spans remain in their
+prover emission order; CCDP does not impose a total order or otherwise
 interpret the platform catalog. Neither event contains operation inputs, outputs,
 credentials, identities, witnesses, proofs, raw exceptions, or raw service
 errors. The application may map this advisory view into its broader job

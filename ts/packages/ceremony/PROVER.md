@@ -211,31 +211,40 @@ exists.
 
 ## Platform progress
 
-Each profile emits this closed, ordered sequence after `AppRequestProof`. The
-Ceremony Client owns the common `proof-generation` stage; platform modules emit
-only their version-owned steps:
+Each profile owns a closed catalog of advisory diagnostic spans after
+`AppRequestProof`. The Ceremony Client owns the common `proof-generation`
+stage; platform modules emit only their version-owned spans.
+
+Every profile includes these spans:
+
+- readiness: parent `prover-readiness`, with `asset-prefetch` and `runtime-load`
+  children which may overlap;
+- proof engine: `proof-worker-bootstrap` → `proof-wasm-load` →
+  `proof-circuit-load` → `proof-backend-initialization` → `witness` → `proof` →
+  `proof-backend-destroy`.
+
+Profiles add these spans before the proof engine:
 
 | Profile | Platform-step codes |
 |---|---|
-| `google` | `prover-readiness` → `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` → `witness` → `proof` |
-| `x` | `prover-readiness` → `notary-initialization` → `token-session` → `token-attestation` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
-| `github` | `prover-readiness` → `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` → `witness` → `proof` |
+| `google` | `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` |
+| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; parent `token-session` with `token-session-create` → `token-websocket-connect` → `token-prover-setup` → `token-provider-request` → `token-reveal`; parent `identity-session` with `identity-session-create` → `identity-websocket-connect` → `identity-prover-setup` → `identity-credential-wait` → `identity-provider-request` → `identity-reveal`; then `token-attestation` → `identity-attestation` → `circuit-inputs` |
+| `github` | `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` |
 
-`prover-readiness` covers awaiting the selected artifact single flights after
-`AppRequestProof`; those downloads may already have started during prefetch.
-Google then decodes the ID Token, fetches and selects its JWK, and constructs
-the closed circuit inputs. X exposes initialization of the browser notary
-client, each notarized session, and each resulting attestation separately.
-GitHub exposes the start of its one server request and local validation of the
-complete response, but no fictional server-internal progress; its
-browser-owned identity session remains separate. `circuit-inputs` ends when the
-complete closed Noir input map exists, `witness` covers ACVM execution and
-constraint solving, and `proof` covers bb.js proof generation.
+`prover-readiness` covers awaiting selected artifact single flights; downloads
+may already have started during prefetch. X's token and identity session spans
+may overlap, but `identity-provider-request` waits for the bearer produced by
+the token session. GitHub exposes its one server request and local validation
+of the complete response, but no fictional server-internal progress.
 
-For each code, the platform module emits `started`, followed by `completed`
-before starting the next code or `failed` immediately before `AbortCeremony`.
-A cache hit emits the same sequence. OAuth, isolation, delivery, and preview
-construction are represented elsewhere and do not add platform steps.
+On a successful run, each code emits `started` once and `completed` once. On
+any run, every started span emits exactly one terminal `completed` or `failed`;
+a failure does not invent later spans. Message order preserves that per-span
+lifecycle and the parent/dependency rules above; unrelated spans may overlap
+and therefore have no total order. A cache hit emits the same lifecycle. OAuth,
+isolation, delivery, and preview construction are represented elsewhere and do
+not add platform steps. Events remain credential-free; implementations may
+derive durations from their prover-stamped timestamps.
 
 ## Shared toolchain and assets
 
