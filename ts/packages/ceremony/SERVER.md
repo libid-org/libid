@@ -55,35 +55,6 @@ One deployment platform configuration generates both the public
 `CeremonyConfig` entries and the embedded prover profiles. They are projections
 of one enabled set, not independently maintained platform lists.
 
-The package build publishes the code-owned half of that deployment input as one
-exact manifest:
-
-```ts
-interface BrowserRoot {
-  url: string
-  integrity: string
-  styleHash: string
-}
-
-interface CeremonyBrowserManifest {
-  schema: 1
-  ccdpVersion: CCDPVersion
-  popup: BrowserRoot
-  prover: BrowserRoot
-  proverCsp: {
-    scriptSrc: readonly string[]
-    workerSrc: readonly string[]
-    connectSrc: readonly string[]
-  }
-}
-```
-
-The server consumes one manifest from one package release. It adds only its
-same-origin route sources and the exact deployment-owned origins implied by
-`ProverAssets`; it does not rediscover the module graph or hand-copy hashes.
-Changing a root byte, package stylesheet, code-owned source, or CCDP version
-produces a new manifest.
-
 Only libID-owned circuit and notarization-client locations are configurable
 artifact assets. The ceremony package pins their expected identities. A
 `notaryAddress` is a network endpoint rather than an artifact and is
