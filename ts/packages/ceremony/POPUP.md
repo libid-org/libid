@@ -39,10 +39,11 @@ The server bootstrap bounds and clears the URL before loading package code,
 then calls:
 
 ```ts
-import type { OAuthReturn } from '@libid/ceremony/ccdp'
-
 declare function startPopup(
-  oauthReturn: OAuthReturn,
+  oauthReturn: {
+    query: string
+    fragment: string
+  },
   allowedAppOrigins: readonly string[],
 ): void
 ```
@@ -121,8 +122,8 @@ and CCDP version, then returns its retained ID in `AppAuthenticateOrigin`.
 The popup accepts that response only from `window.opener`, requires the
 browser-stamped origin to be a member of `allowedAppOrigins`, and exact-matches
 the supplied ID to the captured state. It then binds that exact source and
-origin for the rest of the document lifetime and sends the unchanged
-`OAuthReturn` once in `PopupDeliverParams`.
+origin for the rest of the document lifetime and sends the unchanged query and
+fragment once in `PopupDeliverParams`.
 
 If authentication does not complete within
 `REDIRECT_OPENER_TIMEOUT_MS = 30_000`, or the source, origin, or ID is invalid,

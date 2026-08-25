@@ -487,19 +487,12 @@ arrows. Those rules remain normative in their owning subsections.
 
 ### Redirect ingress
 
-CCDP preserves the exact captured redirect transport:
-
-```ts
-interface OAuthReturn {
-  query: string
-  fragment: string
-}
-```
-
-The fields are the exact captured `location.search` and `location.hash`,
-including a leading delimiter when nonempty. The server bootstrap owns their
-bound and clearing order, and the popup owns launch/callback classification,
-routing-state extraction, result custody, and failure UI. See
+The `query` and `fragment` nested in the callback and proof-dispatch messages
+are the exact captured `location.search` and `location.hash`, including a
+leading delimiter when nonempty. They do not form a separate CCDP export. The
+server bootstrap owns their bound and clearing order, and the popup owns
+launch/callback classification, routing-state extraction, result custody, and
+failure UI. See
 [SERVER.md](SERVER.md#ingress-bootstrap) and
 [POPUP.md](POPUP.md#entrypoint-and-trusted-inputs). CCDP requires
 `PopupDeliverParams` and `AppRequestProof` to carry these fields unchanged.
