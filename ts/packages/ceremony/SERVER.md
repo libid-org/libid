@@ -5,9 +5,9 @@ This document defines the HTTP and deployment contract expected by
 package supplies the browser modules, exact public-record validators, and
 browser-side platform codecs.
 
-The package API and proving pipelines are defined in
-[ARCHITECTURE.md](ARCHITECTURE.md). The browser documents communicate through
-the [Ceremony Cross-Document Protocol](CCDP.md). The normative libID
+The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), and its prover
+subsystem is defined in [PROVER.md](PROVER.md). The browser documents
+communicate through the [Ceremony Cross-Document Protocol](CCDP.md). The normative libID
 specification owns authorization, platform-return, token-exchange, and proof
 semantics; this document defines only their server transport and deployment.
 
@@ -249,7 +249,7 @@ have identical protocol meaning.
 platform/version advertised by `CeremonyConfig`, restricted to the package's
 single closed catalog, and selects its circuit descriptor through `circuitUrl`.
 The closed
-[platform pipeline](ARCHITECTURE.md#platform-pipelines) determines whether it
+[platform pipeline](PROVER.md#platform-pipelines) determines whether it
 also fetches the global notarization client. The server schema does not
 redefine that platform inventory. A request, fragment, or browser message
 cannot add or replace either URL.

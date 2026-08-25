@@ -2,25 +2,27 @@
 
 This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, popup, prover iframe, and isolated prover window. It
-also owns their service-worker prefetch coordination, document lifecycle,
-isolation behavior, and protocol compatibility rules.
+also owns their live prefetch readiness, document lifecycle, placement
+handoff, and protocol compatibility rules.
 
-The package boundary, public client API, result lifecycle, platform pipelines,
-and prover implementation are defined in [ARCHITECTURE.md](ARCHITECTURE.md).
+The package boundary, public client API, and result lifecycle are defined in
+[ARCHITECTURE.md](ARCHITECTURE.md). Prover pipelines, assets, workers, and cache
+behavior are defined in [PROVER.md](PROVER.md).
 The deployed routes, embedded inputs, and response policy are defined in
 [SERVER.md](SERVER.md). This is implementation architecture, not part of the
 normative proof specification.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 Shared package types and constants such as `PlatformId`,
-`PlatformCeremonyVersion`, `PlatformStep`, and `SRS_SIZE` retain their
-definitions in the architecture document. `CeremonyConfig` and `ProverAssets`
-retain theirs in the server contract.
+`PlatformCeremonyVersion`, and `PlatformStep` retain their definitions in the
+architecture document. `CeremonyConfig` and `ProverAssets` retain theirs in the
+server contract.
 
 ## Architecture drivers and decisions
 
 ### Execution contexts
 
-The browser ceremony crosses four execution contexts with incompatible jobs.
+The browser ceremony crosses three protocol roles and may add a fourth document
+for the isolated-window fallback.
 DIP means `Document-Isolation-Policy`; COOP means
 `Cross-Origin-Opener-Policy`. Both are HTTP response policies which application
 JavaScript cannot add to an already loaded document.
@@ -29,8 +31,11 @@ JavaScript cannot add to an already loaded document.
 |---|---|---|
 | Application page | operation inputs, live `Ceremony`, durable application Job, final result commit | may be embedded into an application with its own headers and lifecycle; must retain the popup `WindowProxy` |
 | Ceremony popup/callback | OAuth navigation and return, URL clearing, opener authentication, fixed progress UI | must remain top-level and non-isolated and preserve communication with the application opener; its callback alias is the registered server-hosted `redirect_uri` |
-| Prover iframe or window | credentials after callback, notary sessions, witness construction, multithreaded proving | must be cross-origin isolated with `SharedArrayBuffer`; runs in a DIP-qualified iframe where available or a COOP-isolated top-level fallback |
-| Prover service worker | artifact single flights and caches across navigation and proving placements | must share the prover origin and survive replacement of the prefetch document |
+| Prover iframe or window | credentials after callback and proof generation | must be cross-origin isolated with `SharedArrayBuffer`; runs in a DIP-qualified iframe where available or a COOP-isolated top-level fallback |
+
+The prover's internal service worker does not participate in CCDP. Its cache
+and navigation-survival contract is defined in
+[PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
 
 No single page can satisfy the interactive constraints. The OAuth popup must
 preserve its cross-origin opener, while the prover must use isolation headers
@@ -79,7 +84,7 @@ so that this necessary transport does not become an extension surface.
 | Keep the popup non-isolated and isolate the prover separately | preserving the application opener conflicts with top-level COOP isolation | requires CCDP and a prover child; this is the core unavoidable complexity |
 | Reuse one ceremony popup across launch, provider navigation, callback, and proving UI | preserves user activation, opener continuity, and one primary visible ceremony surface | navigation destroys popup memory, so the application retains ceremony state and reauthenticates the returned document |
 | Prefer DIP iframe proving with a user-opened isolated-window fallback | DIP gives an isolated child without severing the popup; browser support is not universal | adds two package-internal placement messages and a **Continue proving** action; remove the fallback only after the supported browser matrix makes it unnecessary |
-| Prefetch prover assets through a service worker during consent | proving assets are large and popup navigation destroys document-owned fetch state | adds cache orchestration; retain because the PoC showed material cold-start improvement |
+| Signal selected-profile prefetch readiness before OAuth | consent time can overlap large public downloads, but the application must not await their completion | adds one readiness message; the prover subsystem owns the fetch implementation |
 | Keep ceremonies memory-only and one-shot | durable OAuth/proof recovery would add credential storage, replay, migration, and cleanup state | interruption before delivery repeats OAuth; add recovery only as a separately justified protocol revision |
 | Use one closed message union and one `CCDPVersion` | application, popup, coordinator, and fallback participate in one package-owned cross-document protocol | a breaking wire change increments one version; no per-message negotiation |
 
@@ -141,11 +146,11 @@ confidentiality boundary.
 
 The initial popup's prover iframe only starts prefetch. The callback popup's fresh
 iframe coordinates proving: it proves in place under DIP or relays to the
-isolated-window fallback. Both placements reuse the same worker-owned fetches
-and caches; neither adds a server mode or durable state. See
-[prefetch and shared caching](#prefetch-and-shared-caching) for fetching and the
-[popup/prover channel](#popupprover-channel) for isolation, binding, and
-forwarding.
+isolated-window fallback. Neither placement adds a server mode or durable state.
+See [prover prefetch coordination](#prover-prefetch-coordination) for the CCDP
+lifecycle, [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle) for fetching and
+caching, and the [popup/prover channel](#popupprover-channel) for isolation,
+binding, and forwarding.
 
 ## Flow at a glance
 
@@ -217,9 +222,9 @@ On initial launch, the popup exact-validates and clears its fragment's ceremony
 ID, platform ID, and ceremony version, then loads
 `/api/v1/ceremony/prover#prefetch(ceremonyId, platformId,
 platformCeremonyVersion)`. The child clears that fragment, resolves the exact
-profile, and asks the service worker to start or join only those artifact
-fetches. It returns `ProverPrefetchingAssets` after the single flights exist or
-the bounded prefetch attempt is unavailable; it does not wait for downloads to
+profile, and asks the prover subsystem to start its selected-profile prefetch.
+It returns `ProverPrefetchingAssets` after that work is registered or the
+bounded prefetch attempt is unavailable; it does not wait for downloads to
 finish. The popup accepts the message only from its exact child and forwards it
 unchanged to `window.opener` using only server-embedded allowed origins. A
 missing or invalid profile or silent child fails before OAuth; ordinary cache
@@ -540,11 +545,6 @@ accepted window message is `AbortCeremony(reason)`, reporting that the top-level
 document could not qualify;
 the coordinator forwards it upstream as a terminal technical failure.
 
-The prover does not receive the expected Authorization Digest. Google exposes
-the signed token nonce as a proof public input; X and GitHub expose the
-attested code verifier. The Consumer verification path matches that binding to
-the Authorization Digest it recomputes from the OAuth proof.
-
 After `AppRequestProof`, the active proving placement sends zero or more
 `ProverNotifyEvent` records followed by exactly one `ProverDeliverProof`. The
 application may instead send parameterless `AppCancelCeremony` downstream. The
@@ -565,22 +565,9 @@ window uses the cleared ceremony-ID fragment only to derive its same-origin
 `CCDPVersion`; no
 second protocol or version exists.
 
-The prover performs the selected version's exchange, notarization, witness
-construction, and proof generation. It returns only the bounded generated
-proof and attestations through `ProverDeliverProof`; it does not receive the
-operation domain, chain ID, transaction data, or authorization nonce, and it
-does not assemble or verify `OAuthProof` or
-construct `Identity`. The application client combines the returned proof and
-attestations with its retained ceremony fields, assembles the exact normative
-`OAuthProof`, and derives a locally checked but non-authoritative preview. For
-GitHub, the prover—not the
-popup—calls the fixed same-origin token route, verifies its response, and then
-performs the dependent `/user` notarization. `platforms/github` implements the normative
-`TokenRequest` and `TokenResponse` codecs; the platform
-specification owns their exact shape and proof semantics.
-
-Neither placement persists credential-bearing state. Inputs and workers are
-cleared after proof delivery, AbortCeremony, failure, or context destruction.
+The prover's inputs, platform pipelines, proof boundary, cleanup, and
+credential handling are defined in [PROVER.md](PROVER.md#component-boundary).
+CCDP owns only which bound context may send or receive those records.
 
 ## Progress, cancellation, and recovery
 
@@ -590,19 +577,17 @@ application-side stage transitions are defined by the
 only the platform step and prover timestamp; the common stage remains local to
 the application-side client.
 
-Each platform-ceremony-version module defines only its steps beside the code
-which performs them and emits `started` followed by exactly one `completed` or
-`failed`. It cannot select a common stage. The prover validates only the bounded
-string and status shape, stamps `timestamp` as non-negative safe-integer Unix
-milliseconds, and sends both in `ProverNotifyEvent`; the message contains no
-common stage. A fallback window sends that
+The exact step catalogs and emission lifecycle are defined by the
+[prover architecture](PROVER.md#platform-progress). CCDP treats a validated
+`PlatformStep` as opaque, carries its prover-stamped non-negative safe-integer
+Unix-millisecond timestamp in `ProverNotifyEvent`, and contains no common stage.
+A fallback window sends that
 exact message through the coordinator, and the ceremony popup forwards it
 unchanged. The client accepts it only from the authenticated live ceremony
 while its local common stage is `proof-generation`, validates and preserves the
 prover timestamp, and publishes the resulting `CeremonyEvent`. Locally generated
 common-stage events use client timestamps. The client otherwise does not
-interpret the platform catalog. Neither
-event contains operation inputs, outputs,
+interpret the platform catalog. Neither event contains operation inputs, outputs,
 credentials, identities, witnesses, proofs, raw exceptions, or raw service
 errors. The application may map this advisory view into its broader job
 progress; later confirmation, submission, and finality never enter the
@@ -629,92 +614,31 @@ Cancellation is best effort: remote stateless work may finish, but no result is
 used. A later result cannot commit because the matching Job is gone.
 Popup closure alone is never success, failure, denial, or cancellation.
 
-## Prefetch and shared caching
+## Prover prefetch coordination
 
-Every ceremony attempts consent-overlapped prover prefetch. It is fixed behavior,
-not configuration or action input. The shared launch popup loads `/api/v1/ceremony/prover`.
-The prover Window branch registers its own deployed
-`libid-ceremony-prover.js` module URL as a module service worker and asks it to
-start only the selected platform/version profile's artifact single flights.
-This reuses the same route, artifact, and prover implementation used later for
-proving; there is no prefetch route, artifact, or mode flag.
+CCDP owns only when prefetch is requested and when its readiness message may be
+forwarded. The initial popup loads the prover document with the closed
+`prefetch(ceremonyId, platformId, ceremonyVersion)` fragment. The callback
+loads the same document with an empty fragment for its coordinator, while the
+isolated fallback uses a bare ceremony ID. These fragments select document
+bootstrap roles; they are not server variants or CCDP messages and never carry
+an asset URL.
 
-`/api/v1/ceremony/prover` has three closed fragment forms. The bootstrap copies
-and clears the fragment before importing the root module or using storage or the
-network:
-
-- `prefetch(ceremonyId, platformId, ceremonyVersion)` creates the prefetch iframe;
-- an empty fragment creates the returned-callback coordinator iframe; and
-- a bare ceremony ID creates the top-level fallback prover window.
-
-These are document bootstrap roles, not server request variants or CCDP
-messages. The fragment never contains an asset URL. The same HTML, headers,
-embedded manifest, and root module are served in all three cases.
-
-The `/api/v1/ceremony/prover` bootstrap exact-validates its server-embedded `ProverAssets`.
-For prefetch, its Window branch accepts only the closed, cleared
-`#prefetch(ceremonyId, platformId, ceremonyVersion)` fragment and selects exactly
-one matching circuit profile, adding the single deployment-configured
-notarization client only when that closed platform implementation requires it,
-and combining both with the toolchain assets pinned by the prover build. The
-fragment can select a profile but cannot supply an asset URL. The ceremony ID is only echoed in readiness; it is not
-passed into the proving implementation. The service-worker branch contains no
-OAuth or application state. It owns each selected immutable asset fetch from
-the first byte, keys ordinary artifact single flights by canonical URL, starts
-the fixed launch bb.js CRS loaders—`Crs.new(SRS_SIZE)` and
-`GrumpkinCrs.new(2 ** 16)`—as their curve-specific single flights, rejects a
-manifest conflict, and extends the initiating worker event through completion.
-Those loaders use bb.js's fixed CRS endpoints and IndexedDB cache. Merely
-importing bb.js is not CRS prefetch. As soon as those single flights exist or
-the bounded startup attempt fails, without waiting for download completion,
-the child returns `ProverPrefetchingAssets`, and the application proceeds to
-the provider without replying.
-
-A later coordinator or prover window resolves the same profile from its own
-embedded manifest and code-pinned assets using the exact `AppRequestProof`
-platform/version. Normal asset
-requests join an in-flight fetch or read the completed Cache Storage entry. It
-first asks the service worker to finish or restart the fixed CRS single flights;
-`Barretenberg.new({ srsSize: SRS_SIZE })` then reads the resulting bb.js IndexedDB cache
-before proof generation. A later ceremony for another platform likewise reuses
-every repeated artifact URL and the same CRS entries; only its
-profile-specific circuit or other missing entry is fetched. Navigation through
-OAuth therefore neither restarts shared work nor downloads unrelated platform
-profiles.
-
-The same worker registration and Cache Storage are visible to both qualified
-placements. DIP iframe proving uses them directly. A top-level window remains in
-the same origin and service-worker scope after COOP severs its opener, so it
-uses the same fetches and cache. A new document reconnects to the worker rather
-than awaiting a Promise owned by the destroyed prefetch document. Worker
-termination after completion is harmless because ordinary responses live in
-Cache Storage and completed CRS data lives in bb.js's IndexedDB cache; no
-separate durable completion marker exists.
-
-Registration, fetch, eviction, quota, or unsupported-worker failure changes
-latency only. A missing or malformed selected profile fails before OAuth;
-ordinary prefetch failure follows the identical selected-profile cold fetch path
-and never weakens isolation, worker count, or verification. Warm state is never
-a checkpoint.
+The prefetch child emits `ProverPrefetchingAssets` once the selected work has
+started or its bounded startup path is unavailable, without waiting for the
+downloads to finish. A missing profile or silent child fails before OAuth; an
+ordinary fetch failure changes latency only and follows the same cold proving
+path. Fetching, caching, navigation survival, and warm/cold failure semantics
+are defined in [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
 
 ## Browser isolation consequences
 
-The exact document and asset headers are defined in
-[SERVER.md](SERVER.md#popup-document-and-callback-alias). They preserve the popup's
-opener while isolating the prover, make both bootstraps request-invariant, and
-admit only immutable package and configured prover assets.
-
-This is not browser-enforced cross-profile compartmentalization: a compromised
-prover root module can reach any origin in the prover response's closed CSP
-union. That module is already a code-supply-chain trust boundary. Stronger confinement would require a
-platform-specific response or isolated worker which alone receives the
-credential; it is not part of the static launch deployment.
-
-Because a worker cannot directly load a cross-origin worker URL, the prover may create
-only a local `blob:` bootstrap which imports the fixed immutable worker module
-and installs the same fixed bridge for nested workers. Its CSP permits that
-bootstrap, the deployment manifest's libID-asset origins, and the exact
-code-pinned toolchain network origins.
+The exact [popup](SERVER.md#popup-response-policy) and
+[prover](SERVER.md#prover-response-policy) response policies are defined in the
+server contract. Their CCDP consequence is that the popup preserves its
+application opener while the prover runs in a separately isolated document.
+Neither property can be added by application JavaScript or
+negotiated through a message.
 
 The application page must preserve an opener through the provider roundtrip.
 `COOP: unsafe-none` and `same-origin-allow-popups` are compatible; a strictly
@@ -723,12 +647,10 @@ transport exists. Redirect and prover pages accept no application HTML,
 component, stylesheet, script URL, or raw error markup and render fixed native
 DOM UI.
 
-The redirect deployment, configured libID-asset origins, and code-pinned
-toolchain origins are code-supply-chain trust boundaries. A malicious owner can
-replace the document, CSP, and matching assets; CCDP cannot constrain that
-owner. Dedicated
-origins, immutable assets, CSP, SRI, and closed messages reduce accidental
-exposure and cross-application confusion, not malicious deployment authority.
+The prover worker graph, network ceiling, cross-profile trust consequence, and
+isolation failure behavior are defined in
+[PROVER.md](PROVER.md#worker-and-network-isolation). CCDP owns only the placement
+messages and live channel binding.
 
 ## Versioning and compatibility
 

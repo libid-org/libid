@@ -2,8 +2,8 @@
 
 This plan tests the `@libid/ceremony` package architecture in
 [ARCHITECTURE.md](ARCHITECTURE.md) and its browser protocol in
-[CCDP.md](CCDP.md), including the integrating-server contract in
-[SERVER.md](SERVER.md).
+[CCDP.md](CCDP.md), its prover subsystem in [PROVER.md](PROVER.md), and the
+integrating-server contract in [SERVER.md](SERVER.md).
 Normative proof and platform behavior come from the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md).
