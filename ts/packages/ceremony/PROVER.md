@@ -114,7 +114,7 @@ the pinned raw TLSNotary WASM API. Platform-version modules supply their exact
 request, response parser, and transcript layout; the adapter owns the shared
 session, reveal, reclaimed-channel, attestation-delivery, and
 commitment-correlation mechanics. The full boundary, disclosure model, three
-browser sessions, and GitHub server token session are defined in
+browser call sites, and attestation handoff are defined in
 [NOTARIZATION.md](NOTARIZATION.md).
 
 ## Platform pipelines
@@ -211,10 +211,11 @@ fixed server token-exchange route. The server uses its confidential client
 secret, performs the token-exchange TLSNotary session, and returns the bounded
 access token, token attestation, and `bearerBlinder`: the canonical unpadded
 base64url encoding of the token session's exact 16-byte TLSNotary blinder. The
-browser performs the exact pre-identity checks defined in
-[NOTARIZATION.md](NOTARIZATION.md#github-server-token-session) before using the
-bearer in its own fixed `/user` TLSNotary session. That session commits the
-bearer and reveals the canonical `id` and `login` ranges.
+browser exact-validates the selected version's token response, attestation,
+request bindings, and bearer opening before using the bearer in its own fixed
+`/user` TLSNotary session. That session commits the bearer and reveals the
+canonical `id` and `login` ranges. The server route itself is defined in
+[SERVER.md](SERVER.md#github-token-endpoint).
 
 The module then runs the same `bearer-link` circuit with the token-exchange and
 identity blinders. Its public-input count and order are identical to X: 64
