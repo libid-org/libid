@@ -63,7 +63,7 @@ interface CommitmentOpening {
 
 interface NotaryAttestation {
   attestedData: Uint8Array
-  signature: Uint8Array
+  signature: Uint8Array // exactly 65 bytes
 }
 
 interface NotarizeResult {
@@ -89,6 +89,95 @@ private response and build its witness. It never crosses CCDP or the public
 ceremony API. The adapter correlates the raw TLSNotary commitments with the
 signed attestation, discards duplicate commitment hashes, and returns only the
 range and private blinder for each opening.
+
+## Canonical attested-data decoder
+
+`prover/notarization` owns one read-only decoder for the signed attested-data
+bytes. It does not expose an encoder and never reserializes a received record.
+The decoder returns this internal view:
+
+```ts
+const MAX_ATTESTED_DATA_BYTES = 2 * 1024 * 1024
+
+interface DecodedRevealedRange {
+  start: number
+  bytes: Uint8Array
+}
+
+interface DecodedRangeCommitment {
+  start: number
+  end: number
+  commitment: Uint8Array // exactly 32 bytes
+}
+
+interface DecodedDirection {
+  revealed: readonly DecodedRevealedRange[]
+  commitments: readonly DecodedRangeCommitment[]
+}
+
+interface DecodedAttestedData {
+  authorityId: Uint8Array // exactly 32 bytes
+  createdAt: bigint
+  sentTranscriptLength: number
+  receivedTranscriptLength: number
+  sent: DecodedDirection
+  received: DecodedDirection
+}
+
+declare function decodeAttestedData(bytes: Uint8Array): DecodedAttestedData
+```
+
+The wire is bincode 2.0.1 with fixed-width big-endian integers and fields in
+the order shown below. Collection and byte-string lengths are unsigned 64-bit
+integers; transcript offsets and lengths are unsigned 32-bit integers.
+
+```text
+AttestedData =
+  bytes32 authorityId
+  u64     createdAt
+  u32     sentTranscriptLength
+  u32     receivedTranscriptLength
+  Direction sent
+  Direction received
+
+Direction =
+  u64 revealedCount
+  RevealedRange[revealedCount]
+  u64 commitmentCount
+  RangeCommitment[commitmentCount]
+
+RevealedRange = u32 start || u64 byteLength || bytes[byteLength]
+RangeCommitment = u32 start || u32 end || bytes32 commitment
+```
+
+Before allocating or converting to a JavaScript `number`, the decoder rejects
+an input over `MAX_ATTESTED_DATA_BYTES` and bounds every count and length against
+the remaining input and signed transcript length. It rejects truncation,
+trailing bytes, overflow, empty or unordered ranges, overlaps, out-of-bounds
+ranges, malformed commitments, and values that cannot be represented exactly.
+`createdAt` stays a `bigint`; every accepted offset and transcript length fits
+exactly in a JavaScript `number`.
+
+The decoder is pinned to the rebased `libid-rs` cross-language vector. The
+fixture is one complete `AttestedData` record in hexadecimal:
+
+```text
+4930142f5283d4a8eab0d24c588f00b21213ae2a47e7ed6c1dc6a57044f1655d0000000069800e800000003c00000028000000000000000200000000000000000000001461616161616161616161616161616161616161610000002800000000000000146262626262626262626262626262626262626262000000000000000100000014000000280707070707070707070707070707070707070707070707070707070707070707000000000000000100000000000000000000000a6363636363636363636300000000000000010000000a000000280909090909090909090909090909090909090909090909090909090909090909
+```
+
+Its `keccak256` digest is:
+
+```text
+48162f05bdb27b19b3544bf2aae608745861bf357bb31e07f536b6fb50e95936
+```
+
+Decoding yields `authorityId = keccak256(UTF8("api.x.com"))` and a `createdAt`
+of `1770000000`. Sent and received transcript lengths are 60 and 40. Sent reveals
+`[0,20)` and `[40,60)` surround commitment `[20,40)`; received reveal `[0,10)`
+precedes commitment `[10,40)`. The revealed bytes are respectively twenty `a`
+bytes, twenty `b` bytes, and ten `c` bytes; the two commitments are 32 bytes of
+`0x07` and `0x09`. This fixture is copied unchanged from the rebased
+[`libid-rs` encoder](https://github.com/libid-org/libid-rs/blob/239a4bb426ac72591fe30006f22660e164a98d96/crates/libid-ceremony/src/attestation.rs).
 
 ## Session lifecycle
 
@@ -119,21 +208,18 @@ sequenceDiagram
     W-->>T: Commitment openings
     T->>W: finish()
     N->>N: finish()
-    T->>N: RequestAttestation
     N-->>T: NotaryAttestation
     T->>T: Correlate signed output and openings
     T-->>M: NotarizeResult
 ```
 
 `finish()` releases each TLSNotary driver from its side of the original
-JavaScript `IoChannel`. Only then do the adapter and service exchange the
-application-level `RequestAttestation` and `NotaryAttestation` on that same
-channel.
-
-`RequestAttestation` has no payload. One TLSNotary channel permits exactly one
-request and one response before closure, so it needs no ceremony ID, request
-ID, platform, or caller-selected token/identity tag. The verified session on
-that channel supplies all signed data. Duplicate or trailing frames fail.
+JavaScript `IoChannel`. Once its verifier finishes, the Notary Service writes
+exactly one bounded `NotaryAttestation` on that same channel and closes it; it
+reads no application-level request. The verified session already supplies all
+signed data, so no ceremony ID, request ID, platform, or token/identity tag
+crosses this boundary. A missing response, a second response, trailing bytes,
+or a channel that does not close fails.
 
 The adapter is also indifferent to application sequencing. Platform code
 retains which call produced each result; the identity request naturally waits
@@ -191,8 +277,8 @@ owns browser-side response validation and subsequent `/user` orchestration.
 
 ## Attestation handoff
 
-The adapter preserves `attestedData` and its signature byte-for-byte. It may
-decode a read-only view for bounds and commitment correlation but never
+The adapter preserves `attestedData` and its signature byte-for-byte. It decodes
+the required read-only view for bounds and commitment correlation but never
 normalizes or re-encodes the signed bytes. Platform proofs place the unchanged
 token and identity attestations in their named fields alongside the
 `bearer-link` proof. Transcripts, access tokens, blinders, raw TLSNotary objects,
