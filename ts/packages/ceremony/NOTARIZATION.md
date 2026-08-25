@@ -12,11 +12,11 @@ proof semantics remain normative in the
 ## Boundary and rationale
 
 The module is one internal TypeScript adapter over the pinned upstream
-TLSNotary JavaScript/WASM client. The browser-side TLSNotary Prover and the
-Notary Service's TLSNotary Verifier run MPC-TLS. The adapter owns their browser
-transport, disclosure call, reclaimed-channel attestation delivery, and output
-correlation. Each closed platform-version module owns its exact HTTP request,
-response parser, and revealed transcript ranges.
+TLSNotary JavaScript/WASM client. Browser notarization uses the launch Proxy
+profile: the Notary Service opens the pinned platform connection. The adapter
+owns the browser transport, disclosure call, reclaimed-channel attestation
+delivery, and output correlation. Each closed platform-version module owns its
+exact HTTP request, response parser, and revealed transcript ranges.
 
 Keeping platform logic in TypeScript avoids rebuilding a custom WASM facade
 for every profile change without creating a security boundary: the prover
@@ -192,13 +192,13 @@ sequenceDiagram
     M->>T: notarize(request, selectReveals)
     T->>N: Open configured Proxy WebSocket
     T->>W: setup(IoChannel)
-    W->>N: MPC-TLS setup messages
-    N-->>W: MPC-TLS setup messages
+    W->>N: TLSNotary setup messages (Proxy profile)
+    N-->>W: TLSNotary setup messages (Proxy profile)
     T->>W: sendRequest(request)
-    W->>N: MPC-TLS request messages
+    W->>N: TLSNotary request messages (Proxy profile)
     N->>P: Forward encrypted TLS records
     P-->>N: Return encrypted TLS records
-    N-->>W: MPC-TLS response messages
+    N-->>W: TLSNotary response messages (Proxy profile)
     W-->>T: Complete local transcript
     T->>M: selectReveals(transcript)
     M-->>T: Revealed ranges
