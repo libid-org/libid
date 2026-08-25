@@ -59,7 +59,7 @@ interface SessionLayout {
 interface ExactHttpRequest {
   url: string
   method: 'GET' | 'POST'
-  headers: readonly (readonly [name: string, value: Uint8Array])[]
+  headers: Readonly<Record<string, Uint8Array>>
   body: Uint8Array
 }
 
@@ -98,11 +98,15 @@ declare function notarizeSession(
 ): Promise<NotarizeSessionResult>
 ```
 
-This is not exported from `@libid/ceremony`. The ordered header list and raw
-body are intentional: a profile authenticates the bytes the provider parsed,
-not an unordered object or a second serialization. The platform module pins
-the provider URL; `notarizeSession` accepts it only because the internal raw
-TLSNotary call needs it.
+This is not exported from `@libid/ceremony`. Header order is not semantic: the
+selector runs on the actual serialized transcript, while the verifier checks
+the request line, coverage, authorization-header uniqueness, and bearer
+framing rather than relative header position. The raw body remains intentional
+because form-field order and byte encoding can be profile semantics; in
+particular, GitHub's server-side token exchange places its redacted
+`client_secret` last. The platform module pins the provider URL;
+`notarizeSession` accepts it only because the internal raw TLSNotary call needs
+it.
 
 The result retains the transcript only long enough for the calling platform
 module to parse its private response and build the circuit witness. It never
