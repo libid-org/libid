@@ -94,11 +94,9 @@ There is no request-time version negotiation.
 
 ```ts
 import type {
+  PlatformCeremonyVersion,
   PlatformId,
 } from '@libid/ceremony'
-import type {
-  PlatformCeremonyVersion,
-} from '@libid/ceremony/protocol'
 
 interface PlatformConfig {
   clientId: string

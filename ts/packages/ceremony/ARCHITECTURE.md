@@ -111,26 +111,28 @@ Launch publishes one `@libid/ceremony` package:
 
 ```text
 @libid/ceremony
-├── protocol    shared records, CCDP codecs, authorization, proof primitives, wire version
+├── ccdp        cross-document records, codecs, validation, and wire version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── popup       source entrypoint for libid-ceremony-popup.js
 ├── prover      source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
 └── platforms
     ├── index    closed catalog and derived public platform/result types
+    ├── authorization  shared digest and PKCE helpers used under platform-version policy
     ├── google   Google proof type, validator, OAuth, progress, witness, and proving
     ├── x        X proof type, validator, OAuth, progress, witness, and proving
     └── github   GitHub proof type, validator, OAuth, progress, witness, and proving
 ```
 
-`protocol` is the pure leaf imported by the client, popup, prover, platform
-implementations, and native-wallet confirmation. It performs no browser,
-storage, network, or cryptographic proof-verification work. It owns common
-`OAuthProof` construction primitives and CCDP validation. Each platform module
-owns its proof type and validator, exact proof assembly, and local evidence
-validation. `platforms/index` is the only aggregator: it imports those modules,
-derives the catalog and public result types, and is re-exported by the package
-root and client API. Individual platform modules never import the aggregator,
-so `protocol` remains a leaf. `popup` and `prover` are build entrypoints, not
+`ccdp` is the pure browser-message leaf imported by client, popup, and prover.
+It performs no platform dispatch, browser work, storage, network, authorization
+construction, or cryptographic proof verification. `platforms/authorization`
+provides the shared Authorization Digest and PKCE helpers, but each
+platform/version module owns whether and how those helpers participate in its
+ceremony. Each platform module also owns its proof type and validator, exact
+proof assembly, and local evidence validation. `platforms/index` is the only
+aggregator: it imports those modules, derives the catalog and public result
+types, and is re-exported by the package root and client API. Individual
+platform modules never import the aggregator. `popup` and `prover` are build entrypoints, not
 separately versioned packages. They emit `libid-ceremony-popup.js`,
 `libid-ceremony-prover.js`, and immutable worker/WASM assets from one compatible
 package release. The prover artifact runs in both Window and ServiceWorker
@@ -146,18 +148,15 @@ endpoint.
 The dependency direction is closed:
 
 ```text
-client, prover, native wallet
-              │
-              ▼
-       platforms/index
-              │
-              ▼
- platforms/{google,x,github}
-              │
-              ▼
-           protocol
+client, prover, native wallet ───> platforms/index
+                                      │
+                                      ▼
+                           platforms/{google,x,github}
+                                      │
+                                      ▼
+                         platforms/authorization
 
-popup ─────────────────> protocol
+client, popup, prover, platforms/index ───> ccdp
 wallet-client ─────────> client + ceremony + wallet/protocol
 ```
 
@@ -170,9 +169,9 @@ The package-facing API surface is:
 
 | Export or entrypoint | Contract |
 |---|---|
-| `@libid/ceremony` | `PlatformId`, `supportedPlatforms`, `ProofByPlatform`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform catalog |
-| `@libid/ceremony/protocol` | shared records and validators, authorization and proof primitives, `CCDPMessage`, and `CCDPVersion` |
-| `@libid/ceremony/client` | application-scoped `CeremonyClient`, `CeremonyConfig` fetch, stateful `Ceremony` orchestration, and convenience re-exports of the public catalog/result types |
+| `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatform`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform catalog |
+| `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
+| `@libid/ceremony/client` | `CeremonyConfig` schema/fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and convenience re-exports of public catalog/result types |
 | `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared redirect document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
 
@@ -375,7 +374,7 @@ required by the no-ceremony-recovery launch scope.
 The integrating server exposes the exact `CeremonyConfig` and origin-controlled
 fetch defined in [SERVER.md](SERVER.md#public-configuration). The
 application-scoped client fetches it once with native `fetch` and validates it
-through `@libid/ceremony/protocol`; there is no configuration module. Popup and
+in `@libid/ceremony/client`; no separate configuration module exists. Popup and
 prover do not fetch it.
 
 The client freezes the selected platform, ceremony version, client ID, and
@@ -620,6 +619,12 @@ deployment can execute; the client selects its newest locally preferred member
 of that set, and every live ceremony pins it. Chain-specific contract and
 Registry versions are outside this boundary and independently decide which
 ceremony outputs they accept.
+
+`platforms/authorization` is code reuse, not a second compatibility boundary.
+Each platform-version module owns the helper inputs, outputs, and whether it
+uses the shared digest or PKCE construction at all. Changing those semantics
+therefore changes that platform's `PlatformCeremonyVersion`; it does not version
+the helper independently or force another platform to adopt the change.
 
 The launch protocol intentionally does not split digest, OAuth, proof, and
 output-shape versions. A proof change normally changes the assembled
