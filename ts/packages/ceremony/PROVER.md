@@ -17,18 +17,32 @@ Normative proof relations and authorization semantics remain in the
 
 ## Component boundary
 
-One dual-context `libid-ceremony-prover.js` artifact serves three Window roles
-and one ServiceWorker role:
+One dual-context `libid-ceremony-prover.js` artifact serves one prover document
+and its ServiceWorker. The document is instantiated in sequential browser
+placements:
 
 ```text
-Window
-├── prefetch iframe       selects one profile and starts shared fetches
-├── coordinator iframe    proves under DIP or relays to the fallback
-└── isolated window       proves when the coordinator cannot qualify
+Before OAuth
+└── /api/v1/ceremony/prover#prefetch(...)
+    ephemeral iframe starts selected-profile fetches
+             │
+             └── parent navigates to OAuth; this iframe is destroyed
 
-ServiceWorker
-└── immutable-asset and CRS single flights shared by every Window placement
+After OAuth
+└── /api/v1/ceremony/prover
+    fresh iframe joins the same fetches and either
+    ├── proves under DIP, or
+    └── coordinates /api/v1/ceremony/prover#<ceremonyId>
+        isolated top-level fallback window
+
+Shared ServiceWorker
+└── immutable-asset and CRS single flights survive document replacement
 ```
+
+These are fragment-selected modes of the same document and Window entrypoint,
+not separate iframe implementations. OAuth navigation prevents reuse of the
+first iframe instance; the ServiceWorker and browser caches, rather than that
+document, preserve the fetching work.
 
 The prover consumes one exact `AppRequestProof` after CCDP has authenticated
 the live ceremony and chosen a placement. It returns only bounded platform
