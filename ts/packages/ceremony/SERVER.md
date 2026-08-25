@@ -42,8 +42,8 @@ One deployment has these server-owned inputs:
 | Callback path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Popup and prover roots | Immutable module URLs, integrity values, and deployment-fixed CSP sources |
-| Prover assets | One exact immutable URL for the libID-built notarization client, one exact immutable circuit URL per platform/version, and one Notary Service URL per browser-notarized profile |
-| Confidential platform settings | GitHub client secret, redirect URI, notary, and other normative token-exchange settings when GitHub is enabled |
+| Prover assets | One exact immutable URL for the libID-built notarization client, one exact immutable circuit URL per platform/version, and one common Notary Service address |
+| Confidential platform settings | GitHub client secret, redirect URI, and other normative token-exchange settings when GitHub is enabled |
 
 `allowedAppOrigins` uses set semantics and has no protocol maximum. The same
 value drives configuration CORS and is embedded into the popup document. It is
@@ -56,8 +56,8 @@ of one enabled set, not independently maintained platform lists.
 
 Only libID-owned circuit and notarization-client locations are configurable
 artifact assets. The ceremony package pins their expected identities. A
-`notaryServiceUrl` is a network endpoint rather than an artifact and is
-deployment-fixed in the corresponding prover profile. The package pins the
+`notaryAddress` is a network endpoint rather than an artifact and is
+deployment-fixed for the whole ceremony deployment. The package pins the
 Aztec-distributed bb.js and Noir toolchain, including its worker, WebAssembly,
 and common-reference-string dependency graph, in code.
 
@@ -233,11 +233,11 @@ interface ProverProfile {
   platformId: PlatformId
   platformCeremonyVersion: PlatformCeremonyVersion
   circuitUrl: string
-  notaryServiceUrl?: string
 }
 
 interface ProverAssets {
   notarizationClientUrl: string
+  notaryAddress: string
   profiles: readonly ProverProfile[]
 }
 ```
@@ -248,15 +248,13 @@ the only HTTP exception. `notarizationClientUrl` selects the one libID-built
 notarization client shared by all notarized platform implementations. Its host
 is deployment configuration: an initial GitHub release URL and a later CDN URL
 have identical protocol meaning.
-`profiles` contains exactly one circuit entry for every enabled
+`notaryAddress` is the one canonical secure Notary Service network address
+shared by every notarized session in the deployment. It is not the
+`notarizationClientUrl` release asset. `profiles` contains exactly one circuit entry for every enabled
 platform/version advertised by `CeremonyConfig`, restricted to the package's
 single closed catalog, and selects its circuit descriptor through `circuitUrl`.
-An enabled profile whose closed implementation performs browser notarization
-also carries exactly one canonical HTTPS `notaryServiceUrl`; a profile that
-does not notarize in the browser must omit it. This is the Notary Service
-network endpoint, not the `notarizationClientUrl` release asset. It is embedded
-deployment data and cannot be supplied or replaced by a request, fragment, or
-browser message. Its browser use is defined in
+The common address is embedded deployment data and cannot be supplied or
+replaced by a request, fragment, or browser message. Its browser use is defined in
 [NOTARIZATION.md](NOTARIZATION.md). The closed
 [platform pipeline](PROVER.md#platform-pipelines) determines whether it
 also fetches the global notarization client. The server schema does not

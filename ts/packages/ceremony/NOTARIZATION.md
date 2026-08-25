@@ -32,9 +32,9 @@ between Rust and TypeScript.
 
 The adapter is internal to the prover. Applications, ceremony inputs, OAuth
 responses, and CCDP messages cannot supply a Notary Service, provider URL,
-request, layout, or session tag. A platform-version module receives its
-deployment-fixed `notaryServiceUrl` and constructs the remaining values from
-closed code plus bounded ceremony credentials.
+request, layout, or session tag. The prover receives the deployment's common
+`notaryAddress`; each platform-version module constructs the remaining values
+from closed code plus bounded ceremony credentials.
 
 ## Internal TypeScript contract
 
@@ -81,7 +81,7 @@ interface CommitmentOpening {
 }
 
 interface NotarizeSessionInput {
-  notaryServiceUrl: string
+  notaryAddress: string
   session: 'token' | 'identity'
   request: ExactHttpRequest
   selectLayout(transcript: Transcript): SessionLayout
@@ -228,21 +228,21 @@ Conceptually, the three calls are:
 
 ```ts
 const token = await notarizeSession({
-  notaryServiceUrl: xProfile.notaryServiceUrl,
+  notaryAddress,
   session: 'token',
   request: buildXTokenRequest(code, codeVerifier, clientId, redirectUri),
   selectLayout: selectXTokenLayout,
 })
 
 const xIdentity = await notarizeSession({
-  notaryServiceUrl: xProfile.notaryServiceUrl,
+  notaryAddress,
   session: 'identity',
   request: buildXIdentityRequest(accessToken),
   selectLayout: selectXIdentityLayout,
 })
 
 const githubIdentity = await notarizeSession({
-  notaryServiceUrl: githubProfile.notaryServiceUrl,
+  notaryAddress,
   session: 'identity',
   request: buildGitHubIdentityRequest(accessToken),
   selectLayout: selectGitHubIdentityLayout,
