@@ -61,7 +61,7 @@ The popup accepts two closed inputs:
   syntactically valid OAuth `state`, which serializes the ceremony ID.
 
 The popup recognizes only enough callback grammar to find that single routing
-value. The application client's selected platform/version module later
+value. The application client's selected platform/version client leaf later
 classifies success, denial, transport placement, and fields. Unknown,
 ambiguous, or malformed input enters a fixed terminal failure state without
 releasing the captured value or performing credential-bearing work. The server

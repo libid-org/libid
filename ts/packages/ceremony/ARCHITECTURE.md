@@ -120,48 +120,55 @@ Launch publishes one `@libid/ceremony` package:
 │   ├── index          source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
-    ├── index    closed platform/version catalog and derived public result types
+    ├── index    client-safe platform/version catalog and derived public result types
     ├── authorization  shared digest and PKCE helpers used under platform-version policy
-    ├── google/<version>  proof type, validator, OAuth, progress, witness, and proving
-    ├── x/<version>       proof type, validator, OAuth, progress, witness, and proving
-    └── github/<version>  proof type, validator, OAuth, progress, witness, and proving
+    ├── google/<version>/{client,types,prover}
+    ├── x/<version>/{client,types,prover}
+    └── github/<version>/{client,types,prover}
 ```
 
 `ccdp` is the pure browser-message leaf imported by client, popup, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
 construction, or cryptographic proof verification. `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
-platform/version module owns whether and how those helpers participate in its
-ceremony. Each version module also owns its proof type and validator, exact
-proof assembly, and local evidence validation. `platforms/index` is the only
-aggregator: it imports those modules, derives the catalog and public result
-types, and is re-exported by the package root and client API. Individual
-platform modules never import the aggregator. `popup` and `prover` are build entrypoints, not
-separately versioned packages. They emit `libid-ceremony-popup.js`,
+platform/version slice owns whether and how those helpers participate in its
+ceremony. Its `client` leaf owns OAuth and final assembly and re-exports its
+`types` leaf; `types` owns the proof type and side-effect-free runtime validator;
+and `prover` owns progress, witness construction, and proof generation.
+`platforms/index` imports only the client-safe `client` leaves, derives the
+catalog and public result types, and is re-exported by the package root and
+client API. Prover leaves are internal imports of the prover entrypoint and
+never enter the client catalog.
+Individual platform leaves never import the aggregator. `popup` and `prover`
+are build entrypoints, not separately versioned packages. They emit `libid-ceremony-popup.js`,
 `libid-ceremony-prover.js`, and immutable worker/WASM assets from one compatible
 package release. The prover artifact runs in both Window and ServiceWorker
 contexts: its Window branch runs prefetch, coordinates proving, and executes the
 active prover placement, while its ServiceWorker branch owns the shared asset
 single flight and cache. `prover/notarization` is an internal leaf shared by
-the X and GitHub platform modules, not another package entrypoint or artifact.
+the X and GitHub prover leaves, not another package entrypoint or artifact.
 
-Server implementations are outside the package. `platforms/github` implements
-only the server-contract browser-side token request/response codecs and
+Server implementations are outside the package. The GitHub version's prover
+leaf implements only the server-contract browser request/response codecs and
 validation; the integrating server implements the required confidential
 endpoint.
 
 The dependency direction is closed:
 
 ```text
-client, prover, native wallet ───> platforms/index
-                                      │
-                                      ▼
-                           platforms/{google,x,github}
-                                      │
-                                      ▼
-                         platforms/authorization
+client, native wallet ───> platforms/index
+                                │
+                                ▼
+                 platforms/<platform>/<version>/client ───> types
+                                │
+                                ▼
+                      platforms/authorization
 
-platforms/{x,github} ───> prover/notarization
+prover ───> platforms/<platform>/<version>/prover ───> types
+                              │
+                              └──> platforms/authorization
+
+platforms/{x,github}/<version>/prover ───> prover/notarization
 
 client, popup, prover, platforms/index ───> ccdp
 wallet-client ─────────> client + ceremony + wallet/protocol
@@ -215,9 +222,9 @@ list, or proof map
 exists:
 
 ```ts
-import * as googleV1 from './platforms/google/v1'
-import * as xV1 from './platforms/x/v1'
-import * as githubV1 from './platforms/github/v1'
+import * as googleV1 from './platforms/google/1/client'
+import * as xV1 from './platforms/x/1/client'
+import * as githubV1 from './platforms/github/1/client'
 
 const platforms = {
   google: { versions: { 1: googleV1 } },
@@ -272,12 +279,19 @@ const ceremony = await ceremonies.new(jobId, {
 })
 ```
 
-`validateProofMessage` dispatches to the selected version module's exact runtime
+`validateProofMessage` dispatches to the selected version's exact `types`
 validator and returns the generic CCDP envelope narrowed to that validator's
 derived proof type. Any implementation-only assertion needed to express the
 indexed dispatch to TypeScript remains behind this validated aggregation
 boundary; the Ceremony Client performs no cast. CCDP continues to use
 `ProverDeliverProof<unknown>` and does not import the catalog.
+
+The prover entrypoint imports each version's `prover` leaf directly and keeps
+its closed dispatch exhaustive against the catalog's platform/version keys.
+This is an internal build map, not another public platform list or registration
+surface. The client build must succeed with every `prover` leaf unavailable;
+the prover build may reuse `types` and authorization helpers without importing
+the client orchestrator.
 
 Adding a platform or local ceremony version changes this catalog and its closed
 implementation and proof type together. A new version cannot silently inherit
@@ -511,7 +525,7 @@ ceremony output.
 The selected `PlatformCeremonyVersion` is also the proof-shape discriminator in
 `OAuthProof`; there is no independent proof or contract-verifier version. Each
 current platform has only version `1`. A new ceremony version must add its own
-version module, proof type, and validator, even when it deliberately retains the
+version slice, proof type, and validator, even when it deliberately retains the
 same fields. The caller cannot select a version directly.
 `authorizationNonce` is exactly 32 cryptographically random bytes. For X and
 GitHub the Ceremony Client derives the code verifier from the Authorization
@@ -522,11 +536,12 @@ reproduce the binding. Exact authorization and PKCE encoding are delegated to
 the normative ceremony specification.
 
 `OAuthProof<P>` is the single exact wrapper assembled by the Ceremony Client;
-its nested `proof` varies by platform and ceremony version. Each version module owns that
-proof type and validator. `NotaryAttestation` reuses the pinned notary client's
-exact attested-data-and-signature record and serialization; the ceremony does
-not define a second representation. Every numeric and byte field is exact-shape
-and bounds checked. Unknown fields are rejected.
+its nested `proof` varies by platform and ceremony version. Each version's
+`types` leaf owns that proof type and validator. `NotaryAttestation` reuses the
+pinned notary client's exact attested-data-and-signature record and
+serialization; the ceremony does not define a second representation. Every
+numeric and byte field is exact-shape and bounds checked. Unknown fields are
+rejected.
 
 `GoogleProofV1` names the circuit's semantic public values rather than exposing
 bb.js's ordered field array. The Google adapter's pure
@@ -592,9 +607,10 @@ CRS policy, and proof-generation compatibility.
 This package architecture retains only the boundary: the Ceremony Client sends
 one authenticated `AppRequestProof` through CCDP and receives bounded progress,
 one structured-clone proof value, or a technical failure. CCDP does not know
-platform/version proof types. The selected version module validates the value, and the
-client assembles `OAuthProof` and `Identity`; the prover does not own
-application Jobs, Consumer verification, or post-ceremony effects.
+platform/version proof types. The selected version's client-safe validator
+narrows the value, and the client assembles `OAuthProof` and `Identity`; the
+prover does not own application Jobs, Consumer verification, or post-ceremony
+effects.
 
 ## Progress, cancellation, and recovery
 
@@ -626,10 +642,10 @@ authenticated `PopupDeliverParams` selects the live Ceremony, and
 control flow; no popup lifecycle message or platform-step inference changes the
 common stage.
 
-Each platform-ceremony-version module owns its closed diagnostic-span catalog
-and partial-order rules beside the code which performs it; it cannot select a
-common stage. Spans may overlap, and the client otherwise does not interpret
-that catalog. Neither common-stage nor platform-step events
+Each platform-ceremony-version prover leaf owns its closed diagnostic-span
+catalog and partial-order rules beside the code which performs it; it cannot
+select a common stage. Spans may overlap, and the client otherwise does not
+interpret that catalog. Neither common-stage nor platform-step events
 contain operation inputs, outputs, credentials, identities, witnesses, proofs,
 raw exceptions, or raw service errors.
 
@@ -651,7 +667,7 @@ Registry versions are outside this boundary and independently decide which
 ceremony outputs they accept.
 
 `platforms/authorization` is code reuse, not a second compatibility boundary.
-Each platform-version module owns the helper inputs, outputs, and whether it
+Each platform-version slice owns the helper inputs, outputs, and whether it
 uses the shared digest or PKCE construction at all. Changing those semantics
 therefore changes that platform's `PlatformCeremonyVersion`; it does not version
 the helper independently or force another platform to adopt the change.

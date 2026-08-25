@@ -15,8 +15,8 @@ The module is one internal TypeScript adapter over the pinned upstream
 TLSNotary JavaScript/WASM client. Browser notarization uses the launch Proxy
 profile: the Notary Service opens the pinned platform connection. The adapter
 owns the browser transport, disclosure call, reclaimed-channel attestation
-delivery, and output correlation. Each closed platform-version module owns its
-exact HTTP request, response parser, and revealed transcript ranges.
+delivery, and output correlation. Each closed platform-version prover leaf owns
+its exact HTTP request, response parser, and revealed transcript ranges.
 
 Keeping platform logic in TypeScript avoids rebuilding a custom WASM facade
 for every profile change without creating a security boundary: the prover

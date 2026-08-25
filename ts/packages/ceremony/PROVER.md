@@ -99,8 +99,9 @@ an unknown structured-clone value:
 | X | `XProofV1 { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'x'>` with ceremony version `1` |
 | GitHub | `GitHubProofV1 { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` with ceremony version `1` |
 
-Each platform/version module constructs its exact proof object in the prover
-and owns the matching runtime validator dispatched by `platforms/index`. The
+Each platform/version `prover` leaf constructs its exact proof object. Its
+side-effect-free `types` leaf owns the matching runtime validator dispatched by
+`platforms/index`. The
 validator is selected from the live Ceremony's platform and ceremony version,
 not from a discriminator inside the nested value. It rejects unknown fields, malformed arrays and bytes, and
 profile-bound violations, then returns a typed `ProverDeliverProof`. CCDP never
@@ -124,7 +125,7 @@ make browser acceptance authoritative.
 ## Browser notarization
 
 X and GitHub use `prover/notarization`, one internal TypeScript adapter over
-the pinned raw TLSNotary WASM API. Platform-version modules supply their exact
+the pinned raw TLSNotary WASM API. Platform-version prover leaves supply their exact
 request, response parser, and transcript layout; the adapter owns the shared
 session, reveal, reclaimed-channel, attestation-delivery, and
 commitment-correlation mechanics. The full boundary, disclosure model, three
@@ -133,7 +134,7 @@ browser call sites, and attestation handoff are defined in
 
 ## Platform pipelines
 
-The platform modules own witness construction and orchestration; the circuit
+The platform-version prover leaves own witness construction and orchestration; the circuit
 repository owns the exact proof relation and ABI. Launch uses these artifacts:
 
 | Profile | Circuit | Returned attestations |
@@ -176,7 +177,7 @@ a notary, circuit, or bb.js version.
 
 ### Google
 
-`platforms/google` receives the captured ID Token and frozen client identifier.
+`platforms/google/1/prover` receives the captured ID Token and frozen client identifier.
 It obtains the JSON Web Key (JWK) selected by the token's `kid` from Google's
 JSON Web Key Set (JWKS) endpoint and constructs the `oidc_google` input map:
 
@@ -200,7 +201,7 @@ authoritative.
 
 ### X
 
-`platforms/x` performs two browser-owned TLSNotary Proxy sessions:
+`platforms/x/1/prover` performs two browser-owned TLSNotary Proxy sessions:
 
 1. Notarize the fixed `/2/oauth2/token` exchange using the captured code,
    derived code verifier, frozen redirect URI, and client identifier. Reveal
@@ -224,7 +225,7 @@ outputs.
 
 ### GitHub
 
-`platforms/github` first sends the captured code and derived verifier to the
+`platforms/github/1/prover` first sends the captured code and derived verifier to the
 fixed server token-exchange route. The server uses its confidential client
 secret, performs the token-exchange TLSNotary session, and returns the bounded
 access token, token attestation, and `bearerOpening`: the canonical unpadded
@@ -249,7 +250,7 @@ exists.
 
 Each profile owns a closed catalog of advisory diagnostic spans after
 `AppRequestProof`. The Ceremony Client owns the common `proof-generation`
-stage; platform modules emit only their version-owned spans.
+stage; platform-version prover leaves emit only their version-owned spans.
 
 Every profile includes these spans:
 
@@ -296,7 +297,7 @@ configuration. The build likewise owns every toolchain worker, WASM, and common
 reference string (CRS) location. A deployer cannot replace those dependencies
 through `ProverAssets`.
 
-Each closed platform/version module pins its circuit release. The ceremony
+Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
 `SRS_SIZE = 2 ** 18`; SRS size is code, not deployment data:
 

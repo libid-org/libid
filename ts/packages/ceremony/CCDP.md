@@ -311,7 +311,7 @@ The application-scoped client selects the live `Ceremony` from the authenticated
 `PopupDeliverParams`; it does not query IndexedDB or reveal the ID to
 the composition. An unknown, stale, replayed, or post-reload ceremony ID changes
 no live state and causes cleanup through `AppCancelCeremony`. Otherwise the client
-atomically claims the state and uses that Ceremony's platform/version parser to
+atomically claims the state and uses that Ceremony's platform/version client parser to
 exact-validate the `oauthReturn` transport and fields.
 
 A malformed or mismatched result rejects the Ceremony. A valid provider denial
@@ -328,7 +328,7 @@ validates the generic CCDP shape and bounds, and forwards the exact
 `AppRequestProof` once to its coordinator iframe. It cannot validate the
 platform, version, client, redirect, or PKCE policy: the returned document has
 no launch record or `CeremonyConfig`, and deliberately fetches neither. The
-authenticated client has already selected those values, and the prover applies
+authenticated client has already selected those values, and the prover leaf applies
 the selected platform/version parser before credential use. The claimed client
 entry, one-shot Ceremony, and popup state machine prevent duplicate proving.
 The composition's final Job CAS prevents a late result from producing an
@@ -496,7 +496,7 @@ failure UI. See
 [SERVER.md](SERVER.md#ingress-bootstrap) and
 [POPUP.md](POPUP.md#entrypoint-and-trusted-inputs). CCDP requires
 `PopupDeliverParams` and `AppRequestProof` to carry these fields unchanged.
-The selected platform/version module owns transport and field semantics.
+The selected platform/version client leaf owns transport and field semantics.
 
 ### Popup/prover channel
 
@@ -505,7 +505,7 @@ forwards the application's exact `AppRequestProof` once to its coordinator
 iframe. The coordinator validates isolation and the selected platform/version
 input before any credential-bearing network request. The popup validates only
 the generic record, ceremony continuity, and echoed OAuth return; it has no
-platform configuration. The selected client and prover modules own the two
+platform configuration. The selected platform/version client and prover leaves own the two
 platform-aware validation boundaries.
 
 When qualified, the coordinator proves in place. Otherwise it retains
