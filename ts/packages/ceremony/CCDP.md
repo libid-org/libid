@@ -2,12 +2,13 @@
 
 This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, popup, prover iframe, and isolated prover window. It
-also owns their live prefetch readiness, document lifecycle, placement
-handoff, and protocol compatibility rules.
+also owns cross-document prefetch readiness, placement handoff, and protocol
+compatibility rules.
 
 The package boundary, public client API, and result lifecycle are defined in
-[ARCHITECTURE.md](ARCHITECTURE.md). Prover pipelines, assets, workers, and cache
-behavior are defined in [PROVER.md](PROVER.md).
+[ARCHITECTURE.md](ARCHITECTURE.md). The popup participant's local state machine,
+UI, and cleanup are defined in [POPUP.md](POPUP.md). Prover pipelines, assets,
+workers, and cache behavior are defined in [PROVER.md](PROVER.md).
 The deployed routes, embedded inputs, and response policy are defined in
 [SERVER.md](SERVER.md). This is implementation architecture, not part of the
 normative proof specification.
@@ -30,7 +31,7 @@ JavaScript cannot add to an already loaded document.
 | Context | Owns | Browser constraint |
 |---|---|---|
 | Application page | operation inputs, live `Ceremony`, durable application Job, final result commit | may be embedded into an application with its own headers and lifecycle; must retain the popup `WindowProxy` |
-| Ceremony popup/callback | OAuth navigation and return, URL clearing, opener authentication, fixed progress UI | must remain top-level and non-isolated and preserve communication with the application opener; its callback alias is the registered server-hosted `redirect_uri` |
+| Ceremony popup/callback | OAuth navigation and return, opener authentication, prover coordination, fixed progress UI | must remain top-level and non-isolated and preserve communication with the application opener; its callback alias is the registered server-hosted `redirect_uri` |
 | Prover iframe or window | credentials after callback and proof generation | must be cross-origin isolated with `SharedArrayBuffer`; runs in a DIP-qualified iframe where available or a COOP-isolated top-level fallback |
 
 The prover's internal service worker does not participate in CCDP. Its cache
@@ -149,8 +150,9 @@ iframe coordinates proving: it proves in place under DIP or relays to the
 isolated-window fallback. Neither placement adds a server mode or durable state.
 See [prover prefetch coordination](#prover-prefetch-coordination) for the CCDP
 lifecycle, [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle) for fetching and
-caching, and the [popup/prover channel](#popupprover-channel) for isolation,
-binding, and forwarding.
+caching, [POPUP.md](POPUP.md) for popup behavior, and the
+[popup/prover channel](#popupprover-channel) for isolation, binding, and
+forwarding.
 
 ## Flow at a glance
 
@@ -485,10 +487,7 @@ arrows. Those rules remain normative in their owning subsections.
 
 ### Redirect ingress
 
-The fixed popup bootstrap captures and clears the URL before loading package
-code, then invokes the server contract's
-[`startPopup`](SERVER.md#ingress-bootstrap) entrypoint. CCDP begins with its
-exact captured value:
+CCDP preserves the exact captured redirect transport:
 
 ```ts
 interface OAuthReturn {
@@ -497,73 +496,39 @@ interface OAuthReturn {
 }
 ```
 
-An empty query plus the closed launch fragment containing ceremony ID, platform
-ID, and ceremony version is the initial shared launch. Provider callbacks
-instead carry their platform's closed query/fragment grammar, including only
-the same ceremony ID as OAuth `state`.
-
-`oauthReturn.query` and `.fragment` are the exact captured `location.search`
-and `location.hash` strings, including a leading delimiter
-when nonempty. After loading, the popup extracts the single routing state,
-authenticates the opener through `AppAuthenticateOrigin`, and exact-validates
-the returned `AppRequestProof` ID and unchanged query and fragment before
-forwarding it. It checks the remaining fields only against the generic CCDP
-shape and bounds.
-The application client's selected platform/version parser classifies the
-parameters. It rejects a Google ID Token at or after its signed `exp`; mutable
-X/GitHub proof lifetimes are enforced only by the Platform Verifier. Google
-accepts a nonempty fragment and empty query; X and GitHub accept a nonempty
-query and empty fragment.
-
-An unsupported or invalid input discovered after `AppRequestProof`
-clears the return, sends popup-to-application `AbortCeremony(reason)`, and renders
-**Application updated—return and try again**. An unknown or stale ceremony does
-not send `AppAuthenticateOrigin`; authenticated parameters rejected by the
-selected platform/version parser makes the application send `AppCancelCeremony`. The
-popup clears the result, attempts to close, and renders one fixed fallback
-message if closing fails. A wrong opener origin, authentication timeout, or
-redirect parameters without a valid bounded ceremony ID send no callback value.
+The fields are the exact captured `location.search` and `location.hash`,
+including a leading delimiter when nonempty. The server bootstrap owns their
+bound and clearing order, and the popup owns launch/callback classification,
+routing-state extraction, result custody, and failure UI. See
+[SERVER.md](SERVER.md#ingress-bootstrap) and
+[POPUP.md](POPUP.md#entrypoint-and-trusted-inputs). CCDP requires
+`PopupDeliverParams` and `AppRequestProof` to carry these fields unchanged.
+The selected platform/version module owns transport and field semantics.
 
 ### Popup/prover channel
 
-The popup/prover boundary reuses the closed `CCDPMessage` union. The ceremony
-popup always forwards the application's exact `AppRequestProof` once to its
-coordinator iframe. On receipt, the coordinator checks isolation and
-shared-memory availability before any credential-bearing network request. Its
-bounded `oauthReturn` preserves the provider-returned query and fragment unchanged;
-`platformId` and `platformCeremonyVersion` select its
-exact parser and implementation. `codeVerifier` is null for Google and the already-derived 43-character PKCE
-verifier for X and GitHub. `clientId` and `redirectUri` are the values frozen by
-the Ceremony Client from its validated `CeremonyConfig`. The ceremony popup
-validates only the generic record and echoed OAuth return. The coordinator and
-active fallback window apply the selected platform/version validator before
-credential use. Client classification and prover credential extraction use the
-same closed platform/version parser; the prover admits no second interpretation
-of the parameters.
+The popup/prover boundary reuses the closed `CCDPMessage` union. The popup
+forwards the application's exact `AppRequestProof` once to its coordinator
+iframe. The coordinator validates isolation and the selected platform/version
+input before any credential-bearing network request. The popup validates only
+the generic record, ceremony continuity, and echoed OAuth return; it has no
+platform configuration. The selected client and prover modules own the two
+platform-aware validation boundaries.
 
 When qualified, the coordinator proves in place. Otherwise it retains
-`AppRequestProof` in memory and sends `ProverRequestIsolation` only to its exact
-parent. The ceremony popup renders the real **Continue proving** anchor and
-opens no window without that user activation. The top-level `/api/v1/ceremony/prover`
-window clears its ceremony-ID fragment, validates isolation and shared memory,
-then sends `ProverConfirmIsolation(ceremonyId)` over the scoped
-`BroadcastChannel`. The coordinator exact-matches that ID and forwards its
-retained `AppRequestProof` once. Unknown, stale, duplicate, pre-request, or wrong-ID
-readiness changes no state. Before isolation confirmation, the only other
-accepted window message is `AbortCeremony(reason)`, reporting that the top-level
-document could not qualify;
-the coordinator forwards it upstream as a terminal technical failure.
+`AppRequestProof`, sends `ProverRequestIsolation` to its exact parent, and
+accepts `ProverConfirmIsolation` only through its ceremony-scoped same-origin
+channel with an exact ID match. It then forwards the retained request once.
+Unknown, stale, duplicate, pre-request, or wrong-ID confirmation changes no
+state. `AbortCeremony` before confirmation is the only other accepted fallback
+message and is forwarded upstream as terminal failure.
 
-After `AppRequestProof`, the active proving placement sends zero or more
-`ProverNotifyEvent` records followed by exactly one `ProverDeliverProof`. The
-application may instead send parameterless `AppCancelCeremony` downstream. The
-popup and coordinator forward it to cancel reachable proving work. Either active
-prover may send `AbortCeremony(reason)` upstream for terminal technical failure.
-The coordinator validates and forwards window events, delivery, and
-`AbortCeremony` unchanged to the ceremony popup, which forwards them to the application.
-Context loss may produce no terminal message. Unknown fields or types, invalid
-order, messages after terminal, and messages outside the bound channel change
-no state.
+After `AppRequestProof`, the active placement sends zero or more
+`ProverNotifyEvent` records followed by one `ProverDeliverProof`, or sends
+`AbortCeremony`. The coordinator and popup validate their bound channels and
+forward those records unchanged. `AppCancelCeremony` travels downstream to all
+reachable work. Context loss may produce no terminal message. Invalid order,
+post-terminal messages, and messages outside the bound channel change no state.
 
 The one-shot channel scopes every message to one ceremony. `AppRequestProof` and proof
 delivery carry the ceremony ID; `AppCancelCeremony` and `AbortCeremony` do not
@@ -574,9 +539,11 @@ window uses the cleared ceremony-ID fragment only to derive its same-origin
 `CCDPVersion`; no
 second protocol or version exists.
 
-The prover's inputs, platform pipelines, proof boundary, cleanup, and
-credential handling are defined in [PROVER.md](PROVER.md#component-boundary).
-CCDP owns only which bound context may send or receive those records.
+Popup activation, relay, UI, and cleanup are defined in
+[POPUP.md](POPUP.md#application-decision-and-proof-coordination). Prover inputs,
+pipelines, credentials, and proof behavior are defined in
+[PROVER.md](PROVER.md#component-boundary). CCDP owns only which bound context may
+send or receive the records and in which order.
 
 ## Progress, cancellation, and recovery
 
@@ -586,49 +553,30 @@ application-side stage transitions are defined by the
 only the platform step and prover timestamp; the common stage remains local to
 the application-side client.
 
-The exact diagnostic-span catalogs, parent/dependency rules, and per-span
-emission lifecycle are defined by the
-[prover architecture](PROVER.md#platform-progress). CCDP treats a validated
-`PlatformStep` as opaque, carries its prover-stamped non-negative safe-integer
-Unix-millisecond timestamp in `ProverNotifyEvent`, and contains no common stage.
-A fallback window sends that
-exact message through the coordinator, and the ceremony popup forwards it
-unchanged. The client accepts it only from the authenticated live ceremony
-while its local common stage is `proof-generation`, validates and preserves the
-prover timestamp, and publishes the resulting `CeremonyEvent`. Locally generated
-common-stage events use client timestamps. Concurrent spans remain in their
-prover emission order; CCDP does not impose a total order or otherwise
-interpret the platform catalog. Neither event contains operation inputs, outputs,
-credentials, identities, witnesses, proofs, raw exceptions, or raw service
-errors. The application may map this advisory view into its broader job
-progress; later confirmation, submission, and finality never enter the
-CCDP.
+CCDP treats a validated `PlatformStep` as opaque and carries its prover-stamped
+non-negative safe-integer Unix-millisecond timestamp. Coordinator and popup
+forward it unchanged. The client accepts it only from the authenticated live
+ceremony during its local `proof-generation` stage. CCDP neither orders
+concurrent spans nor permits operation inputs, outputs, credentials,
+identities, witnesses, proofs, raw exceptions, or raw service errors in an
+event. Exact span semantics are defined by
+[PROVER.md](PROVER.md#platform-progress).
 
 `CeremonyEvent` carries only advisory progress. OAuth denial is returned only
 through `proveUserIdentity()`; acceptance proceeds to `AppRequestProof`.
 
-The coordinator/window same-origin `BroadcastChannel` supplies routing inside
-the trusted deployment, not separate sender authentication, durable state, or
-proof authority. A same-origin `AppCancelCeremony` can stop only the current run; it
-cannot produce Identity or any later application effect. Missing, duplicated,
-or reordered progress affects only UI. The visible prover remains the fallback
-when an isolated-popup engine cannot relay progress reliably.
-
-Cancellation first retires the application job. If the authenticated channel
-is live, the application sends `AppCancelCeremony`; the ceremony popup marks the
-ceremony canceled and forwards `AppCancelCeremony` to the coordinator iframe.
-The coordinator cancels local work or relays `AppCancelCeremony` to its active
-prover window, which attempts
-to close itself. The popup removes the coordinator, clears memory, and
-terminates reachable workers/connections.
-Cancellation is best effort: remote stateless work may finish, but no result is
-used. A later result cannot commit because the matching Job is gone.
-Popup closure alone is never success, failure, denial, or cancellation.
+The fallback `BroadcastChannel` supplies routing within the trusted deployment,
+not durable state or proof authority. Missing, duplicate, or reordered progress
+affects only UI. Cancellation is best effort and context loss may remain silent;
+popup closure alone is never a result. The application retires its Job before
+sending `AppCancelCeremony`, so late output cannot commit. Popup teardown is
+defined in [POPUP.md](POPUP.md#relay-ui-and-cleanup), and prover teardown in
+[PROVER.md](PROVER.md).
 
 ## Prover prefetch coordination
 
 CCDP owns only when prefetch is requested and when its readiness message may be
-forwarded. The initial popup loads the prover document with the closed
+forwarded. The popup participant loads the prover document with the closed
 `prefetch(ceremonyId, platformId, ceremonyVersion)` fragment. The callback
 loads the same document with an empty fragment for its coordinator, while the
 isolated fallback uses a bare ceremony ID. These fragments select document
@@ -641,7 +589,8 @@ missing profile or document load failure rejects before OAuth; an ordinary
 registration or fetch failure changes latency only and follows the same cold
 proving path. CCDP adds no timeout. Fetching, caching, navigation survival, and
 warm/cold failure semantics are defined in
-[PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
+[PROVER.md](PROVER.md#prefetch-and-cache-lifecycle); popup child binding is
+defined in [POPUP.md](POPUP.md#initial-launch-and-prefetch).
 
 ## Browser isolation consequences
 

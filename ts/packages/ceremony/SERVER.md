@@ -5,11 +5,12 @@ This document defines the HTTP and deployment contract expected by
 package supplies the browser modules, exact public-record validators, and
 browser-side platform codecs.
 
-The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), and its prover
-subsystem is defined in [PROVER.md](PROVER.md). The browser documents
-communicate through the [Ceremony Cross-Document Protocol](CCDP.md). The normative libID
-specification owns authorization, platform-return, token-exchange, and proof
-semantics; this document defines only their server transport and deployment.
+The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), the popup
+participant in [POPUP.md](POPUP.md), and the prover subsystem in
+[PROVER.md](PROVER.md). The browser documents communicate through the
+[Ceremony Cross-Document Protocol](CCDP.md). The normative libID specification
+owns authorization, platform-return, token-exchange, and proof semantics; this
+document defines only their server transport and deployment.
 
 ## Boundary
 
@@ -185,8 +186,9 @@ value is not retained, and no failure is rendered until both URL components are
 gone.
 
 The bootstrap does not parse platform fields or derive an allowlist. The popup
-module owns the closed launch/callback grammar and CCDP behavior after URL
-clearing.
+module owns the closed launch/callback grammar and local lifecycle after URL
+clearing, as defined in [POPUP.md](POPUP.md#entrypoint-and-trusted-inputs).
+CCDP owns its cross-document messages and ordering.
 
 Google returns its credential in the fragment, which is never sent to the
 server. X and GitHub return provider-mandated callback parameters in the query.

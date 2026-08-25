@@ -8,9 +8,9 @@ to verify.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md), and the prover subsystem is defined in
-[PROVER.md](PROVER.md). Browser TLSNotary sessions and signed-attestation
-handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
+in [CCDP.md](CCDP.md), the popup participant in [POPUP.md](POPUP.md), and the
+prover subsystem in [PROVER.md](PROVER.md). Browser TLSNotary sessions and
+signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The integrating server's routes, deployment inputs, and response policy are
 defined in [SERVER.md](SERVER.md). These documents are implementation
 architecture, not part of the normative protocol specification.
@@ -20,8 +20,9 @@ encoding. See the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md)
 for their exact content. Together, this document, CCDP, and the server contract
-otherwise stand alone; application job storage and all post-ceremony effects
-are outside their scope.
+and their linked popup, prover, and notarization documents otherwise stand
+alone; application job storage and all post-ceremony effects are outside their
+scope.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 
 The specification's **Ceremony Client** role maps to this package's closed
@@ -99,12 +100,12 @@ OAuth popup/callback, and isolated prover placement. They communicate through
 the package-owned Ceremony Cross-Document Protocol (CCDP), whose document
 lifecycle binds the active prover placement and its prefetch readiness.
 
-[CCDP.md](CCDP.md) owns the execution-context rationale, topology,
-exact `CCDPMessage` union and message sequence, redirect ingress, prover fallback,
-cross-document progress and cancellation, prefetch coordination, browser
-response policy, and `CCDPVersion` compatibility. This document retains the
-package and public application contracts which initiate and consume that
-protocol.
+[CCDP.md](CCDP.md) owns the execution-context rationale, topology, exact
+`CCDPMessage` union, ordering, channel binding, prefetch readiness, fallback
+placement, and `CCDPVersion` compatibility. [POPUP.md](POPUP.md) owns the
+popup's launch/callback state machine, opener authentication, prover
+coordination, fixed UI, and cleanup. This document retains the package and
+public application contracts which initiate and consume that protocol.
 
 ## Package composition
 
@@ -178,7 +179,7 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
 | `@libid/ceremony/client` | `CeremonyConfig` schema/fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and convenience re-exports of public catalog/result types |
-| `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared redirect document |
+| `@libid/ceremony/popup` | [browser entrypoint](POPUP.md) which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared popup document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
@@ -401,9 +402,9 @@ prover do not fetch it.
 
 The client freezes the selected platform, ceremony version, client ID, and
 redirect URI in the live Ceremony. `AppRequestProof` carries those values. The
-popup authenticates the opener, validates the generic CCDP record and
-byte-matches the returned OAuth parameters; it neither fetches configuration
-nor imports the platform catalog. The authenticated client and selected prover
+popup's generic validation boundary is defined in
+[POPUP.md](POPUP.md#validation-ownership); it neither fetches configuration nor
+imports the platform catalog. The authenticated client and selected prover
 module own platform/version, client, redirect, and PKCE validation.
 
 ## Result and lifecycle
