@@ -48,7 +48,7 @@ destruction.
 ### Proof delivery boundary
 
 Google delivers its proof bytes, the exact signed audience, subject, email and
-expiry, and the selected JWK modulus as `GoogleProof`. It delivers no
+expiry, and the selected JWK modulus as `GoogleProofV1`. It delivers no
 attestation.
 The Ceremony Client exact-matches that client identifier to the live Ceremony
 and adds the common authorization fields to assemble `OAuthProof<'google'>`.
@@ -56,7 +56,7 @@ The Google adapter flattens the named values into the circuit's 56 public-input
 fields only at the verifier/transaction-encoding boundary; the Ceremony Client
 does not verify the proof.
 
-For X, `ProverDeliverProof.proof` is `XProof`; for GitHub it is `GitHubProof`.
+For X, `ProverDeliverProof.proof` is `XProofV1`; for GitHub it is `GitHubProofV1`.
 Each independently contains exactly the `bearer-link` proof bytes and two
 attestations ordered token session then identity session.
 Each attestation preserves the byte-exact attested-data serialization and its
@@ -67,8 +67,8 @@ normalize or reserialize the attested data, project selected fields into
 sidecars, or accept a caller-supplied replacement.
 
 The link circuit's two 32-byte bearer commitments are public inputs to the
-circuit, ordered token then identity. They are not fields in `XProof`,
-`GitHubProof`, or the assembled `OAuthProof`: the prover discards bb.js's
+circuit, ordered token then identity. They are not fields in `XProofV1`,
+`GitHubProofV1`, or the assembled `OAuthProof`: the prover discards bb.js's
 flattened public-input array, and the Platform Verifier reconstructs the two
 values from the corresponding verified attestations before checking the proof.
 The circuit proves only that one hidden bearer opens both commitments; PKCE
@@ -79,19 +79,19 @@ an unknown structured-clone value:
 
 | Platform | Prover delivery | Ceremony Client additions | OAuth proof |
 |---|---|---|---|
-| Google | `GoogleProof { honkProof, clientId, userId, email, tokenExpiresAt, signingKeyModulus }` | common fields | `OAuthProof<'google'>` |
-| X | `XProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'x'>` |
-| GitHub | `GitHubProof { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` |
+| Google | `GoogleProofV1 { honkProof, clientId, userId, email, tokenExpiresAt, signingKeyModulus }` | common fields | `OAuthProof<'google'>` with ceremony version `1` |
+| X | `XProofV1 { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'x'>` with ceremony version `1` |
+| GitHub | `GitHubProofV1 { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` with ceremony version `1` |
 
-Each platform ceremony module constructs its exact proof object in the prover
+Each platform/version module constructs its exact proof object in the prover
 and owns the matching runtime validator dispatched by `platforms/index`. The
-validator is selected from the live Ceremony, not from a discriminator inside
-the value. It rejects unknown fields, malformed arrays and bytes, and
+validator is selected from the live Ceremony's platform and ceremony version,
+not from a discriminator inside the nested value. It rejects unknown fields, malformed arrays and bytes, and
 profile-bound violations, then returns a typed `ProverDeliverProof`. CCDP never
 changes when another platform proof type is added.
 
-The common fields are platform ID, the profile-pinned Platform Verifier
-Version, operation domain, authorization nonce, and transaction data. The
+The common fields are platform ID, platform ceremony version, operation domain,
+authorization nonce, and transaction data. The
 exact records are defined in the
 [package architecture](ARCHITECTURE.md#result-and-lifecycle). The Ceremony
 Client adds no chain ID, Authorization Digest, identity sidecar, code verifier,
@@ -160,7 +160,7 @@ derives the candidate authorization digest from the signed nonce; the circuit
 re-encodes it as the exact unpadded base64url nonce and verifies the RS256
 signature and signed claims. The module then generates one proof and returns it
 with the exact signed audience, subject, email and expiry plus the selected JWK
-modulus as `GoogleProof`, with no attestation or flattened public-input array. The
+modulus as `GoogleProofV1`, with no attestation or flattened public-input array. The
 Ceremony Client exact-validates their shape, matches the audience to its
 retained client identifier, and derives the local identity preview without
 verifying the Honk proof. Only Consumer verification makes the fields

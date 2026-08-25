@@ -116,11 +116,11 @@ Launch publishes one `@libid/ceremony` package:
 ├── popup       source entrypoint for libid-ceremony-popup.js
 ├── prover      source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
 └── platforms
-    ├── index    closed catalog and derived public platform/result types
+    ├── index    closed platform/version catalog and derived public result types
     ├── authorization  shared digest and PKCE helpers used under platform-version policy
-    ├── google   Google proof type, validator, OAuth, progress, witness, and proving
-    ├── x        X proof type, validator, OAuth, progress, witness, and proving
-    └── github   GitHub proof type, validator, OAuth, progress, witness, and proving
+    ├── google/<version>  proof type, validator, OAuth, progress, witness, and proving
+    ├── x/<version>       proof type, validator, OAuth, progress, witness, and proving
+    └── github/<version>  proof type, validator, OAuth, progress, witness, and proving
 ```
 
 `ccdp` is the pure browser-message leaf imported by client, popup, and prover.
@@ -128,7 +128,7 @@ It performs no platform dispatch, browser work, storage, network, authorization
 construction, or cryptographic proof verification. `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version module owns whether and how those helpers participate in its
-ceremony. Each platform module also owns its proof type and validator, exact
+ceremony. Each version module also owns its proof type and validator, exact
 proof assembly, and local evidence validation. `platforms/index` is the only
 aggregator: it imports those modules, derives the catalog and public result
 types, and is re-exported by the package root and client API. Individual
@@ -169,7 +169,7 @@ The package-facing API surface is:
 
 | Export or entrypoint | Contract |
 |---|---|
-| `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatform`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform catalog |
+| `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
 | `@libid/ceremony/client` | `CeremonyConfig` schema/fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and convenience re-exports of public catalog/result types |
 | `@libid/ceremony/popup` | browser entrypoint which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared redirect document |
@@ -201,28 +201,43 @@ This is an application-owned instance, not a package-global singleton. Client
 creation fetches and exact-validates `CeremonyConfig`; a configured platform is
 enabled only when the installed package has a closed implementation and at
 least one advertised ceremony version in common.
-The package has one closed platform-module catalog. `PlatformId`, immutable
-`supportedPlatforms`, and `ProofByPlatform` all derive from the same keys and
-validator return types; no second platform union, version list, or proof map
+The package has one closed platform/version-module catalog. `PlatformId`, immutable
+`supportedPlatforms`, supported versions, and `ProofByPlatformVersion` all derive
+from the same keys and validator return types; no second platform union, version
+list, or proof map
 exists:
 
 ```ts
-import * as google from './platforms/google'
-import * as x from './platforms/x'
-import * as github from './platforms/github'
+import * as googleV1 from './platforms/google/v1'
+import * as xV1 from './platforms/x/v1'
+import * as githubV1 from './platforms/github/v1'
 
-const platforms = { google, x, github } as const
+const platforms = {
+  google: { versions: { 1: googleV1 } },
+  x: { versions: { 1: xV1 } },
+  github: { versions: { 1: githubV1 } },
+} as const
 
 export type PlatformId = keyof typeof platforms
 
-export type ProofByPlatform = {
-  [P in PlatformId]: ReturnType<(typeof platforms)[P]['validateProof']>
+export type SupportedCeremonyVersion<P extends PlatformId> =
+  keyof (typeof platforms)[P]['versions'] & number
+
+export type ProofByPlatformVersion = {
+  [P in PlatformId]: {
+    [V in SupportedCeremonyVersion<P>]:
+      ReturnType<(typeof platforms)[P]['versions'][V]['validateProof']>
+  }
 }
 
-export declare function validateProofMessage<P extends PlatformId>(
+export declare function validateProofMessage<
+  P extends PlatformId,
+  V extends SupportedCeremonyVersion<P>,
+>(
   platformId: P,
+  platformCeremonyVersion: V,
   message: ProverDeliverProof,
-): ProverDeliverProof<ProofByPlatform[P]>
+): ProverDeliverProof<ProofByPlatformVersion[P][V]>
 
 export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
   Object.keys(platforms) as PlatformId[],
@@ -250,7 +265,7 @@ const ceremony = await ceremonies.new(jobId, {
 })
 ```
 
-`validateProofMessage` dispatches to the selected module's exact runtime
+`validateProofMessage` dispatches to the selected version module's exact runtime
 validator and returns the generic CCDP envelope narrowed to that validator's
 derived proof type. Any implementation-only assertion needed to express the
 indexed dispatch to TypeScript remains behind this validated aggregation
@@ -258,7 +273,8 @@ boundary; the Ceremony Client performs no cast. CCDP continues to use
 `ProverDeliverProof<unknown>` and does not import the catalog.
 
 Adding a platform or local ceremony version changes this catalog and its closed
-implementation together. There is no mutable registration API. A configured
+implementation and proof type together. A new version cannot silently inherit
+another version's proof validator. There is no mutable registration API. A configured
 platform is enabled only when its catalog entry and validated `CeremonyConfig`
 entry have a version in common; each Ceremony freezes the selected version.
 
@@ -385,7 +401,7 @@ dispatch without fetching configuration again.
 ## Result and lifecycle
 
 ```ts
-interface GoogleProof {
+interface GoogleProofV1 {
   honkProof: Uint8Array
   clientId: string              // exact signed aud bytes
   userId: string                // exact signed sub bytes
@@ -394,13 +410,13 @@ interface GoogleProof {
   signingKeyModulus: Uint8Array
 }
 
-interface XProof {
+interface XProofV1 {
   honkProof: Uint8Array
   tokenAttestation: NotaryAttestation
   identityAttestation: NotaryAttestation
 }
 
-interface GitHubProof {
+interface GitHubProofV1 {
   honkProof: Uint8Array
   tokenAttestation: NotaryAttestation
   identityAttestation: NotaryAttestation
@@ -408,13 +424,15 @@ interface GitHubProof {
 
 type OAuthProof<P extends PlatformId = PlatformId> = {
   [K in P]: {
-    platformId: K
-    platformVerifierVersion: number  // unsigned 16-bit integer
-    operationDomain: Uint8Array      // exactly 32 bytes
-    authorizationNonce: Uint8Array   // exactly 32 bytes
-    transactionData: Uint8Array      // bounded opaque bytes
-    proof: ProofByPlatform[K]
-  }
+    [V in SupportedCeremonyVersion<K>]: {
+      platformId: K
+      platformCeremonyVersion: V
+      operationDomain: Uint8Array      // exactly 32 bytes
+      authorizationNonce: Uint8Array   // exactly 32 bytes
+      transactionData: Uint8Array      // bounded opaque bytes
+      proof: ProofByPlatformVersion[K][V]
+    }
+  }[SupportedCeremonyVersion<K>]
 }[P]
 
 type Identity<P extends PlatformId = PlatformId> = {
@@ -439,8 +457,9 @@ The platform type selected in `CeremonyClient.new` flows through `Ceremony`,
 `IdentityResult`, and `OAuthProof`. A literal platform input therefore returns
 the corresponding `proof` type; a dynamic `PlatformId` returns the platform
 proof union. The mapped-union form preserves the relationship between each
-`platformId` and proof type when a dynamic result is narrowed. Adding a platform
-extends `ProofByPlatform` and its platform module, not `OAuthProof` or CCDP.
+`platformId`, `platformCeremonyVersion`, and proof type when a dynamic result is
+narrowed. Adding a platform or version extends the closed catalog, not
+`OAuthProof` or CCDP.
 
 Callers do not supply a generic explicitly. A static platform literal flows
 through `new` and `proveUserIdentity()`:
@@ -455,7 +474,7 @@ const ceremony = await ceremonies.new(jobId, {
 
 const result = await ceremony.proveUserIdentity()
 if (result.status === 'accepted') {
-  result.identity.oauthProof.proof.email // GoogleProof
+  result.identity.oauthProof.proof.email // GoogleProofV1
 }
 ```
 
@@ -480,11 +499,11 @@ construction, OAuth request and return handling, platform proof construction,
 and assembly of the final `OAuthProof`. It does not version a chain, Registry,
 or verifier contract; multiple chain-specific Consumers may accept the same
 ceremony output.
-Each selected platform ceremony module pins the `platformVerifierVersion` it
-places in `OAuthProof`; launch profiles pin `1`. `PlatformCeremonyVersion`
-selects the complete browser implementation and is not another submitted
-field. The caller and server configuration cannot select a verifier version
-independently.
+The selected `PlatformCeremonyVersion` is also the proof-shape discriminator in
+`OAuthProof`; there is no independent proof or contract-verifier version. Each
+current platform has only version `1`. A new ceremony version must add its own
+version module, proof type, and validator, even when it deliberately retains the
+same fields. The caller cannot select a version directly.
 `authorizationNonce` is exactly 32 cryptographically random bytes. For X and
 GitHub the Ceremony Client derives the code verifier from the Authorization
 Digest and that nonce, sends only the derived verifier to the prover, and
@@ -494,20 +513,20 @@ reproduce the binding. Exact authorization and PKCE encoding are delegated to
 the normative ceremony specification.
 
 `OAuthProof<P>` is the single exact wrapper assembled by the Ceremony Client;
-only its nested `proof` varies by platform. Each platform integration owns that
+its nested `proof` varies by platform and ceremony version. Each version module owns that
 proof type and validator. `NotaryAttestation` reuses the pinned notary client's
 exact attested-data-and-signature record and serialization; the ceremony does
 not define a second representation. Every numeric and byte field is exact-shape
 and bounds checked. Unknown fields are rejected.
 
-`GoogleProof` names the circuit's semantic public values rather than exposing
+`GoogleProofV1` names the circuit's semantic public values rather than exposing
 bb.js's ordered field array. The Google adapter's pure
 `buildGooglePublicInputs(authorizationDigest, proof)` helper hashes and packs
 those values into the circuit's exact 56-field verifier input only at the
 verifier/transaction-encoding boundary. The Ceremony Client does not call it to
 verify the proof. Google has no attestation from which the Platform Verifier
-could recover these values, so they remain part of `GoogleProof`. `XProof` and
-`GitHubProof` need no equivalent fields: their Platform Verifiers reconstruct
+could recover these values, so they remain part of `GoogleProofV1`. `XProofV1` and
+`GitHubProofV1` need no equivalent fields: their Platform Verifiers reconstruct
 the two bearer commitments from their respective verified attestations. Their
 client identifier, identity, and evidence time likewise come only from those
 signed attestation bytes.
@@ -523,7 +542,7 @@ authorization fields, derive the identity preview from locally validated
 platform evidence, enforce the platform's canonical encodings and configured
 client, and return `Identity` with the same `OAuthProof`. It constructs the
 record from those retained fields after `validateProofMessage` returns the
-platform-typed proof value.
+platform-and-version-typed proof value.
 The ceremony exact-matches the
 internal ceremony ID, platform, and recomputed authorization digest before
 resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
@@ -564,7 +583,7 @@ CRS policy, and proof-generation compatibility.
 This package architecture retains only the boundary: the Ceremony Client sends
 one authenticated `AppRequestProof` through CCDP and receives bounded progress,
 one structured-clone proof value, or a technical failure. CCDP does not know
-platform proof types. The selected platform module validates the value, and the
+platform/version proof types. The selected version module validates the value, and the
 client assembles `OAuthProof` and `Identity`; the prover does not own
 application Jobs, Consumer verification, or post-ceremony effects.
 
