@@ -55,6 +55,11 @@ interface Transcript {
   received: Uint8Array
 }
 
+interface TranscriptLimits {
+  maxSentData: number
+  maxReceivedData: number
+}
+
 interface CommitmentOpening {
   direction: 'sent' | 'received'
   start: number
@@ -75,6 +80,7 @@ interface NotarizeResult {
 
 declare function notarize(
   request: ExactHttpRequest,
+  limits: TranscriptLimits,
   selectReveals: (transcript: Transcript) => Reveals,
 ): Promise<NotarizeResult>
 ```
@@ -84,6 +90,11 @@ bytes. Header order is not semantic: selection operates on the actual
 serialized transcript, while the Platform Verifier checks request framing and
 profile-significant fields without requiring relative header position. Request
 body bytes remain exact because a platform's form grammar may depend on them.
+Each platform-version call site supplies code-owned transcript limits; no
+ceremony, server response, or CCDP input can change them. Launch uses the
+already-qualified PoC ceilings `maxSentData = 4 KiB` and
+`maxReceivedData = 32 KiB` for all three calls. Exceeding either ceiling fails
+the notarization instead of truncating the transcript.
 
 The transcript exists only long enough for the platform module to parse its
 private response and build its witness. It never crosses CCDP or the public
@@ -209,6 +220,24 @@ internal camel-case `NotaryAttestation` without changing either byte string,
 then requires end-of-stream. A malformed length or UTF-8/JSON value, unknown or
 duplicate field, trailing byte, second frame, or missing close fails.
 
+### Implementation status
+
+This is the target launch transport, not the contract of the currently deployed
+notary. The implementation is assembled from three in-flight pieces:
+
+1. [notary #3](https://github.com/libid-org/notary/pull/3) produces the canonical
+   ceremony attestation and removes the single-platform authority pin;
+2. [notary #4](https://github.com/libid-org/notary/pull/4) moves the browser
+   bundle to the required TLSNotary release; and
+3. [TLSNotary #1178](https://github.com/tlsnotary/tlsn/pull/1178) returns the
+   completed session channel to the caller.
+
+The remaining integration replaces the current session creation and
+attestation polling with the final frame below on the reclaimed WebSocket, then
+qualifies X token, X identity, and GitHub identity against the testnet service.
+Until that integration lands, the deployed service is useful for implementation
+work but does not satisfy this browser transport contract.
+
 ```mermaid
 sequenceDiagram
     participant M as Platform module
@@ -217,7 +246,7 @@ sequenceDiagram
     participant N as Notary Service
     participant P as Platform HTTPS server
 
-    M->>T: notarize(request, selectReveals)
+    M->>T: notarize(request, limits, selectReveals)
     T->>N: Open wss://<notary-origin>/notarize-proxy
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)

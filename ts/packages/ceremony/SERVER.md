@@ -55,6 +55,35 @@ One deployment platform configuration generates both the public
 `CeremonyConfig` entries and the embedded prover profiles. They are projections
 of one enabled set, not independently maintained platform lists.
 
+The package build publishes the code-owned half of that deployment input as one
+exact manifest:
+
+```ts
+interface BrowserRoot {
+  url: string
+  integrity: string
+  styleHash: string
+}
+
+interface CeremonyBrowserManifest {
+  schema: 1
+  ccdpVersion: CCDPVersion
+  popup: BrowserRoot
+  prover: BrowserRoot
+  proverCsp: {
+    scriptSrc: readonly string[]
+    workerSrc: readonly string[]
+    connectSrc: readonly string[]
+  }
+}
+```
+
+The server consumes one manifest from one package release. It adds only its
+same-origin route sources and the exact deployment-owned origins implied by
+`ProverAssets`; it does not rediscover the module graph or hand-copy hashes.
+Changing a root byte, package stylesheet, code-owned source, or CCDP version
+produces a new manifest.
+
 Only libID-owned circuit and notarization-client locations are configurable
 artifact assets. The ceremony package pins their expected identities. A
 `notaryAddress` is a network endpoint rather than an artifact and is
@@ -96,10 +125,7 @@ There is no request-time version negotiation.
 `GET /api/v1/ceremony/config` returns `application/json` with this exact record:
 
 ```ts
-import type {
-  PlatformCeremonyVersion,
-  PlatformId,
-} from '@libid/ceremony'
+import type { PlatformCeremonyVersion } from '@libid/ceremony'
 
 interface PlatformConfig {
   clientId: string
@@ -109,7 +135,7 @@ interface PlatformConfig {
 interface CeremonyConfig {
   schema: 1
   redirectUri: string
-  platforms: Partial<Record<PlatformId, PlatformConfig>>
+  platforms: Readonly<Record<string, PlatformConfig>>
 }
 ```
 
@@ -120,8 +146,9 @@ The response rules are:
   origin. It contains no credentials, query, or fragment.
 - Each platform entry has a public client ID and a nonempty, duplicate-free
   list of supported ceremony versions. List order has no meaning.
-- Unknown fields, invalid identifiers, malformed URLs, and unsupported numeric
-  representations are invalid.
+- Unknown fields inside either record, malformed URLs, and unsupported numeric
+  representations are invalid. A platform key absent from the client's closed
+  local catalog is ignored; known entries remain exact-validated before use.
 - The record contains no secret, `allowedAppOrigins`, asset URL, CSP source,
   notary setting, platform display metadata, or application-specific value.
 
@@ -282,7 +309,17 @@ The bootstrap bounds and copies its fragment, clears it before storage,
 rendering, errors, module loading, or network activity, and then exact-validates
 the closed value and embedded `ProverAssets`. It integrity-loads the exact
 same-origin immutable `libid-ceremony-prover.js` root and passes both values to
-its Window entrypoint.
+its Window entrypoint:
+
+```ts
+declare function startProver(
+  fragment: string,
+  assets: ProverAssets,
+): void
+```
+
+The ServiceWorker branch installs its package-private handlers when the same
+root is evaluated in a worker and exports no protocol entrypoint.
 The prover root is also the module service-worker registration URL and permits
 a scope covering `/api/v1/ceremony/`; its response sets
 `Service-Worker-Allowed: /api/v1/ceremony/` when the script URL's default scope
@@ -321,9 +358,11 @@ When GitHub is enabled, the server implements
 OAuth token exchange and token TLSNotary session synchronously and retains no
 state.
 
-The HTTP namespace fixes this JSON wire contract. The selected GitHub platform
-ceremony version fixes what the values mean and how the resulting evidence is
-verified, but does not redefine the route or JSON shape.
+The server API namespace fixes this JSON wire contract and implements GitHub
+ceremony version `1` only. The route carries no per-request ceremony-version
+field and `/api/v1/ceremony/config` must not advertise a GitHub version that
+needs different token-service semantics. Such a change requires a new server
+API namespace; other platform ceremony versions remain independent.
 
 ```ts
 interface TokenRequest {
@@ -430,7 +469,9 @@ live ceremony fail closed; a new client uses the new deployment values.
 
 A compatible deployment may add a platform or platform ceremony version to
 configuration and `ProverAssets` while retaining the browser implementations
-needed by live clients. A breaking HTTP route or response change requires a new
-server API namespace. A breaking cross-document message change increments
-`CCDPVersion`; a change to one platform's authorization, OAuth, or proof
-semantics increments that platform's `PlatformCeremonyVersion`.
+needed by live clients. An older client ignores an unknown configured platform.
+A breaking HTTP route or response change—including GitHub token-service
+semantics—requires a new server API namespace. A breaking cross-document
+message change increments `CCDPVersion`; a change to one platform's
+authorization, OAuth, or proof semantics increments that platform's
+`PlatformCeremonyVersion`.

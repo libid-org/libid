@@ -44,6 +44,11 @@ not separate iframe implementations. OAuth navigation prevents reuse of the
 first iframe instance; the ServiceWorker and browser caches, rather than that
 document, preserve the fetching work.
 
+After the server bootstrap clears the URL, the Window branch starts through the
+single internal entrypoint defined by the [server contract](SERVER.md#prover-document).
+The same root evaluated as a ServiceWorker installs only its cache handlers and
+does not enter CCDP or a platform pipeline.
+
 The prover consumes one exact `AppRequestProof` after CCDP has authenticated
 the live ceremony and chosen a placement. It returns only bounded platform
 steps, one exact platform proof delivery, or a sanitized technical failure.
@@ -430,6 +435,13 @@ single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
 flights, rejects a manifest conflict, and extends the initiating worker event
 through completion. Those loaders use bb.js's fixed CRS endpoints and IndexedDB
 cache. Merely importing bb.js is not CRS prefetch.
+
+Its package-private prefetch call is an implementation detail, not a CCDP
+message or exported ceremony API. The worker intercepts only exact immutable
+asset requests admitted by the active build/profile manifest. It leaves every
+other request to the browser unchanged: ceremony routes, the GitHub token
+exchange, platform APIs, OAuth navigation, HTML, and configuration are never
+cached, rewritten, or synthesized by this worker.
 
 As soon as the registration/start attempt settles, without waiting for download
 completion, the prefetch child emits `ProverPrefetchingAssets`. Registration or

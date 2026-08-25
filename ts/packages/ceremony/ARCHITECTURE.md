@@ -187,7 +187,7 @@ The package-facing API surface is:
 | `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
 | `@libid/ceremony/client` | `CeremonyConfig` schema/fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and convenience re-exports of public catalog/result types |
 | `@libid/ceremony/popup` | [browser entrypoint](POPUP.md) which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared popup document |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch accepts CCDP and its ServiceWorker branch owns asset-prefetch single flights |
+| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets)` and accepts CCDP, while its ServiceWorker branch owns only package-private asset-prefetch single flights |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.
