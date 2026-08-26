@@ -104,7 +104,6 @@ interface PlatformConfig {
 }
 
 interface CeremonyConfig {
-  schema: 1
   redirectUri: string
   platforms: Readonly<Record<string, PlatformConfig>>
 }
@@ -172,13 +171,8 @@ rendering, error reporting, module loading, or network activity, it:
    deployment allowlist:
 
 ```ts
-interface OAuthReturn {
-  query: string
-  fragment: string
-}
-
 declare function startPopup(
-  oauthReturn: OAuthReturn,
+  oauthReturn: { query: string; fragment: string },
   allowedAppOrigins: readonly string[],
 ): void
 
@@ -224,8 +218,8 @@ platforms and all three browser roles:
 
 - `#prefetch(ceremonyId, platformId, ceremonyVersion)` starts selected-profile
   asset prefetch;
-- an empty fragment creates the returned-popup coordinator; and
-- a bare ceremony ID creates the COOP-isolated fallback prover window.
+- a bare ceremony ID creates the returned-popup coordinator when embedded and
+  the COOP-isolated fallback prover when top-level.
 
 Fragments do not reach the server. Every role therefore receives identical
 HTML, headers, embedded assets, and root module. A nonempty query is rejected;
@@ -341,14 +335,12 @@ interface TokenRequest {
   codeVerifier: string
 }
 
-interface EncodedNotaryAttestation {
-  attestedData: string // canonical unpadded base64url
-  signature: string    // canonical unpadded base64url
-}
-
 interface TokenResponse {
   accessToken: string
-  tokenAttestation: EncodedNotaryAttestation
+  tokenAttestation: {
+    attestedData: string // canonical unpadded base64url
+    signature: string    // canonical unpadded base64url
+  }
   bearerOpening: string // canonical unpadded base64url
 }
 ```
@@ -433,16 +425,7 @@ new protocol role or require a canonical libID service.
 
 ## Compatibility and changes
 
-A live page keeps the immutable modules and embedded configuration it loaded.
-The application client's one configuration fetch and the popup/prover embedded
-values are not refreshed mid-ceremony. Rotating configuration may make an old
-live ceremony fail closed; a new client uses the new deployment values.
-
-A compatible deployment may add a platform or platform ceremony version to
-configuration and `ProverAssets` while retaining the browser implementations
-needed by live clients. An older client ignores an unknown configured platform.
-A breaking HTTP route or response change—including GitHub token-service
-semantics—requires a new server API namespace. A breaking cross-document
-message change increments `CCDPVersion`; a change to one platform's
-authorization, OAuth, or proof semantics increments that platform's
-`PlatformCeremonyVersion`.
+A live page keeps its loaded modules and embedded configuration; rotation may
+fail an old ceremony closed and affects new clients. A breaking HTTP route or
+response changes the server API namespace. Other version axes are defined in
+[ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).

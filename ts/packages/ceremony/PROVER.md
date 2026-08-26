@@ -29,7 +29,7 @@ Before OAuth
              └── parent navigates to OAuth; this iframe is destroyed
 
 After OAuth
-└── /api/v1/ceremony/prover
+└── /api/v1/ceremony/prover#<ceremonyId>
     fresh iframe joins the same fetches and either
     ├── proves under DIP, or
     └── coordinates /api/v1/ceremony/prover#<ceremonyId>
@@ -39,10 +39,10 @@ Shared ServiceWorker
 └── immutable-asset and CRS single flights survive document replacement
 ```
 
-These are fragment-selected modes of the same document and Window entrypoint,
-not separate iframe implementations. OAuth navigation prevents reuse of the
-first iframe instance; the ServiceWorker and browser caches, rather than that
-document, preserve the fetching work.
+These are modes of one document and Window entrypoint: the prefetch grammar is
+explicit, while a bare ID uses iframe versus top-level placement to distinguish
+coordinator from fallback. OAuth navigation prevents reuse of the first iframe;
+the ServiceWorker and browser caches preserve its fetch work.
 
 After the server bootstrap clears the URL, the Window branch starts through the
 single internal entrypoint defined by the [server contract](SERVER.md#prover-document).
@@ -348,8 +348,8 @@ The pinned current-circuit heavy-resource subtotal is:
 | `google` | 8,092,815 bytes (7.72 MiB) | 12,583,040 bytes (12.00 MiB) | 20,675,855 bytes (19.72 MiB) |
 | `x` or `github` | 24,683,695 bytes (23.54 MiB) | 12,583,040 bytes (12.00 MiB) | 37,266,735 bytes (35.54 MiB) |
 
-These exact resource-body counts use the compatible tuple Nargo
-`1.0.0-beta.25`, native bb `5.2.0`, and bb.js `5.2.0`, as recorded by
+These resource-body counts use Nargo `1.0.0-beta.25`, native bb `5.2.0`, and
+bb.js `5.2.0`, as recorded by
 [`libid-circuits v0.3.0`](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0),
 whose target is the source commit pinned above. `oidc_google.json` is 1,312,738
 bytes and `bearer_link.json` is 171,956 bytes. The pinned bb.js
@@ -359,25 +359,12 @@ bytes and `bearer_link.json` is 171,956 bytes. The pinned bb.js
 The [`libid-org/notary v0.2.0`](https://github.com/libid-org/notary/releases/tag/v0.2.0)
 browser bundle contains a 17,731,662-byte `tlsn_wasm_bg.wasm`.
 
-The circuit release's pinned `bb gates -t evm` produces the measured sizes in
-the table, but gate count alone does not determine the deployable SRS floor.
-bb.js 5.2 requires compressed SRS input to be a positive multiple of its 4 MiB
-verification chunk, so `bearer_link` fails at its mathematical 2^16 ceiling and
-has a qualified 2^17 minimum; `oidc_google` requires 2^18. Launch deliberately
-uses 2^18 for every profile so one download serves users who link multiple
-platforms. This costs X/GitHub-only users 4 MiB and removes per-platform SRS
-selection and later cache upgrades. The policy may split if measurements show
-that cost matters; doing so does not change `PlatformCeremonyVersion` while the
-proof statement and output remain identical.
-
-The CRS bodies are the shared compressed BN254 G1 prefix at 32 bytes per point,
-the shared 2^16-point Grumpkin G1 data at 64 bytes per point, and 128 bytes of
-BN254 G2 data. These constants are identical on every browser; libID does not
-inherit bb.js's generic 2^20 desktop and 2^18 iOS defaults. Circuit release
-tooling qualifies the same values with the pinned browser prover and records
-them in release metadata so a circuit or bb.js change cannot silently retain an
-undersized platform constant. Encoding the size in artifact filenames is
-optional and carries no additional authority.
+Gate count alone does not determine the deployable SRS floor. bb.js 5.2's 4 MiB
+verification chunks make `bearer_link` require at least 2^17 despite its 2^16
+mathematical ceiling; `oidc_google` requires 2^18. Launch pins 2^18 for every
+profile so one download serves multi-platform users, at a 4 MiB cost for an
+X/GitHub-only user. Split it only if measurements justify the extra selection
+and cache-upgrade paths.
 
 The first ceremony downloads the one shared SRS set. A later ceremony for any
 platform reuses it and fetches only missing profile assets. X/GitHub after
@@ -390,27 +377,17 @@ are reproducible heavy-resource subtotals, not a promise about total
 transferred bytes. The JavaScript graph does not exist yet and must publish its
 own measured size when built.
 
-The pinned bb.js 5.2.0 browser build owns the downloader, compressed 32-byte G1
-format, and [`srsSize` constructor option](https://github.com/AztecProtocol/aztec-packages/pull/23419).
-The selected build also includes
+The pinned bb.js 5.2.0 build owns the compressed CRS downloader and
+[`srsSize` option](https://github.com/AztecProtocol/aztec-packages/pull/23419),
+and includes
 [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290), which
-persists the compressed download so `Crs.new()` alone is durable. The compatible
-Nargo compiler, native `bb` used to produce the verification key and verifier,
-and bb.js prover remain one circuit release and verifier rollout. The selected
-bb.js bytes also fix the only CRS origins admitted by the
-[prover response policy](SERVER.md#prover-response-policy).
+persists `Crs.new()` downloads. Its bytes also fix the only CRS origins admitted
+by the [prover response policy](SERVER.md#prover-response-policy).
 
-Deployment embeds one global notarization-client module URL and one circuit URL
-for each closed platform/version. The module's fixed sibling name resolves its
-WASM, and platform-version code pins both expected digests as one compatible
-release. Noir and Aztec-distributed bb.js code, workers, WASM, CRS locations,
-and the shared SRS size remain closed ceremony-build constants. The deployment
-neither computes nor configures them and does not copy, slice, or reimplement
-the CRS downloader.
-
-X and GitHub use the same immutable circuit URL and the same global
-notarization-client module/WASM pair. Platform modules reject missing,
-duplicate, additional, or digest-mismatched profiles before fetching.
+Deployment configures one notarization-client module URL and one circuit URL
+per closed platform/version; code pins their digests and resolves the notary
+WASM sibling. Noir, bb.js, workers, CRS URLs, and SRS size remain build
+constants. X and GitHub share the same notary and circuit URLs.
 
 ## Prefetch and cache lifecycle
 
@@ -496,12 +473,7 @@ workers, cache policy, or proof output.
 
 ## Compatibility
 
-One immutable package release supplies compatible popup, prover, platform,
-worker, Noir, and bb.js code. A live prover keeps the modules and embedded
-assets it loaded and never resolves `latest` mid-ceremony.
-
-A change to authorization, OAuth grammar, platform proof construction, or
-`OAuthProof` assembly increments that platform's `PlatformCeremonyVersion`.
-Changing an asset host without changing pinned bytes, tuning prefetch/cache
-behavior, or changing the shared SRS fetch policy does not increment the
-platform version while the proof statement and output remain identical.
+A live prover pins its loaded modules and assets. Proof-semantic changes use
+`PlatformCeremonyVersion`; host, cache, and equivalent SRS-fetch changes do not.
+All version axes are defined in
+[ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).

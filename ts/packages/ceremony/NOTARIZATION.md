@@ -55,10 +55,8 @@ interface Transcript {
   received: Uint8Array
 }
 
-interface TranscriptLimits {
-  maxSentData: number
-  maxReceivedData: number
-}
+const MAX_SENT_DATA = 4 * 1024
+const MAX_RECEIVED_DATA = 32 * 1024
 
 interface CommitmentOpening {
   direction: 'sent' | 'received'
@@ -80,7 +78,6 @@ interface NotarizeResult {
 
 declare function notarize(
   request: ExactHttpRequest,
-  limits: TranscriptLimits,
   selectReveals: (transcript: Transcript) => Reveals,
 ): Promise<NotarizeResult>
 ```
@@ -90,10 +87,9 @@ bytes. Header order is not semantic: selection operates on the actual
 serialized transcript, while the Platform Verifier checks request framing and
 profile-significant fields without requiring relative header position. Request
 body bytes remain exact because a platform's form grammar may depend on them.
-Each platform-version call site supplies code-owned transcript limits; no
-ceremony, server response, or CCDP input can change them. Launch uses the
-already-qualified PoC ceilings `maxSentData = 4 KiB` and
-`maxReceivedData = 32 KiB` for all three calls. Exceeding either ceiling fails
+The adapter applies the code-owned `MAX_SENT_DATA = 4 KiB` and
+`MAX_RECEIVED_DATA = 32 KiB` ceilings to all three calls; no caller,
+server response, or CCDP input can change them. Exceeding either ceiling fails
 the notarization instead of truncating the transcript.
 
 The transcript exists only long enough for the platform module to parse its
@@ -170,26 +166,16 @@ ranges, malformed commitments, and values that cannot be represented exactly.
 `createdAt` stays a `bigint`; every accepted offset and transcript length fits
 exactly in a JavaScript `number`.
 
-The decoder is pinned to the rebased `libid-rs` cross-language vector. The
-fixture is one complete `AttestedData` record in hexadecimal:
-
-```text
-4930142f5283d4a8eab0d24c588f00b21213ae2a47e7ed6c1dc6a57044f1655d0000000069800e800000003c00000028000000000000000200000000000000000000001461616161616161616161616161616161616161610000002800000000000000146262626262626262626262626262626262626262000000000000000100000014000000280707070707070707070707070707070707070707070707070707070707070707000000000000000100000000000000000000000a6363636363636363636300000000000000010000000a000000280909090909090909090909090909090909090909090909090909090909090909
-```
-
-Its `keccak256` digest is:
+The decoder is pinned to the complete cross-language fixture from the rebased
+[`libid-rs` encoder](https://github.com/libid-org/libid-rs/blob/239a4bb426ac72591fe30006f22660e164a98d96/crates/libid-ceremony/src/attestation.rs).
+The implementation test copies those exact bytes and checks this `keccak256`:
 
 ```text
 48162f05bdb27b19b3544bf2aae608745861bf357bb31e07f536b6fb50e95936
 ```
 
-Decoding yields `authorityId = keccak256(UTF8("api.x.com"))` and a `createdAt`
-of `1770000000`. Sent and received transcript lengths are 60 and 40. Sent reveals
-`[0,20)` and `[40,60)` surround commitment `[20,40)`; received reveal `[0,10)`
-precedes commitment `[10,40)`. The revealed bytes are respectively twenty `a`
-bytes, twenty `b` bytes, and ten `c` bytes; the two commitments are 32 bytes of
-`0x07` and `0x09`. This fixture is copied unchanged from the rebased
-[`libid-rs` encoder](https://github.com/libid-org/libid-rs/blob/239a4bb426ac72591fe30006f22660e164a98d96/crates/libid-ceremony/src/attestation.rs).
+The decoded values and every malformed variant are asserted by the
+[conformance plan](TEST_PLAN.md).
 
 ## Session lifecycle
 
@@ -246,7 +232,7 @@ sequenceDiagram
     participant N as Notary Service
     participant P as Platform HTTPS server
 
-    M->>T: notarize(request, limits, selectReveals)
+    M->>T: notarize(request, selectReveals)
     T->>N: Open wss://<notary-origin>/notarize-proxy
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)

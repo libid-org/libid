@@ -95,17 +95,10 @@ resumable independently.
 
 ## Ceremony Cross-Document Protocol
 
-The browser ceremony spans contexts which cannot share memory: the application,
-OAuth popup/callback, and isolated prover placement. They communicate through
-the package-owned Ceremony Cross-Document Protocol (CCDP), whose document
-lifecycle binds the active prover placement and its prefetch readiness.
-
-[CCDP.md](CCDP.md) owns the execution-context rationale, topology, exact
-`CCDPMessage` union, ordering, channel binding, prefetch readiness, fallback
-placement, and `CCDPVersion` compatibility. [POPUP.md](POPUP.md) owns the
-popup's launch/callback state machine, opener authentication, prover
-coordination, fixed UI, and cleanup. This document retains the package and
-public application contracts which initiate and consume that protocol.
+[CCDP.md](CCDP.md) defines the package-owned protocol between the application,
+OAuth popup, and isolated prover; [POPUP.md](POPUP.md) defines the popup's local
+state machine and UI. This document owns only the package and public client
+contracts around them.
 
 ## Package composition
 
@@ -185,7 +178,7 @@ The package-facing API surface is:
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
-| `@libid/ceremony/client` | `CeremonyConfig` schema/fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and convenience re-exports of public catalog/result types |
+| `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/popup` | [browser entrypoint](POPUP.md) which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared popup document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets)` and accepts CCDP, while its ServiceWorker branch owns only package-private asset-prefetch single flights |
 
@@ -215,11 +208,8 @@ This is an application-owned instance, not a package-global singleton. Client
 creation fetches and exact-validates `CeremonyConfig`; a configured platform is
 enabled only when the installed package has a closed implementation and at
 least one advertised ceremony version in common.
-The package has one closed platform/version-module catalog. `PlatformId`, immutable
-`supportedPlatforms`, supported versions, and `ProofByPlatformVersion` all derive
-from the same keys and validator return types; no second platform union, version
-list, or proof map
-exists:
+One closed catalog derives `PlatformId`, `supportedPlatforms`, supported
+versions, and `ProofByPlatformVersion` from the same keys and validators:
 
 ```ts
 import * as googleV1 from './platforms/google/1/client'
@@ -286,18 +276,10 @@ indexed dispatch to TypeScript remains behind this validated aggregation
 boundary; the Ceremony Client performs no cast. CCDP continues to use
 `ProverDeliverProof<unknown>` and does not import the catalog.
 
-The prover entrypoint imports each version's `prover` leaf directly and keeps
-its closed dispatch exhaustive against the catalog's platform/version keys.
-This is an internal build map, not another public platform list or registration
-surface. The client build must succeed with every `prover` leaf unavailable;
-the prover build may reuse `types` and authorization helpers without importing
-the client orchestrator.
-
-Adding a platform or local ceremony version changes this catalog and its closed
-implementation and proof type together. A new version cannot silently inherit
-another version's proof validator. There is no mutable registration API. A configured
-platform is enabled only when its catalog entry and validated `CeremonyConfig`
-entry have a version in common; each Ceremony freezes the selected version.
+The prover entrypoint imports matching `prover` leaves through an exhaustive
+internal dispatch. Adding a platform or version changes the catalog,
+implementation, and proof validator together; no mutable registration API or
+second platform list exists.
 
 `enabledPlatforms` is the immutable intersection of `supportedPlatforms` and
 the exact platform keys in validated `CeremonyConfig` that have at least one
@@ -408,18 +390,9 @@ required by the no-ceremony-recovery launch scope.
 
 ### Server configuration
 
-The integrating server exposes the exact `CeremonyConfig` and origin-controlled
-fetch defined in [SERVER.md](SERVER.md#public-configuration). The
-application-scoped client fetches it once with native `fetch` and validates it
-in `@libid/ceremony/client`; no separate configuration module exists. Popup and
-prover do not fetch it.
-
-The client freezes the selected platform, ceremony version, client ID, and
-redirect URI in the live Ceremony. `AppRequestProof` carries those values. The
-popup's generic validation boundary is defined in
-[POPUP.md](POPUP.md#validation-ownership); it neither fetches configuration nor
-imports the platform catalog. The authenticated client and selected prover
-module own platform/version, client, redirect, and PKCE validation.
+The client fetches and validates the origin-controlled
+[`CeremonyConfig`](SERVER.md#public-configuration) once, then freezes the chosen
+platform, version, client ID, and redirect URI. Popup and prover never fetch it.
 
 ## Result and lifecycle
 
@@ -501,19 +474,8 @@ if (result.status === 'accepted') {
 }
 ```
 
-Composition wrappers preserve the same inference by carrying the generic:
-
-```ts
-async function proveWithJob<P extends PlatformId>(
-  ceremony: Ceremony<P>,
-): Promise<IdentityResult<P>> {
-  // Composition-owned Job logic may run around this call.
-  return ceremony.proveUserIdentity()
-}
-```
-
-Accepting only `PlatformId` or returning unparameterized `IdentityResult`
-intentionally widens the result to the platform union.
+Wrappers preserve inference by carrying `P extends PlatformId`; widening either
+input or return type to `PlatformId` intentionally widens the result union.
 
 `PlatformCeremonyVersion` is an unsigned 16-bit integer selected by the ceremony client
 from the versions advertised in ceremony configuration, never by the caller. It
@@ -567,9 +529,8 @@ platform evidence, enforce the platform's canonical encodings and configured
 client, and return `Identity` with the same `OAuthProof`. It constructs the
 record from those retained fields after `validateProofMessage` returns the
 platform-and-version-typed proof value.
-The ceremony exact-matches the
-internal ceremony ID, platform, and recomputed authorization digest before
-resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
+The ceremony validates with its retained platform/version and recomputes the
+authorization digest before resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
 classified the provider parameters as success and local checks succeeded; only Consumer
 acceptance makes Identity authoritative. Callers cannot supply or override
 Identity fields.
@@ -599,18 +560,9 @@ noncanonical encodings fail before use.
 
 ## Prover subsystem
 
-The closed prover implementation is defined in [PROVER.md](PROVER.md). It owns
-platform pipelines and progress catalogs, circuit and notarization assets, the
-Noir and bb.js toolchain, worker topology, service-worker prefetch and caching,
-CRS policy, and proof-generation compatibility.
-
-This package architecture retains only the boundary: the Ceremony Client sends
-one authenticated `AppRequestProof` through CCDP and receives bounded progress,
-one structured-clone proof value, or a technical failure. CCDP does not know
-platform/version proof types. The selected version's client-safe validator
-narrows the value, and the client assembles `OAuthProof` and `Identity`; the
-prover does not own application Jobs, Consumer verification, or post-ceremony
-effects.
+[PROVER.md](PROVER.md) defines pipelines, assets, workers, caching, and proof
+delivery. The client sends one `AppRequestProof`, validates the returned
+platform proof, and assembles `OAuthProof` and `Identity`.
 
 ## Progress, cancellation, and recovery
 
@@ -657,9 +609,8 @@ errors.
 
 `CeremonyEvent` is advisory. The application may project it into broader Job
 progress, but confirmation, submission, and finality remain outside this
-package. [CCDP progress and cancellation](CCDP.md#progress-cancellation-and-recovery)
-defines timestamp ownership, authenticated cross-document relay, delivery
-ordering, cancellation propagation, and failure behavior.
+package. [CCDP](CCDP.md#progress-and-proof-delivery) defines authenticated
+relay and delivery ordering.
 
 ## Versioning and compatibility
 
