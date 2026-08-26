@@ -5,8 +5,13 @@ OAuth-enabled platforms to blockchains. Initial integrations include Google,
 X, and GitHub, but the system is designed to support any OAuth-based platform.
 It currently supports EVM-compatible chains.
 
-Identity bridging lets an existing user handle stand in for an onchain address,
-similar to an onchain naming service.
+Identity bridging lets **an existing user handle stand in for an onchain
+address**, similar to an onchain naming service.
+
+A central motivation is reach: **a user can transact with anyone who already
+has an account on a supported platform, even before the recipient links a
+wallet**. Value addressed to that platform identity remains claimable when its
+owner proves control of the account and links a wallet.
 
 The core is built bottom-up using a spec-driven approach and includes the tools
 needed to make the system accessible, self-hostable, and reusable by
@@ -15,8 +20,9 @@ introducing a central point of failure.
 
 Beyond identity bridging, libID seeks closer collaboration with online
 platforms through integrations that benefit both platforms and their users.
-These integrations will enable users to prove their activity and transact
-freely on those platforms, exercising their essential human right to transact.
+These integrations will **enable users to prove their activity and transact
+freely on those platforms**, exercising their essential human right to
+transact.
 
 ## In this repository
 
