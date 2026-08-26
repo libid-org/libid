@@ -30,7 +30,7 @@ Before OAuth
 
 After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
-    fresh iframe offers one private MessagePort, joins the same fetches, and either
+    fresh iframe joins the same fetches and either
     ├── proves under DIP, or
     └── coordinates /api/v1/ceremony/prover#<ceremonyId>
         isolated top-level fallback window

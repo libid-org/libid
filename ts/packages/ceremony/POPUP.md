@@ -85,16 +85,16 @@ IndexedDB record, cookie, or callback binding record connects the two
 lifetimes. The application retains the live `Ceremony`, ceremony ID, selected
 profile, and popup `WindowProxy` across navigation.
 
-Every local transition is one-shot. A duplicate, stale, out-of-order,
-wrong-source, wrong-origin, unknown-type, or post-terminal message changes no
-state.
+Every local transition is one-shot. A duplicate, stale, out-of-order, wrong
+application source, wrong origin, unknown type, or post-terminal message changes
+no state.
 
 ## Local transitions
 
 | Phase | Accepts and emits | Popup side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| Callback authentication | one OAuth state; coordinator `ProverOfferChannel`; `PopupRequestAuthentication` → `AppAuthenticateOrigin` → `PopupDeliverParams` | create `/api/v1/ceremony/prover#ceremonyId`, accept exactly one coordinator port from that child/source/origin, validate exact opener/source/origin/ID, then release the unchanged return |
+| Callback authentication | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` → `PopupDeliverParams` | create `/api/v1/ceremony/prover#ceremonyId`, address that server-origin child, validate exact opener/source/origin/ID, then release the unchanged return |
 | Application decision | `AppCancelCeremony` or byte-matching `AppRequestProof` | clean up, or forward the request once to the bound coordinator |
 | Isolation fallback | coordinator `ProverRequestIsolation` | show a real **Continue proving** anchor; the coordinator binds the user-opened window and forwards its retained request |
 | Active proving | `ProverNotifyEvent`, `ProverDeliverProof`, `AbortCeremony`, or `AppCancelCeremony` | validate and relay generic records; proof/abort is terminal and cancellation is best effort |
@@ -105,9 +105,9 @@ until authentication succeeds; failure or
 `REDIRECT_OPENER_TIMEOUT_MS = 30_000` clears the return, severs the opener, and
 renders the fixed unapproved-application result.
 
-The popup uses only the transferred coordinator port after its exact
-source/origin-checked handoff; it never falls back to origin-only child
-messages. It has no post-navigation platform config, so it cannot validate the
+The popup addresses its exact coordinator child and accepts its messages only
+from the server origin in the expected phase; source equality is not required.
+It has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. It only byte-matches the
 echoed OAuth return and validates CCDP. The client and prover own the two
 platform-aware checks. Exact message ordering and fallback binding remain in
@@ -177,7 +177,7 @@ fallback. No terminal history or recovery record is written.
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, embedded allowlist, and response policy | server bootstrap and response |
-| CCDP shape, direction, order, source, origin, phase, ceremony continuity, and echoed OAuth-return bytes | popup |
+| CCDP shape, direction, order, application source, internal server origin, phase, ceremony continuity, and echoed OAuth-return bytes | popup |
 | Popup source, server origin, CCDP version, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
 | Job authority and use of the returned Identity | application composition |
