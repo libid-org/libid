@@ -19,8 +19,8 @@ address**, similar to an onchain naming service.
 
 A central motivation is reach: **a user can transact with anyone who already
 has an account on a supported platform, even before the recipient links a
-wallet**. Value addressed to that platform identity remains claimable when its
-owner proves control of the account and links a wallet.
+wallet**. Value addressed to that platform identity is automatically claimable
+once its owner proves control of the account and links a wallet.
 
 The core is built bottom-up using a spec-driven approach and includes the tools
 needed to make the system accessible, self-hostable, and reusable by
