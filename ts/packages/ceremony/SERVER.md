@@ -183,6 +183,10 @@ Malformed and oversized input follows the same clearing order; an oversized
 value is not retained, and no failure is rendered until both URL components are
 gone.
 
+A root preload or import failure is terminal for that document. The bootstrap
+does not retry the same module URL because browsers may retain a failed module
+map entry; a user retry starts in a fresh popup document.
+
 The bootstrap does not parse platform fields or derive an allowlist. The popup
 module owns the closed launch/callback grammar and local lifecycle after URL
 clearing, as defined in [POPUP.md](POPUP.md#entrypoint-and-trusted-inputs).
@@ -407,6 +411,11 @@ assets. Every content-addressed response has:
 - `Cache-Control: public, max-age=31536000, immutable`; and
 - no redirect, opaque response, partial response, or mutable alias in an
   admitted fetch path.
+
+An asset URL changes when either its bytes or execution-relevant response
+metadata changes, including media type, CORS/CORP behavior, and worker or
+isolation policy. Byte-identical JavaScript under materially different headers
+is not the same immutable browser asset.
 
 Popup/prover markup, stylesheet text, and the inline libID logo are compiled
 into their root modules. The package release publishes their exact stylesheet

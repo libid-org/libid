@@ -43,9 +43,10 @@ function call in the application page because isolation is a response-level
 property, not a library option.
 
 The **Ceremony Cross-Document Protocol (CCDP)** bridges those independent
-documents with `postMessage` on live opener/child channels and a same-origin
-`BroadcastChannel` after COOP removes the fallback window's opener. JavaScript
-objects and callbacks cannot cross any of those boundaries.
+documents with `postMessage` on the live opener and initial prefetch-child
+channels, one transferred `MessagePort` for the popup/coordinator channel, and
+a same-origin `BroadcastChannel` after COOP removes the fallback window's
+opener. JavaScript objects and callbacks cannot cross any of those boundaries.
 
 Collapsing the messages into ordinary library calls would require collapsing
 the documents too, which would either lose OAuth opener continuity or lose the
@@ -83,7 +84,7 @@ Configured server origin
     fixed URL-clearing bootstrap + libid-ceremony-popup.js
     non-isolated popup UI and controller
               ├─ top-level navigation ── OAuth provider (and back)
-              │ bound parent/child postMessage
+              │ prefetch postMessage / coordinator MessagePort handoff
               ▼
   /api/v1/ceremony/prover
     libid-ceremony-prover.js + workers/WebAssembly (WASM)
@@ -114,12 +115,13 @@ rest of its lifetime. The coordinator runs the prover itself when DIP gives it
 isolation, or relays the same protocol to a top-level isolated prover window
 opened by the user's **Continue proving** anchor.
 
-The redirect never user-agent sniffs. It binds the coordinator through its
-exact parent/child `WindowProxy` and browser-stamped origin. The fallback window
-cannot rely on `window.opener` after COOP; it receives only the ceremony ID in
-its initial fragment, clears it before other work, and connects to the
-coordinator through a same-origin `BroadcastChannel` derived from that ID. The
-ceremony ID routes the live same-origin channel; it is not a separate
+The redirect never user-agent sniffs. It accepts one channel offered by the
+coordinator only from the exact child `WindowProxy` and browser-stamped server
+origin, then uses that transferred `MessagePort` for all later traffic. The
+fallback window cannot rely on `window.opener` after COOP; it receives only the
+ceremony ID in its initial fragment, clears it before other work, and connects
+to the coordinator through a same-origin `BroadcastChannel` derived from that
+ID. The ceremony ID routes the live same-origin channel; it is not a separate
 confidentiality boundary.
 
 The initial popup's prover iframe only starts prefetch. The callback popup's fresh
@@ -243,6 +245,29 @@ If no valid `AppAuthenticateOrigin` arrives within
 severs the opener, and renders the same fixed unapproved-application result as
 an invalid opener origin. It renders no callback value and performs no
 navigation with it.
+
+### Coordinator channel binding
+
+```ts
+interface ProverOfferChannel {
+  type: 'prover-offer-channel'
+}
+```
+
+After clearing its bare ceremony-ID fragment, the callback coordinator creates
+one `MessageChannel`, keeps one end, and sends `ProverOfferChannel` to its parent
+with exactly the other port in the transfer list. The popup accepts the offer
+only from the exact coordinator iframe `WindowProxy`, the browser-stamped server
+origin, and a message carrying exactly one port. It removes the temporary
+window-message listener and uses only that port for later popup/coordinator
+CCDP traffic.
+
+The port is a one-shot capability for the coordinator already selected by the
+popup and bound by its cleared ceremony-ID fragment. The message therefore has
+no ID, version, payload, or application-facing hop. This handoff is required
+because WebKit does not reliably preserve a usable `MessageEvent.source` for
+every later parent/child exchange; weakening those exchanges to origin-only
+`postMessage` is forbidden.
 
 ### OAuth classification and proof dispatch
 
@@ -379,6 +404,7 @@ type CCDPMessage =
   | PopupRequestAuthentication
   | AppAuthenticateOrigin
   | PopupDeliverParams
+  | ProverOfferChannel
   | AppRequestProof
   | AppCancelCeremony
   | ProverRequestIsolation
@@ -402,6 +428,7 @@ sequenceDiagram
     C-->>A: Forward ProverPrefetchingAssets unchanged
     Note over A,C: Application navigates the retained popup through OAuth
     Note over A,P: Callback popup and fresh coordinator are loaded and URL-cleared
+    P-->>C: ProverOfferChannel plus one transferred MessagePort
     C-->>A: PopupRequestAuthentication(ccdpVersion)
     A->>C: AppAuthenticateOrigin(ceremonyId)
     C-->>A: PopupDeliverParams(oauthReturn)
@@ -448,7 +475,7 @@ fields. The popup byte-matches the echoed values but has no platform config.
 
 After `AppAuthenticateOrigin`, the authenticated application channel is bound
 to one ceremony. The prover coordinator and fallback are likewise bound by the
-cleared ceremony-ID fragment and exact parent/child or same-origin channel.
+cleared ceremony-ID fragment and exact transferred-port or same-origin channel.
 Later messages therefore omit the ID. Unknown, duplicate, out-of-order,
 post-terminal, or off-channel messages change no state.
 

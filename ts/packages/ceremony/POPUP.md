@@ -94,7 +94,7 @@ state.
 | Phase | Accepts and emits | Popup side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| Callback authentication | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` → `PopupDeliverParams` | create `/api/v1/ceremony/prover#ceremonyId`, validate exact opener/source/origin/ID, then bind that one-shot channel and release the unchanged return |
+| Callback authentication | one OAuth state; coordinator `ProverOfferChannel`; `PopupRequestAuthentication` → `AppAuthenticateOrigin` → `PopupDeliverParams` | create `/api/v1/ceremony/prover#ceremonyId`, accept exactly one coordinator port from that child/source/origin, validate exact opener/source/origin/ID, then release the unchanged return |
 | Application decision | `AppCancelCeremony` or byte-matching `AppRequestProof` | clean up, or forward the request once to the bound coordinator |
 | Isolation fallback | coordinator `ProverRequestIsolation` | show a real **Continue proving** anchor; the coordinator binds the user-opened window and forwards its retained request |
 | Active proving | `ProverNotifyEvent`, `ProverDeliverProof`, `AbortCeremony`, or `AppCancelCeremony` | validate and relay generic records; proof/abort is terminal and cancellation is best effort |
@@ -105,7 +105,9 @@ until authentication succeeds; failure or
 `REDIRECT_OPENER_TIMEOUT_MS = 30_000` clears the return, severs the opener, and
 renders the fixed unapproved-application result.
 
-The popup has no post-navigation platform config, so it cannot validate the
+The popup uses only the transferred coordinator port after its exact
+source/origin-checked handoff; it never falls back to origin-only child
+messages. It has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. It only byte-matches the
 echoed OAuth return and validates CCDP. The client and prover own the two
 platform-aware checks. Exact message ordering and fallback binding remain in

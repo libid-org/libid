@@ -376,6 +376,11 @@ resolves with a denied `IdentityResult`; popup closure, malformed return,
 invalid proving input, isolation failure, and proving failure are ordinary
 ceremony failures, not denial.
 
+Every accepted, denied, canceled, or failed terminal path removes the Ceremony
+from the client's live ID and source maps and releases its popup, return, and
+channel references before settling the result. A completed ceremony therefore
+cannot capture or block the next popup launch.
+
 The Job is already committed before `proveUserIdentity()` and remains the
 composition's current ceremony state while the call runs. Progress may update
 its advisory projection, but no pre-proving authority CAS or ceremony callback

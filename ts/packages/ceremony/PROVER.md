@@ -30,7 +30,7 @@ Before OAuth
 
 After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
-    fresh iframe joins the same fetches and either
+    fresh iframe offers one private MessagePort, joins the same fetches, and either
     ├── proves under DIP, or
     └── coordinates /api/v1/ceremony/prover#<ceremonyId>
         isolated top-level fallback window
@@ -331,6 +331,15 @@ configuration. The build likewise owns every toolchain worker, WASM, and common
 reference string (CRS) location. A deployer cannot replace those dependencies
 through `ProverAssets`.
 
+The build enumerates the complete transitive execution graph: companion chunks,
+spawner and nested worker modules, WASM, and exact CRS resource paths. Every
+same-origin emitted resource intended to reuse prefetch sits under the prover
+service worker's controlled scope; every external resource is prefetched under
+the exact immutable URL later used by the runtime. The root bootstrap graph
+which installs that worker cannot depend on the worker during its first
+evaluation; it is self-contained or loaded through the server's
+integrity-pinned root-module path.
+
 Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
 `SRS_SIZE = 2 ** 18`; SRS size is code, not deployment data:
@@ -398,6 +407,21 @@ prover document, whose Window branch registers its own deployed
 start only the selected platform/version profile's artifact single flights.
 There is no separate prefetch route, artifact, or mode flag.
 
+After registration, the Window branch addresses the newest available worker in
+`installing`, `waiting`, then `active` order. It does not wait for activation or
+send the request to an older active worker while an update is installing. It
+posts the exact selected profile and reports readiness without waiting for an
+acknowledgement, activation, or downloads. A worker which receives the request
+exact-validates it and attaches the fetch work to the message event with
+`event.waitUntil`. This ordering avoids hidden-iframe WebKit activation
+throttling without adding a prefetch timeout.
+
+The worker calls `skipWaiting()` during install and `clients.claim()` during
+activation so later prover documents use the selected release rather than a
+stale controller. Immutable URLs keep already loaded documents pinned; a live
+ceremony may still fail closed across deployment rotation as defined by the
+server contract.
+
 The prover bootstrap exact-validates its server-embedded `ProverAssets`. For
 prefetch, its Window branch accepts only the closed, cleared profile selected by
 the bootstrap fragment, adds the global notarization client only when the
@@ -412,6 +436,13 @@ single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
 flights, rejects a manifest conflict, and extends the initiating worker event
 through completion. Those loaders use bb.js's fixed CRS endpoints and IndexedDB
 cache. Merely importing bb.js is not CRS prefetch.
+
+Manifest prefetches use `credentials: 'same-origin'`, matching native
+same-origin module and worker requests while still omitting credentials from
+cross-origin asset requests. The server origin is cookie-free. Fetch-event
+handling preserves the admitted request's URL and response semantics so Firefox
+can reuse a prefetched worker response rather than refetching or synthesizing a
+different module.
 
 Its package-private prefetch call is an implementation detail, not a CCDP
 message or exported ceremony API. The worker intercepts only exact immutable
