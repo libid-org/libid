@@ -6,13 +6,13 @@ X, and GitHub, but the system is designed to support any OAuth-based platform.
 It currently supports EVM-compatible chains.
 
 The initial integrations were chosen for both product relevance and technical
-coverage. Google represents direct OIDC delivery of a signed ID Token; X uses
-the authorization-code flow as a public client with S256 PKCE; and GitHub uses
-the authorization-code flow as a confidential client with PKCE and a
-deployment-owned token exchange. Together they cover most OAuth variability
-relevant to libID—signed tokens versus API evidence, fragment versus query
-returns, and public versus confidential clients—and demonstrate that secure
-identity bridging is feasible across these models.
+coverage. Google, X, and GitHub each represent a materially different
+OAuth/OIDC model. Together they cover most of the variability relevant to
+libID and demonstrate that secure identity bridging is feasible across these
+models. Their security designs are documented in the
+[Google](specs/platform-ceremonies.md#3-google-oidc-ceremony),
+[X](specs/platform-ceremonies.md#5-x-ceremony), and
+[GitHub](specs/platform-ceremonies.md#6-github-ceremony) ceremony profiles.
 
 Identity bridging lets **an existing user handle stand in for an onchain
 address**, similar to an onchain naming service.
