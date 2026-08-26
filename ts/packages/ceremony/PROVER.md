@@ -337,8 +337,8 @@ same-origin emitted resource intended to reuse prefetch sits under the prover
 service worker's controlled scope; every external resource is prefetched under
 the exact immutable URL later used by the runtime. The root bootstrap graph
 which installs that worker cannot depend on the worker during its first
-evaluation; it is self-contained or loaded through the server's
-integrity-pinned root-module path.
+evaluation; it is self-contained or loaded through the server's immutable
+root-module path.
 
 Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
@@ -393,10 +393,13 @@ and includes
 persists `Crs.new()` downloads. Its bytes also fix the only CRS origins admitted
 by the [prover response policy](SERVER.md#prover-response-policy).
 
-Deployment configures one notarization-client module URL and one circuit URL
-per closed platform/version; code pins their digests and resolves the notary
-WASM sibling. Noir, bb.js, workers, CRS URLs, and SRS size remain build
-constants. X and GitHub share the same notary and circuit URLs.
+Deployment configures one immutable notarization-client module URL and one
+immutable circuit URL per closed platform/version; the prover resolves the
+notary WASM sibling. Noir, bb.js, workers, CRS URLs, and SRS size remain build
+constants. X and GitHub share the same notary and circuit URLs. Launch follows
+bb.js's HTTPS-and-immutable-URL model and does not add runtime content hashing;
+deployment-integrity hashes may be added later without changing ceremony
+semantics.
 
 ## Prefetch and cache lifecycle
 

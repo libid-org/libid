@@ -28,9 +28,11 @@ ceremony route. GitHub adds one synchronous, stateless token-exchange route.
 
 The configured server origin and everything it serves are a code-supply-chain
 trust boundary. A malicious server can replace the browser code and response
-policy. Closed inputs, Content Security Policy (CSP), Subresource Integrity
-(SRI), and origin checks prevent request-controlled expansion and
-cross-application confusion; they cannot constrain the server owner.
+policy. Closed inputs, Content Security Policy (CSP), and origin checks prevent
+request-controlled expansion and cross-application confusion; they cannot
+constrain the server owner. Launch does not add runtime content hashing inside
+code supplied by that same server; deployment asset-integrity checks may be
+added later as operational hardening.
 
 ## Deployment configuration
 
@@ -42,7 +44,7 @@ One deployment has these server-owned inputs:
 | `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned popup |
 | Callback path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Popup and prover roots | Immutable module URLs, integrity values, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
+| Popup and prover roots | Immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
 | Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
@@ -56,7 +58,7 @@ One deployment platform configuration generates both the public
 of one enabled set, not independently maintained platform lists.
 
 Only libID-owned circuit and notarization-client locations are configurable
-artifact assets. The ceremony package pins their expected identities. A
+artifact assets. A
 `notaryAddress` is a network endpoint rather than an artifact and is
 deployment-fixed for the whole ceremony deployment. The package pins the
 Aztec-distributed bb.js and Noir toolchain, including its worker, WebAssembly,
@@ -143,7 +145,7 @@ redirect. The OAuth registration uses the callback URL, while application
 launch uses `/api/v1/ceremony/popup`.
 
 The response is invariant across requests. In particular, its HTML, headers,
-root module, SRI, CSP, and embedded `allowedAppOrigins` do not depend on the
+root module URL, CSP, and embedded `allowedAppOrigins` do not depend on the
 request path, `Origin`, `Referer`, query, fragment, platform, or ceremony. The
 document is top-level, non-isolated, and non-frameable so it preserves the
 application opener through OAuth.
@@ -164,9 +166,7 @@ rendering, error reporting, module loading, or network activity, it:
 2. copies the exact `location.search` and `location.hash`, including their
    leading delimiters when nonempty;
 3. clears both with `history.replaceState`;
-4. appends the exact immutable `libid-ceremony-popup.js` root as a module
-   preload with SRI and anonymous CORS, waits for success, and imports that same
-   URL from the module map; and
+4. imports the exact immutable `libid-ceremony-popup.js` root URL; and
 5. invokes the package entrypoint with the captured values and embedded
    deployment allowlist:
 
@@ -183,9 +183,9 @@ Malformed and oversized input follows the same clearing order; an oversized
 value is not retained, and no failure is rendered until both URL components are
 gone.
 
-A root preload or import failure is terminal for that document. The bootstrap
-does not retry the same module URL because browsers may retain a failed module
-map entry; a user retry starts in a fresh popup document.
+A root import failure is terminal for that document. The bootstrap does not
+retry the same module URL because browsers retain a failed module-map entry; a
+user retry starts in a fresh popup document.
 
 The bootstrap does not parse platform fields or derive an allowlist. The popup
 module owns the closed launch/callback grammar and local lifecycle after URL
@@ -211,8 +211,8 @@ The shared popup response uses:
 - `connect-src 'self'`;
 - `style-src` permitting only the exact hash of the stylesheet text installed
   by the immutable popup root;
-- one exact hash for the inline clearing bootstrap and only the exact
-  integrity-pinned root-module source; and
+- one exact hash for the inline clearing bootstrap and only the deployment's
+  immutable root-module source; and
 - no broad `https:`, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
 
 ## Prover document
@@ -249,8 +249,8 @@ interface ProverAssets {
 ```
 
 Every URL string is a canonical absolute HTTPS URL for one immutable,
-content-identified release asset. The explicit loopback development profile is
-the only HTTP exception. `notarizationClientUrl` is the immutable URL of the
+versioned release asset. The explicit loopback development profile is the only
+HTTP exception. `notarizationClientUrl` is the immutable URL of the
 libID-built `tlsn_wasm.js` ES module shared by all notarized platform
 implementations. Its only companion is the separate sibling
 `tlsn_wasm_bg.wasm`, resolved with
@@ -276,8 +276,8 @@ cannot add or replace any URL.
 
 The bootstrap bounds and copies its fragment, clears it before storage,
 rendering, errors, module loading, or network activity, and then exact-validates
-the closed value and embedded `ProverAssets`. It integrity-loads the exact
-same-origin immutable `libid-ceremony-prover.js` root and passes both values to
+the closed value and embedded `ProverAssets`. It imports the exact same-origin
+immutable `libid-ceremony-prover.js` root and passes both values to
 its Window entrypoint:
 
 ```ts
@@ -402,8 +402,8 @@ fresh browser ceremony.
 
 ## Immutable browser assets
 
-Root modules, companion chunks, workers, and WebAssembly are immutable release
-assets. Every content-addressed response has:
+Root modules, companion chunks, workers, and WebAssembly are immutable,
+versioned release assets. Every such response has:
 
 - the exact media type and `X-Content-Type-Options: nosniff`;
 - CORS and Cross-Origin-Resource-Policy behavior compatible with its documented
@@ -412,10 +412,10 @@ assets. Every content-addressed response has:
 - no redirect, opaque response, partial response, or mutable alias in an
   admitted fetch path.
 
-An asset URL changes when either its bytes or execution-relevant response
-metadata changes, including media type, CORS/CORP behavior, and worker or
-isolation policy. Byte-identical JavaScript under materially different headers
-is not the same immutable browser asset.
+An asset URL is never reused for different bytes or execution-relevant response
+metadata, including media type, CORS/CORP behavior, and worker or isolation
+policy. Launch trusts HTTPS and the deployment's immutable release URLs; it
+does not hash downloaded prover dependencies at runtime.
 
 Popup/prover markup, stylesheet text, and the inline libID logo are compiled
 into their root modules. The package release publishes their exact stylesheet
@@ -424,9 +424,8 @@ logo, stylesheet, theme, or renderer artifact.
 
 Popup and prover HTML may embed deployment-specific values but is invariant
 within that deployment release and remains `no-store`. A production deployment
-uses immutable root URLs with SRI. Serving a mutable root, omitting integrity,
-or broadening CSP turns request-independent browser code into mutable server
-authority and is unsupported.
+uses immutable root URLs. Serving mutable bytes at one of those URLs or
+broadening CSP is unsupported.
 
 The reference deployment uses a dedicated cookie-free origin with no unrelated
 same-origin API. This limits incidental ambient authority but does not create a
