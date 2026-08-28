@@ -120,6 +120,53 @@ follows no request path outside the startup manifest, and returns `404` for an
 unknown key or filename. Local paths and filesystem errors never enter browser
 responses.
 
+#### Open alternative: one ceremony asset distribution
+
+The launch contract above configures each libID-owned prover artifact. A
+possible simplification is to make the ceremony build publish one complete,
+browser-ready distribution instead:
+
+```text
+manifest.json
+libid-ceremony-popup.js
+libid-ceremony-prover.js
+assets/*
+circuits/*
+tlsn/tlsn_wasm.js
+tlsn/tlsn_wasm_bg.wasm
+```
+
+An operator would configure exactly one of:
+
+```toml
+ceremony_assets_url = "https://cdn.example/libid/ceremony/<release>/"
+ceremony_assets_path = "/opt/libid/ceremony-assets/<release>/"
+```
+
+The package-generated manifest, not operator configuration, would map logical
+platform/version assets to immutable files. For a remote distribution the
+server would prepend `ceremony_assets_url`; for a local distribution it would
+serve exact manifest entries below
+`/api/v1/ceremony/assets/<release>/`. Both modes would produce the same browser
+URLs and use the same package-defined media types and cache policy.
+
+This would replace per-circuit and notarization-client source configuration,
+startup asset-key generation, sibling discovery in server configuration, and
+the possibility of mixing files from incompatible releases. The same directory
+could initially be served by the ceremony server and later uploaded unchanged
+to a CDN. GitHub releases would remain inputs used by the ceremony build to
+assemble it; the browser would still never consume their archives.
+
+The tradeoff is release granularity: changing one circuit or the notary client
+would publish a new complete ceremony distribution even when the other files
+are unchanged. Content-addressed filenames would still allow browsers and CDNs
+to reuse unchanged bodies. The choice also determines whether popup/prover root
+modules and configured prover artifacts share one deployment unit.
+
+This alternative is not part of the current server contract or conformance
+plan. Selecting it would replace the per-artifact source rules above rather
+than add a second configuration layer.
+
 ## Route surface
 
 An integrating server exposes:
