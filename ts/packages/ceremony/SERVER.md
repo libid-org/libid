@@ -45,7 +45,7 @@ One deployment has these server-owned inputs:
 | Callback path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Popup and prover roots | Immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
-| Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
+| Prover asset sources | One remote URL or local filesystem source for the libID-built notarization-client module and its fixed sibling WASM, one source for each platform/version circuit, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
 `allowedAppOrigins` uses set semantics and has no protocol maximum. The same
@@ -64,6 +64,62 @@ deployment-fixed for the whole ceremony deployment. The package pins the
 Aztec-distributed bb.js and Noir toolchain, including its worker, WebAssembly,
 and common-reference-string dependency graph, in code.
 
+### Prover asset sources
+
+Each configured libID-owned artifact has either a remote `url` or a filesystem
+`localPath`. These are mutually exclusive operator/server configuration fields,
+not a browser type or an explicit mode sent to JavaScript. A source cannot be
+selected or altered by an HTTP request, application, ceremony, platform return,
+fragment, or browser message.
+
+The `url` branch names one browser-ready file, not an archive or release page.
+It must:
+
+- be one canonical absolute HTTPS URL without credentials or fragment;
+- return status `200` without a redirect, authentication, cookies, or partial
+  content;
+- permit a credentialless CORS fetch from the ceremony-server origin with
+  `Access-Control-Allow-Origin: *` or that exact origin; an origin-specific
+  response also returns `Vary: Origin`;
+- return the exact media type from [Immutable browser assets](#immutable-browser-assets),
+  `X-Content-Type-Options: nosniff`, and
+  `Cache-Control: public, max-age=31536000, immutable`;
+- omit an attachment `Content-Disposition`; and
+- retain the same bytes and execution-relevant response metadata for the
+  lifetime of that URL.
+
+The notarization-client URL identifies `tlsn_wasm.js`; its independently
+fetchable `tlsn_wasm_bg.wasm` sibling must satisfy the same rules at the URL
+obtained by replacing only the final path component. A configured circuit URL
+identifies its browser-readable circuit descriptor directly. Current GitHub
+release-download URLs do not satisfy this contract: they redirect to
+non-CORS attachment responses and publish archives rather than the required
+browser files. They may be inputs to a deployment build, but never embedded as
+runtime asset URLs.
+
+The `localPath` branch names a file on the ceremony-server machine. For a
+notarization client it names `tlsn_wasm.js`, with `tlsn_wasm_bg.wasm` required
+beside it; for a circuit it names the descriptor file. At startup the server:
+
+1. resolves and validates every configured file before serving ceremony
+   routes;
+2. creates a closed manifest containing only those files;
+3. assigns an immutable asset key which changes if any served bytes or
+   execution-relevant response metadata change; and
+4. maps each entry to
+   `/api/v1/ceremony/assets/<asset-key>/<filename>`.
+
+The reference implementation may derive the key from content; it is cache
+identity, not an additional proof-security check. The server must not serve
+changed bytes under an existing key. A local-file update therefore requires a
+configuration reload or restart which generates new embedded URLs.
+
+The local asset handler is a manifest server, not a general filesystem server.
+It accepts no caller-selected filesystem path, exposes no directory listing,
+follows no request path outside the startup manifest, and returns `404` for an
+unknown key or filename. Local paths and filesystem errors never enter browser
+responses.
+
 ## Route surface
 
 An integrating server exposes:
@@ -74,6 +130,7 @@ An integrating server exposes:
 | `GET` | `/api/v1/ceremony/popup` | always | initial ceremony popup document | none at HTTP ingress; loaded popup exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
 | `GET` | configured callback path, default `/auth/v1/callback` | always | direct byte-identical alias of the popup document and registered OAuth `redirect_uri` | none at HTTP ingress; loaded popup performs the same browser-side check after provider return |
 | `GET` | `/api/v1/ceremony/prover` | always | shared prefetch, prover coordinator, and isolated-prover document | none at HTTP ingress; the fixed public document binds through CCDP and same-origin popup/prover channels after loading |
+| `GET` | `/api/v1/ceremony/assets/<asset-key>/<filename>` | when any prover asset uses `localPath` | immutable same-origin response for one startup-manifest entry | public fixed asset; request path can only select an exact manifest entry |
 | `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | server requires `Origin` to equal the configured ceremony server origin and rejects cross-origin preflight |
 
 Server-side request-origin enforcement is used only where the browser reliably
@@ -248,16 +305,24 @@ interface ProverAssets {
 }
 ```
 
-Every URL string is a canonical absolute HTTPS URL for one immutable,
-versioned release asset. The explicit loopback development profile is the only
-HTTP exception. `notarizationClientUrl` is the immutable URL of the
-libID-built `tlsn_wasm.js` ES module shared by all notarized platform
-implementations. Its only companion is the separate sibling
-`tlsn_wasm_bg.wasm`, resolved with
-`new URL('tlsn_wasm_bg.wasm', notarizationClientUrl)`. Both files are one pinned
-release, use independent immutable HTTP cache entries, and must share their
-versioned directory. An archive is not a browser artifact. The configured host
-may initially be a GitHub release and later a CDN without changing the contract.
+Each URL string is either a canonical absolute HTTPS `url` source or the
+canonical root-relative route generated for a `localPath` source. A
+root-relative value begins with `/api/v1/ceremony/assets/`, contains no query,
+fragment, dot segment, or encoded path separator, and resolves against the
+configured server origin before use. The explicit loopback development profile
+is the only HTTP exception.
+
+`ProverAssets` contains no source kind. Browser code resolves every value with
+`new URL(value, location.origin)` and follows the same fetch, validation, and
+cache path for remote and server-hosted assets.
+
+`notarizationClientUrl` selects the immutable `tlsn_wasm.js` ES module shared
+by all notarized platform implementations. Its only companion is the separate
+sibling `tlsn_wasm_bg.wasm`, resolved with
+`new URL('tlsn_wasm_bg.wasm', new URL(notarizationClientUrl,
+location.origin))`. Both files are one pinned release, use independent
+immutable HTTP cache entries, and share their versioned directory. An archive
+is not a browser artifact.
 `notaryAddress` is one canonical absolute HTTPS origin with no credentials,
 path, query, or fragment, shared by every notarized session in the deployment.
 The testnet value is `https://notary.testnet.lib.id`; the browser derives
@@ -403,19 +468,32 @@ fresh browser ceremony.
 ## Immutable browser assets
 
 Root modules, companion chunks, workers, and WebAssembly are immutable,
-versioned release assets. Every such response has:
+versioned release assets. Configured circuit and notarization-client responses
+obey the same contract. Their exact media types are:
+
+| Resource | `Content-Type` |
+|---|---|
+| JavaScript module | `text/javascript; charset=utf-8` |
+| WebAssembly | `application/wasm` |
+| Circuit descriptor | `application/json` |
+
+Every asset response has:
 
 - the exact media type and `X-Content-Type-Options: nosniff`;
-- CORS and Cross-Origin-Resource-Policy behavior compatible with its documented
-  isolated consumer;
 - `Cache-Control: public, max-age=31536000, immutable`; and
 - no redirect, opaque response, partial response, or mutable alias in an
   admitted fetch path.
 
+A configured remote response additionally has the CORS behavior defined under
+[Prover asset sources](#prover-asset-sources); successful CORS is sufficient
+for its COEP consumer and does not also require CORP. A local asset route returns
+`Cross-Origin-Resource-Policy: same-origin`; it needs no CORS header because
+the popup, prover, worker, and asset share the configured server origin.
+
 An asset URL is never reused for different bytes or execution-relevant response
 metadata, including media type, CORS/CORP behavior, and worker or isolation
-policy. Launch trusts HTTPS and the deployment's immutable release URLs; it
-does not hash downloaded prover dependencies at runtime.
+policy. Launch trusts the configured remote host or server-admitted local file;
+the prover does not hash downloaded dependencies at runtime.
 
 Popup/prover markup, stylesheet text, and the inline libID logo are compiled
 into their root modules. The package release publishes their exact stylesheet

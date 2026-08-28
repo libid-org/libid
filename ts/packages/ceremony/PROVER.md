@@ -175,10 +175,12 @@ The browser distribution exposes `tlsn_wasm.js` and its sibling
 `ProverAssets.notarizationClientUrl` selects the immutable JavaScript module,
 and the prover derives the WASM URL by replacing only its final path component
 with `tlsn_wasm_bg.wasm`. Each remains a normal, independently cached response;
-the browser never downloads or unpacks a release archive. GitHub releases may
-host the initial pair; moving the same pinned bytes to a CDN changes only
-deployment configuration. Neither an application nor `AppRequestProof` selects
-a notary, circuit, or bb.js version.
+the browser never downloads or unpacks a release archive. A GitHub release may
+supply build inputs, but its archive and redirecting download URLs are not
+browser assets. Deployment either uses browser-ready remote URLs satisfying the
+server contract or maps local extracted files to generated same-origin asset
+routes. Neither an application nor `AppRequestProof` selects a notary, circuit,
+or bb.js version.
 
 ### Google
 
@@ -393,13 +395,14 @@ and includes
 persists `Crs.new()` downloads. Its bytes also fix the only CRS origins admitted
 by the [prover response policy](SERVER.md#prover-response-policy).
 
-Deployment configures one immutable notarization-client module URL and one
-immutable circuit URL per closed platform/version; the prover resolves the
-notary WASM sibling. Noir, bb.js, workers, CRS URLs, and SRS size remain build
-constants. X and GitHub share the same notary and circuit URLs. Launch follows
-bb.js's HTTPS-and-immutable-URL model and does not add runtime content hashing;
-deployment-integrity hashes may be added later without changing ceremony
-semantics.
+Deployment resolves one notarization-client source and one circuit source per
+closed platform/version to immutable browser URLs; the prover resolves the
+notary WASM sibling. A remote source remains absolute, while a local source is
+embedded as the generated root-relative same-origin route defined by the server
+contract. Noir, bb.js, workers, CRS URLs, and SRS size remain build constants.
+X and GitHub share the same notary and circuit URLs. The prover does not add
+runtime content hashing; deployment-integrity checks may be added later without
+changing ceremony semantics.
 
 ## Prefetch and cache lifecycle
 
