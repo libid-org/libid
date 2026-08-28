@@ -154,6 +154,29 @@ proving.
 
 CCDP uses one transport per trust boundary.
 
+### Why WebRTC is necessary
+
+Authenticated `postMessage` would be the simpler and more appropriate
+iframe/popup transport. It already provides browser-stamped sender origins and
+exact `targetOrigin` delivery, needs no ICE, SDP, mDNS, or signaling storage,
+and is sufficient for every CCDP message.
+
+CCDP uses WebRTC only because a provider response may apply COOP which switches
+the popup into another browsing-context group and invalidates the retained
+`WindowProxy`. The security purpose of that switch is to remove the broader
+cross-origin window surface used by cross-site leaks and to permit process
+isolation; losing `postMessage` is not itself required for either property. The
+[standards discussion](https://github.com/whatwg/html/issues/6364) describes
+this loss as an artifact of COOP's current model, and the experimental
+`restrict-properties` policy demonstrated the intended smaller boundary by
+retaining only `postMessage` and `closed`. That policy is not part of the
+[interoperable HTML COOP values](https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies).
+
+WebRTC and browser-local signaling are therefore a compatibility workaround
+for the absence of a portable postMessage-only cross-group opener capability,
+not a preferred transport abstraction. A broadly supported equivalent replaces
+them without changing CCDP messages or trust decisions.
+
 ### Application to iframe
 
 The application and persistent iframe use `postMessage`. Every accepted
@@ -533,7 +556,7 @@ Tests should assert one property per stable identifier in
 | Decision | Reason | Revisit when |
 |---|---|---|
 | Persistent iframe | Gives the application one authenticated endpoint, starts prefetch early, and may reuse initialized assets for DIP proving | Measurement shows iframe proving or retained prefetch has no useful benefit |
-| WebRTC data channel | Survives browsing-context isolation without a server relay or additional window | A simpler browser primitive satisfies the same supported-browser constraints |
+| WebRTC data channel | Works around COOP severing the otherwise sufficient `postMessage` channel, without a server relay or additional window | A portable postMessage-only cross-group capability is broadly supported |
 | Same-site signaling | It is the only qualified relay-free way to reconnect the returned popup across supported browsers | A durable cross-site signaling primitive is broadly supported, or an explicit relay is accepted |
 | Direct provider launch | Removes the non-isolated libID popup phase and its second handshake | A provider requires a package-owned page before authorization |
 | Always-isolated popup | Makes credential ingress uniform and provides the portable prover placement | All supported browsers provide qualified embedded document isolation |
