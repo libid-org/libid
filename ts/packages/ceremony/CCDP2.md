@@ -177,6 +177,25 @@ The data channel uses the browser's authenticated DTLS connection. CCDP still
 binds negotiation to its own ceremony capability because WebRTC does not
 expose or authenticate a web origin to its peer.
 
+### Local ICE connectivity
+
+Both peers run in the same browser on the same device. Launch creates
+`RTCPeerConnection({ iceServers: [] })`: it configures no STUN or TURN service
+and therefore sends no ceremony traffic through an ICE relay.
+
+Connectivity relies on browser-generated host ICE candidates. Browsers may
+hide their local addresses behind randomized `.local` candidates, so the path
+also relies on the browser's
+[mDNS ICE-candidate](https://datatracker.ietf.org/doc/html/draft-ietf-rtcweb-mdns-ice-candidates)
+publication and resolution working between the two local contexts. mDNS
+establishes local reachability; it authenticates neither the web origin nor the
+ceremony. The ceremony capability, exact signaling match, and DTLS fingerprints
+retain those roles.
+
+If the browser produces no viable host candidate pair or cannot resolve its
+mDNS candidates, the ceremony fails the RTC handshake. It does not add a
+public STUN/TURN server or fall back to relayed protocol traffic.
+
 ### Browser-local signaling
 
 The iframe is the offerer and creates a fresh data channel, SDP offer, and
@@ -426,6 +445,8 @@ CCDP conformance covers:
 - concurrent ceremony separation and signaling replay rejection;
 - return from a provider which has severed every opener-based channel;
 - WebRTC establishment after callback isolation;
+- same-device host ICE establishment with `iceServers: []`, including the
+  browser's mDNS-candidate path;
 - both DIP-iframe and popup proving placements;
 - unchanged OAuth-return transport and credential confinement;
 - continuous platform events in both placements;
