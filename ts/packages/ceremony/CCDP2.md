@@ -30,7 +30,9 @@ and browsing-context group. It must also:
 - work when the application and ceremony server are different origins;
 - support Safari, Firefox, and Chromium without browser detection; and
 - keep callback and proof data off communication relays and durable signaling
-  storage.
+  storage; and
+- let the application navigate the isolated popup through one external
+  document and receive its fragment result without recovering an opener.
 
 CCDP does not define OAuth profile rules, proof construction, transaction
 submission, application Jobs, wallet policy, or server implementation.
@@ -140,6 +142,13 @@ and the original browsing-context group. CCDP depends on none of them after
 provider navigation. Provider CSP, COEP, sandbox, document policy, and origin
 isolation apply to the provider document and do not carry into the later
 server-owned callback response.
+
+The same popup route also has a fragment-selected return mode. It is the same
+static response and response policy, not another endpoint. In this mode its
+first script copies and clears the bounded return fragment, consumes the
+prearranged one-use signaling record, establishes a fresh RTC channel with the
+iframe, and forwards the opaque return bytes. It performs no OAuth parsing or
+proving.
 
 ## Transport
 
@@ -272,6 +281,43 @@ return. The iframe forwards it to the authenticated client for the selected
 platform/version parser to classify as acceptance, provider denial, or invalid
 input.
 
+### Isolated popup navigation and return
+
+After the popup channel is authenticated, the application may request one
+external-document detour without access to the severed `WindowProxy`:
+
+1. The application sends the target HTTPS URL and bounded opaque fragment bytes
+   to the authenticated iframe.
+2. The iframe validates the request, creates and publishes a fresh one-use RTC
+   offer and return capability, and only then forwards the navigation request
+   over the current popup channel.
+3. The popup combines the exact fragment-free base URL with the protocol-owned
+   return URL/capability and application-owned opaque fragment fields, then
+   calls `location.replace()`.
+4. The external document performs its own work. To return, it replacement-
+   navigates to `/api/v1/ceremony/popup` on the original ceremony-server origin
+   with the return capability and bounded opaque result in the fragment.
+5. Popup return mode clears that fragment before subresources, storage, errors,
+   or network access, consumes the prepared signaling record, and opens a fresh
+   RTC channel to the iframe.
+6. The iframe forwards the opaque result to the authenticated application. The
+   application commits it before acknowledging delivery; the popup may then
+   close.
+
+Navigation intentionally destroys the original popup document and RTC channel.
+That closure is expected protocol progress, not cancellation or transport
+failure. The return offer is prepared first so no opener, surviving worker,
+external-origin storage access, or signaling server is needed after navigation.
+
+CCDP interprets neither fragment payload. It owns only canonical framing,
+version, ceremony and return correlation, exact byte bounds, fixed return path,
+one-use capability, and delivery acknowledgement. The caller owns target and
+result codecs. A target base URL must be canonical HTTPS with no credentials or
+fragment. Any query is composition-owned public routing/configuration and may
+not duplicate opaque fragment bytes. Return always uses the current ceremony
+server's fixed popup path. Unknown, duplicate, expired, oversized, or
+post-terminal navigation traffic changes no state.
+
 ## Ceremony lifecycle
 
 ```mermaid
@@ -314,6 +360,18 @@ sequenceDiagram
             I-->>A: Event from active prover
         end
         I-->>A: Deliver proof from active prover
+    end
+
+    opt Application requests an external-document detour
+        A->>I: Navigate popup with opaque fragment
+        I->>I: Prepare fresh return offer and capability
+        I->>P: Navigate popup
+        P->>P: Replace through external document
+        P->>P: Return to fixed popup route and clear fragment
+        Note over I,P: Establish fresh one-use RTCDataChannel
+        P-->>I: Opaque navigation result
+        I-->>A: Opaque navigation result
+        A->>I: Result committed
     end
 ```
 
@@ -359,6 +417,8 @@ The eventual closed message union needs only these semantic groups:
 - OAuth-return delivery;
 - proof request;
 - platform event and proof delivery;
+- isolated-popup navigation request, opaque return, and committed
+  acknowledgement;
 - user cancellation; and
 - technical abort.
 
@@ -367,6 +427,7 @@ The eventual closed message union needs only these semantic groups:
 - OAuth-return delivery after the authenticated channel opens;
 - proof request when the popup is the active prover;
 - platform event and proof delivery;
+- external-document navigation and opaque return delivery on a fresh channel;
 - cancellation; and
 - technical abort.
 
@@ -415,6 +476,13 @@ interruption before proof delivery starts a new ceremony.
   communications relay.
 - Proof generation runs only when the active document reports
   `crossOriginIsolated === true`.
+- Navigation targets are canonical HTTPS URLs without credentials or a prior
+  fragment; return always uses the fixed ceremony popup path, and neither
+  opaque payload enters a request body, cookie, signaling record, or server
+  log.
+- The iframe prepares the exact one-use return offer before instructing the
+  popup to navigate. The returned document cannot reuse the destroyed channel
+  or claim another ceremony's return slot.
 - The popup is never frameable; the iframe is frameable only by configured
   application origins.
 - Cross-origin modules, workers, WebAssembly, circuits, and CRS resources meet
@@ -451,6 +519,9 @@ CCDP conformance covers:
 - unchanged OAuth-return transport and credential confinement;
 - continuous platform events in both placements;
 - proof, denial, cancellation, technical failure, and silent context loss;
+- isolated-popup navigation through an external origin, first-script return
+  fragment clearing, fresh-channel result delivery, acknowledgement, replay,
+  expiry, and one-byte-over bounds;
 - popup non-frameability and mandatory proof isolation; and
 - the real nested proving asset graph under COEP in supported browsers.
 
@@ -468,3 +539,4 @@ Tests should assert one property per stable identifier in
 | Always-isolated popup | Makes credential ingress uniform and provides the portable prover placement | All supported browsers provide qualified embedded document isolation |
 | Shared proof engine, separate documents | Avoids code duplication while preserving opposite framing policies | Browser response policy can vary safely without separate documents |
 | One-shot ceremonies | Avoids credential persistence, replay, migration, and recovery state | Recovery has a separately justified user case and protocol revision |
+| Opaque popup navigation | Lets a composition add a post-proof top-level authority step without an opener, relay, extra window, or CCDP dependency on wallet policy | No launch composition needs a cross-origin post-proof step |
