@@ -54,15 +54,10 @@ sequenceDiagram
     P->>O: Navigate through platform authorization
     U->>O: Approve or deny
     O-->>P: Return to callback alias
-    P->>R: Load one prover iframe and inspect isolation
     P-->>C: Request opener authentication
     C->>P: Authenticate and transfer MessagePort
     P-->>C: Deliver OAuth return through port
-    alt Prover iframe is qualified
-        P->>R: Transfer port directly
-    else Top-level prover required
-        P->>R: Hand off port and navigate same popup
-    end
+    P->>R: Hand off port and navigate same popup to isolated prover
     alt User denied
         C-->>R: Cancel through port
         C-->>A: IdentityResult denied
@@ -143,9 +138,9 @@ Individual platform leaves never import the aggregator. `popup` and `prover`
 are build entrypoints, not separately versioned packages. They emit `libid-ceremony-popup.js`,
 `libid-ceremony-prover.js`, and immutable worker/WASM assets from one compatible
 package release. The prover artifact runs in both Window and Service Worker
-contexts: its Window branch runs prefetch or the one active iframe/top-level
+contexts: its Window branch runs iframe prefetch or the one active top-level
 prover, while its Service Worker branch owns shared asset single flights,
-cache, and the short-lived top-level CCDP port handoff. `prover/notarization` is an internal leaf shared by
+cache, and the short-lived CCDP port handoff. `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
 Server implementations are outside the package. The GitHub version's prover
@@ -187,7 +182,7 @@ The package-facing API surface is:
 | `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/popup` | [browser entrypoint](POPUP.md) which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared popup document |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch owns package-private asset-prefetch single flights and the immediate top-level-fallback port handoff |
+| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch owns package-private asset-prefetch single flights and the immediate callback-to-prover port handoff |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.

@@ -207,8 +207,7 @@ The shared popup response uses:
 - `Cache-Control: no-store` and `Referrer-Policy: no-referrer`;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
-- `frame-src 'self'` only for prover prefetch and the one post-callback prover
-  iframe;
+- `frame-src 'self'` only for prover prefetch;
 - `connect-src 'self'`;
 - `style-src` permitting only the exact hash of the stylesheet text installed
   by the immutable popup root;
@@ -219,14 +218,12 @@ The shared popup response uses:
 ## Prover document
 
 `GET /api/v1/ceremony/prover` serves one deployment-generated response for all
-platforms and browser placements:
+platforms:
 
 - `#prefetch(ceremonyId, platformId, ceremonyVersion)` starts selected-profile
   asset prefetch;
-- a bare ceremony ID first qualifies one post-callback iframe; a qualified
-  iframe receives the application port and proves in place, while an
-  unqualified iframe receives no credential and the same URL is then loaded as
-  the top-level isolated prover.
+- a bare ceremony ID is accepted only in the popup's promoted top-level
+  browsing context, where the isolated prover claims the application port.
 
 Fragments do not reach the server. Both roles therefore receive identical HTML,
 headers, embedded assets, and root module. A nonempty query is rejected; no
@@ -290,15 +287,11 @@ declare function startProver(
 ): void
 ```
 
-For a bare ceremony ID when `window.top !== window`, the clearing bootstrap
-reports `ProverPlacement` before importing the root or using the network. If
-qualified, it exact-matches one direct `DeliverProverPort`, imports the root,
-and supplies that port. If unqualified, it receives no port and imports
-nothing. For a bare ceremony ID when `window.top === window`, the bootstrap
-claims the matching port from the already-active worker before importing the
-root and supplies it as `port`.
-Prefetch supplies no port. Any other combination fails before package code or
-network use. The Service Worker branch installs its package-private cache and
+For a bare ceremony ID, the clearing bootstrap requires
+`window.top === window`, claims the matching port from the already-active worker
+before importing the root, and supplies it as `port`. Prefetch requires
+`window.top !== window` and supplies no port. Any other combination fails
+before package code or network use. The Service Worker branch installs its package-private cache and
 port-handoff handlers when the same root is evaluated in a worker and exports
 no protocol entrypoint.
 The prover root is also the module service-worker registration URL and permits
@@ -312,11 +305,9 @@ The prover response uses:
 
 - `Cross-Origin-Opener-Policy: same-origin`;
 - `Cross-Origin-Embedder-Policy: require-corp`;
-- `Document-Isolation-Policy: isolate-and-require-corp`;
 - `Content-Type: text/html` and `X-Content-Type-Options: nosniff`;
 - `Cache-Control: no-store` and `Referrer-Policy: no-referrer`;
-- same-origin framing only, for prefetch and qualified prover iframe
-  placements;
+- same-origin framing only, for the prefetch iframe;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, and `form-action 'none'`;
 - the exact root, worker, `blob:`, WebAssembly, and network sources needed by

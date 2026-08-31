@@ -22,16 +22,15 @@ server contract.
 
 ### Execution contexts
 
-The browser ceremony crosses three protocol roles. DIP means
-`Document-Isolation-Policy`; COOP means `Cross-Origin-Opener-Policy`. Both are
-HTTP response policies which application JavaScript cannot add to an already
-loaded document.
+The browser ceremony crosses three protocol roles. COOP means
+`Cross-Origin-Opener-Policy`; it is an HTTP response policy which application
+JavaScript cannot add to an already loaded document.
 
 | Context | Owns | Browser constraint |
 |---|---|---|
 | Application page | operation inputs, live `Ceremony`, durable application Job, final result commit | may be embedded into an application with its own headers and lifecycle; retains the popup `WindowProxy` through OAuth |
 | Ceremony popup/callback | OAuth navigation and return, opener authentication, and port transfer | remains top-level and non-isolated until it authenticates the application; its callback alias is the registered server-hosted `redirect_uri` |
-| Prover | credentials after callback, visible progress, and proof generation | runs in one DIP-qualified iframe when available, otherwise reuses the popup's top-level browsing context under COOP/COEP isolation |
+| Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
 No single document can satisfy the interactive constraints. The OAuth callback
 must preserve its cross-origin opener long enough to authenticate the
@@ -43,10 +42,9 @@ response-level property, not a library option.
 
 The **Ceremony Cross-Document Protocol (CCDP)** uses authenticated
 `window.postMessage` only to bootstrap one `MessagePort`. The callback sends
-the OAuth return through that port and loads one prover iframe. A qualified
-iframe receives the port directly. Otherwise it receives no credential, and
-the callback transfers the port to the prover Service Worker before navigating
-its existing popup to the same prover route as an isolated top-level document.
+the OAuth return through that port, transfers the port to the prover Service
+Worker, and navigates its existing popup to the prover route as an isolated
+top-level document.
 Messages sent while the port is held remain queued on the entangled application
 endpoint.
 
@@ -63,7 +61,7 @@ API or extension surface.
 | Decision | Constraint and rationale | Cost and revisit condition |
 |---|---|---|
 | Serve fixed popup and prover documents from the configured server | OAuth needs a registered callback document; isolation, Content Security Policy (CSP), allowed origins, and asset manifests are response properties | server must expose the documented routes; revisit only if browsers provide an authenticated callback and isolated-prover primitive without separate documents |
-| Prefer one DIP-qualified prover iframe, otherwise navigate the callback to the same top-level prover | DIP preserves the non-isolated popup, avoids navigation, and leaves a stable owner for any future popup transport; other browsers still require top-level COOP isolation | capability detection automatically adopts broader DIP support; the iframe reports only placement and never coordinates another prover, while the Service Worker carries the port only across fallback navigation |
+| Navigate the callback to the same top-level prover | one common-denominator path avoids placement negotiation while preserving one visible popup and the required isolation | costs one immediate same-origin navigation and Service Worker port handoff; a [Document Isolation Policy](https://github.com/WICG/document-isolation-policy) iframe may become an internal optimization when adoption across supported browsers or measured navigation cost justifies a second placement |
 | Reuse one ceremony popup across launch, provider navigation, callback, and proving | preserves user activation and one visible ceremony surface without a second popup or button | navigation destroys popup memory, so the application retains ceremony state and the transferred port carries later messages |
 | Use `MessagePort` after callback authentication | one capability gives ordered application/prover delivery without depending on the severed `WindowProxy` | adds one standard `MessageChannel`; revisit only if a supported browser cannot transfer it through the existing Service Worker |
 | Require provider navigation to preserve the opener through callback | callback authentication needs the retained cross-origin `WindowProxy`, and supported launch profiles are qualified against that behavior | a provider COOP policy which severs it fails closed; add another authenticated transport only for a demonstrated supported-provider requirement |
@@ -89,13 +87,12 @@ Configured server origin
     fixed URL-clearing bootstrap + libid-ceremony-popup.js
     non-isolated OAuth popup
               ├─ top-level navigation ── OAuth provider (and back)
-              ├─ port ── DIP-qualified /prover iframe, or
               ├─ port ── prover Service Worker ── port
               │         immediate same-popup /prover navigation
               ▼
   /api/v1/ceremony/prover
     libid-ceremony-prover.js + workers/WebAssembly (WASM)
-    one active isolated iframe or top-level prover with visible UI
+    one active isolated top-level prover with visible UI
               ├─ platform/notary/JWK-set network defined by platform version
               └─ optional server-owned same-origin platform route
 ```
@@ -118,19 +115,12 @@ window or tab is a browser choice, not a protocol mode.
 The initial popup's prover iframe activates the shared Service Worker and starts
 prefetch. After the provider callback authenticates the application, the app
 transfers one end of a fresh `MessageChannel`. The callback sends the OAuth
-return through that port and loads one `/api/v1/ceremony/prover#ceremonyId`
-iframe. After clearing its fragment, the iframe reports whether it has both
-cross-origin isolation and shared memory.
-
-If qualified, that iframe receives the port directly and becomes the one active
-prover. Otherwise it receives no port or credential: the callback hands the
-port to the worker and navigates the same top-level browsing context to the same
-prover URL, destroying the iframe. The top-level prover claims the port before
-importing its root module. This behavior probes capabilities rather than user
-agents and never runs or coordinates two provers. The worker retains no durable
-record and never holds the port across OAuth. See
+return through that port, hands the port to the worker, and navigates the same
+top-level browsing context to `/api/v1/ceremony/prover#ceremonyId`. The
+top-level prover claims the port before importing its root module. The worker
+retains no durable record and never holds the port across OAuth. See
 [launch and prefetch](#launch-and-prover-prefetch) and
-[prover placement and port handoff](#prover-placement-and-port-handoff) for ordering,
+[prover port handoff](#prover-port-handoff) for ordering,
 [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle) for caching, and
 [POPUP.md](POPUP.md) for popup behavior.
 
@@ -257,12 +247,12 @@ different allowed application occupying the opener receives neither the
 ceremony ID, port, nor redirect parameters. No callback-time storage record is
 needed.
 
-The callback gives placement and opener authentication one shared
-`REDIRECT_OPENER_TIMEOUT_MS = 30_000` setup deadline. Missing placement clears
-the captured return and renders the fixed prover-load failure. Missing valid
-`AppAuthenticateOrigin` clears it, severs the opener, and renders the same fixed
-unapproved-application result as an invalid opener origin. Neither failure
-releases a callback value or performs credential-bearing navigation.
+The callback gives opener authentication a
+`REDIRECT_OPENER_TIMEOUT_MS = 30_000` deadline. Missing valid
+`AppAuthenticateOrigin` clears the captured return, severs the opener, and
+renders the same fixed unapproved-application result as an invalid opener
+origin. It releases no callback value and performs no credential-bearing
+navigation.
 
 ### OAuth classification and proof dispatch
 
@@ -308,14 +298,9 @@ The composition's final Job CAS prevents a late result from producing an
 application effect. No separate OAuth state, job revision, composition
 discriminator, wallet state, or connector crosses this protocol.
 
-### Prover placement and port handoff
+### Prover port handoff
 
 ```ts
-interface ProverPlacement {
-  type: 'prover-placement'
-  placement: 'iframe' | 'top-level'
-}
-
 interface HoldProverPort {
   type: 'hold-prover-port'
   ceremonyId: string
@@ -338,19 +323,8 @@ interface DeliverProverPort {
 ```
 
 These records are package-private browser controls, not members of
-`CCDPMessage`. The callback creates one exact prover child before releasing the
-OAuth return. After clearing its fragment and before root import or network use,
-the child sends exactly one `ProverPlacement`. It selects `iframe` only when
-`crossOriginIsolated` is true and `SharedArrayBuffer` is available; otherwise it
-selects `top-level` and waits without receiving a port or credential.
-
-For `iframe`, in the same task that sends `PopupDeliverParams`, and without
-installing another CCDP receiver or yielding, the callback sends
-`DeliverProverPort(ceremonyId)` to that child with the authenticated port in the
-transfer list. The child exact-matches its cleared ceremony ID, starts the port,
-imports the prover root, and becomes the only active prover.
-
-For `top-level`, the same task instead sends `HoldProverPort` to the active
+`CCDPMessage`. In the same task that sends `PopupDeliverParams`, the callback
+sends `HoldProverPort` to the active
 registration returned by
 `navigator.serviceWorker.getRegistration('/api/v1/ceremony/')`, with the
 authenticated CCDP port and one temporary receipt port in the transfer list. It
@@ -371,11 +345,11 @@ with the CCDP port. Both temporary ports then close. Missing, expired, replayed,
 or malformed handoff state fails closed and renders the fixed prover-load
 failure; it does not start a fresh ceremony or recover through storage.
 
-The worker stores no OAuth return or proof input. On either placement,
-application replies sent after `PopupDeliverParams` remain ordered and queued
+The worker stores no OAuth return or proof input. Application replies sent
+after `PopupDeliverParams` remain ordered and queued
 while ownership moves, becoming the prover's first input. Service Worker
 lifetime is required only for one acknowledged, immediate same-origin
-navigation on the top-level path—not provider consent time.
+navigation—not provider consent time.
 
 ### Progress and proof delivery
 
@@ -467,20 +441,14 @@ sequenceDiagram
     C-->>A: Forward ProverPrefetchingAssets unchanged
     Note over A,C: Application navigates the retained popup through OAuth
     Note over A,C: Callback popup loads and clears the OAuth return
-    C->>P: Load one /prover#ceremonyId iframe
-    P-->>C: ProverPlacement
     C-->>A: PopupRequestAuthentication(ccdpVersion)
     A->>C: AppAuthenticateOrigin(ceremonyId) + MessagePort
     C-->>A: PopupDeliverParams(oauthReturn) through port
-    alt Prover iframe is qualified
-        C->>P: DeliverProverPort + CCDP port
-    else Top-level prover required
-        C->>S: HoldProverPort + CCDP port
-        S-->>C: ProverPortHeld
-        C->>P: Navigate same popup to /prover#ceremonyId
-        P->>S: ClaimProverPort
-        S-->>P: DeliverProverPort + CCDP port
-    end
+    C->>S: HoldProverPort + CCDP port
+    S-->>C: ProverPortHeld
+    C->>P: Navigate same popup to /prover#ceremonyId
+    P->>S: ClaimProverPort
+    S-->>P: DeliverProverPort + CCDP port
     alt Application does not proceed
         A-->>P: AppCancelCeremony through port
     else Application requests proof
@@ -510,8 +478,8 @@ The selected platform/version client leaf alone interprets their transport and
 fields. The popup has no platform config.
 
 After `AppAuthenticateOrigin`, the authenticated application channel is bound
-to one ceremony; transferring that exact port directly to the qualified child
-or through the ceremony-ID-keyed worker handoff preserves the binding. Later
+to one ceremony; transferring that exact port through the ceremony-ID-keyed
+worker handoff preserves the binding. Later
 messages therefore omit the ID. Unknown, duplicate, out-of-order,
 post-terminal, or off-channel messages change no state.
 

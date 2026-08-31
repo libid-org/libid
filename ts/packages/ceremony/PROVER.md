@@ -6,7 +6,7 @@ progress steps, release assets, proving toolchain, service-worker prefetch and
 port handoff, cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
-[ARCHITECTURE.md](ARCHITECTURE.md). Cross-document placement and messages are
+[ARCHITECTURE.md](ARCHITECTURE.md). Cross-document handoff and messages are
 defined by [CCDP.md](CCDP.md). The integrating server's prover route, embedded
 `ProverAssets`, and response headers are defined in [SERVER.md](SERVER.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
@@ -18,8 +18,8 @@ Normative proof relations and authorization semantics remain in the
 ## Component boundary
 
 One dual-context `libid-ceremony-prover.js` artifact serves one prover document
-and its Service Worker. The document has two phases and at most one active
-post-callback placement:
+and its Service Worker. The document has two modes and exactly one active
+post-callback location:
 
 ```text
 Before OAuth
@@ -30,10 +30,8 @@ Before OAuth
 
 After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
-    one fresh iframe checks isolation
-      ├── qualified: receives the CCDP port, joins the same fetches, and proves
-      └── unqualified: receives no credential and is destroyed when the same
-          popup navigates to /prover and claims the port
+    same popup navigates here as a top-level document
+      └── claims the CCDP port, joins the same fetches, and proves
 
 Shared Service Worker
 ├── immutable-asset and CRS single flights survive document replacement
@@ -41,9 +39,9 @@ Shared Service Worker
 ```
 
 These are modes of one document and Window entrypoint: the prefetch grammar is
-explicit, while a bare ID first checks whether its current iframe can prove and
-otherwise runs as the top-level prover. OAuth navigation prevents reuse of the
-first iframe; the worker and browser caches preserve its fetch work.
+explicit, while a bare ID is accepted only by the top-level prover. OAuth
+navigation prevents reuse of the first iframe; the worker and browser caches
+preserve its fetch work.
 
 After the server bootstrap clears the URL, the Window branch starts through the
 single internal entrypoint defined by the [server contract](SERVER.md#prover-document).
@@ -327,10 +325,9 @@ CCDP event, or change a timeout. Terminal cleanup removes the timer and notice.
 
 The UI is package-owned and accepts no application markup or renderer.
 
-On terminal cleanup, a top-level prover calls `window.close()`, while a
-qualified child calls its same-origin `parent.close()`. If the ceremony popup
-remains open, the active prover view renders the fixed safe fallback itself;
-closing does not require another CCDP message or popup relay.
+On terminal cleanup, the prover calls `window.close()`. If the ceremony popup
+remains open, the prover view renders the fixed safe fallback itself; closing
+does not require another CCDP message or popup relay.
 
 ## Shared toolchain and assets
 
@@ -484,7 +481,7 @@ A later ceremony reuses every repeated artifact URL and the same CRS entries;
 only missing profile assets are fetched. OAuth navigation therefore neither
 restarts shared work nor downloads unrelated profiles. The prefetch iframe,
 callback popup, and active prover remain in the same origin and worker
-registration, so either final placement reuses the same fetches and caches.
+registration, so the final prover reuses the same fetches and caches.
 
 A new document reconnects to the worker rather than awaiting a Promise owned
 by a destroyed prefetch document. Worker termination after completion is
@@ -516,10 +513,10 @@ toolchain origins. Direct cross-origin worker construction, an unknown nested
 worker, opaque or partial fetches, mutable aliases, and an unisolated or
 single-threaded fallback fail closed.
 
-The qualified iframe or top-level document runs the same multithreaded prover
-configuration. An unqualified iframe receives no credential and performs no
-proving work. No unisolated or single-threaded fallback changes platform
-semantics, workers, cache policy, or proof output.
+The top-level document runs the multithreaded prover configuration only after
+confirming cross-origin isolation and shared memory. No unisolated or
+single-threaded fallback changes platform semantics, workers, cache policy, or
+proof output.
 
 ## Compatibility
 

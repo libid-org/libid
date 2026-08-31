@@ -3,15 +3,14 @@
 This document defines the browser participant emitted as
 `libid-ceremony-popup.js`. The same fixed, non-isolated document runs before
 OAuth and at the configured provider callback. It preserves and authenticates
-the application opener, transfers one CCDP port, and runs one qualified prover
-iframe or promotes the same popup to the isolated prover without storing a
-ceremony.
+the application opener, transfers one CCDP port, and promotes the same popup to
+the isolated prover without storing a ceremony.
 
 The exact cross-document records and their order are defined by
 [CCDP](CCDP.md). The server-owned HTML bootstrap, callback alias, embedded
 allowlist, and response headers are defined by the
 [server contract](SERVER.md#popup-document-and-callback-alias). Prover
-placement and execution are defined in [PROVER.md](PROVER.md). This document
+execution is defined in [PROVER.md](PROVER.md). This document
 owns only the popup participant's local lifecycle.
 
 ## Component boundary
@@ -23,8 +22,7 @@ The popup owns:
 - retaining `window.opener` until exact callback authentication;
 - starting selected-profile prefetch before OAuth;
 - authenticating a returned callback before releasing its parameters;
-- selecting one prover placement and handing off one application
-  `MessagePort`; and
+- handing one application `MessagePort` through the prover Service Worker; and
 - script-owned native transition UI, one-shot cleanup, and navigation.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
@@ -77,9 +75,8 @@ initial launch
   validate launch -> start prover prefetch -> report readiness -> OAuth navigation
 
 provider callback
-  load one prover iframe -> inspect placement -> authenticate opener -> bind port
-    -> release OAuth return -> transfer port to the iframe, or
-       hand it to the Service Worker and navigate the same popup
+  authenticate opener -> bind port -> release OAuth return
+    -> hand port to the Service Worker -> navigate the same popup to /prover
 ```
 
 OAuth navigation destroys all initial-launch memory. No in-memory transition,
@@ -96,17 +93,16 @@ no state.
 | Phase | Accepts and emits | Popup side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| Prover placement | one child `ProverPlacement` | accept one same-server-origin result in the active placement phase; otherwise keep the child credential-free for automatic top-level promotion |
 | Callback authentication | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` with one port → `PopupDeliverParams` | validate exact opener/source/origin/ID, bind the port, and release the unchanged return through it |
-| Prover handoff | direct `DeliverProverPort`, or `HoldProverPort` → `ProverPortHeld` | transfer the bound port to the qualified child, or to the active worker before replacing this document with `/api/v1/ceremony/prover#ceremonyId` |
+| Prover handoff | `HoldProverPort` → `ProverPortHeld` | transfer the bound port to the active worker before replacing this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 popup never constructs the provider URL. After callback it releases no value
-until authentication succeeds and placement is known. The shared
-`REDIRECT_OPENER_TIMEOUT_MS = 30_000` setup deadline clears the return and
-renders the fixed prover-load failure for missing placement, or severs the
-opener and renders the fixed unapproved-application result for missing valid
-authentication.
+until authentication succeeds. The `REDIRECT_OPENER_TIMEOUT_MS = 30_000`
+deadline clears the return, severs the opener, and renders the fixed
+unapproved-application result when valid authentication does not arrive.
+Failure to hand the bound port to the worker renders the fixed prover-load
+failure instead of navigating.
 
 The popup has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
@@ -120,9 +116,8 @@ The server document contains only an empty mount point. The popup module bundles
 its stylesheet and inline libID logo and renders its initial, callback, and
 fixed failure views. The bundled logo is static inline vector markup with no
 external reference. The popup shell has no proving progress model or activation
-button. On the iframe path, the full-size child owns the visible proving UI; on
-the top-level path, the callback view lasts only until the acknowledged port
-handoff.
+button. The callback view lasts only until the acknowledged port handoff; the
+top-level prover then owns the visible proving UI.
 
 The popup accepts no application markup or renderer. The clearing bootstrap may
 render only a fixed textual load failure after clearing the URL.
@@ -131,7 +126,7 @@ A sanitized `AbortCeremony.reason` is diagnostic input to the application, not
 arbitrary popup markup.
 
 Terminal cleanup clears retained query and fragment bytes, removes the prover
-prefetch or untransferred placement child, listeners, and untransferred ports,
+prefetch child, listeners, and untransferred ports,
 severs references which are no longer needed, and attempts to close. If closing
 fails, the document renders one fixed safe fallback. No terminal history or
 recovery record is written.
