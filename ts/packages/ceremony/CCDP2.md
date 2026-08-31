@@ -1,16 +1,16 @@
 # Ceremony Cross-Document Protocol replacement draft
 
 This document defines the browser protocol connecting an application, its
-persistent ceremony iframe, and the OAuth popup returned to the ceremony
-server. It is a clean replacement candidate for [CCDP.md](CCDP.md), not a
-deployed wire-protocol version. If accepted before launch, the first shipped
-protocol can still use version `1`.
+ceremony bridge, the OAuth callback popup, and the isolated prover. It is a
+clean replacement candidate for [CCDP.md](CCDP.md), not a deployed
+wire-protocol version. If accepted before launch, the first shipped protocol
+can still use version `1`.
 
-The document settles the browser topology, transport, authentication,
-lifecycle, and security boundaries. Exact proving algorithms and proof types
-belong to [PROVER.md](PROVER.md); exact route bytes and response headers belong
-to [SERVER.md](SERVER.md). Wire message names and schemas should be frozen only
-after this lifecycle is accepted.
+The document settles topology, transport, authentication, lifecycle, and
+security boundaries. Exact proving algorithms and proof types belong to
+[PROVER.md](PROVER.md); exact route bytes and response headers belong to
+[SERVER.md](SERVER.md). Exact message and signaling schemas follow this
+lifecycle rather than defining it indirectly.
 
 ## Purpose and scope
 
@@ -20,532 +20,543 @@ to the application as ordinary library behavior:
 - OAuth returns by navigating a registered server-hosted callback; and
 - multithreaded browser proving requires a cross-origin-isolated document.
 
-The protocol must continue after an OAuth provider severs the popup's opener
-and browsing-context group. It must also:
+The protocol must continue when an OAuth provider severs the popup's opener and
+browsing-context group. It must also:
 
-- require no communication relay;
+- keep the normal signaling path browser-local and use a signaling service only
+  as a fallback;
 - require no route or script on the application origin;
 - preserve application-visible progress and terminal results;
-- add no window beyond the existing OAuth popup;
-- work when the application and ceremony server are different origins;
-- support Safari, Firefox, and Chromium without browser detection; and
-- keep callback and proof data off communication relays and durable signaling
-  storage; and
-- let the application navigate the isolated popup through one external
-  document and receive its fragment result without recovering an opener.
+- use only the one popup opened for OAuth;
+- work when the application and ceremony server are cross-origin or cross-site;
+- support Safari, Firefox, and Chromium without browser detection;
+- keep OAuth returns, prover inputs, events, and proofs off cookies and
+  signaling services; and
+- let the application navigate the popup through an external document and
+  receive its fragment result without recovering an opener.
 
 CCDP does not define OAuth profile rules, proof construction, transaction
-submission, application Jobs, wallet policy, or server implementation.
+submission, application Jobs, wallet policy, or signaling-service
+implementation.
 
-## Participants and documents
+## Participants and topology
 
 | Participant | Responsibility |
 |---|---|
-| Application | Supplies ceremony inputs, opens the provider, owns application state, and receives events and the final proof |
-| Ceremony Client | Package code running in the application; owns the public API and the authenticated iframe channel |
-| Ceremony iframe | Persistent server-origin `/api/v1/ceremony/prover` document; authenticates the application, prepares each ceremony, prefetches assets, owns signaling, and proves when DIP supplies isolation |
-| Ceremony popup | Server-origin `/api/v1/ceremony/popup` document, also served through the configured OAuth callback alias; receives the OAuth return, establishes the popup channel, renders visible ceremony UI, and proves when the iframe cannot |
+| Application | Supplies ceremony inputs, opens the provider, owns application state and the application RTC peer, and receives events and the final proof |
+| Ceremony Client | Package code running in the application; owns the public API, ceremony state, transport selection, and RTC reconnection |
+| Ceremony bridge | Bare server-origin iframe embedded by the application; authenticates its parent, starts best-effort public-asset prefetch, and exposes same-site cookie signaling when available; it never owns RTC or ceremony data |
+| Ceremony popup | Visible, non-isolated `/api/v1/ceremony/popup` controller, also served through the callback alias; clears the OAuth return, owns the popup RTC peer and UI, and embeds the prover |
+| Prover | `/api/v1/ceremony/prover` running either as an isolated child of the popup or, after replacement navigation, as the isolated top-level document in the same popup window |
+| Signaling service | Fallback exchange for authenticated signaling records when direct and cookie signaling are unavailable; it never carries CCDP data messages |
 | OAuth provider | Displays provider authorization and navigates the popup to the registered callback |
-| Ceremony server | Serves fixed ceremony documents and configured assets; it does not relay CCDP messages or proof bytes |
+| Ceremony server | Serves fixed ceremony documents and configured assets; it may expose or configure the fallback signaling service but never relays OAuth or proof data |
 
 ```text
-Application
-    │ authenticated postMessage
+Application and Ceremony Client
+    │
+    │ direct RTCDataChannel
     ▼
-Ceremony iframe ◄──────── RTCDataChannel ────────► Isolated ceremony popup
-    │                                                  │
-    └── prove when DIP isolates it                     └── otherwise prove here
+Visible /popup controller
+    │
+    ├── /prover iframe when DIP isolates it
+    │
+    └── replacement-navigation to top-level /prover otherwise
+
+Application ──postMessage── Ceremony bridge ──cookies── /popup or /prover
+                                      fallback signaling only
 ```
 
-The application never communicates directly with the popup. The iframe is the
-only ceremony participant embedded by the application and the only participant
-which reports events or results to it.
+The RTC peer belongs to the application page, not its bridge iframe. Mobile
+Safari may suspend a background iframe while a popup is foreground, so an
+iframe-owned connection cannot be the ceremony data plane. The bridge may be
+suspended after negotiation without affecting an established connection.
+
+Proof generation always runs in the visible popup's document tree. An
+application-level iframe may prefetch public assets, but never performs proving.
+This avoids the mobile throttling observed when the foreground popup was active
+while the prover ran under the background application page.
 
 ## Deployment and trust boundary
 
-### Same-site launch prerequisite
+The application and ceremony server may be different origins and different
+schemeful sites. Deployment does not require application-origin callback code.
 
-The application and ceremony server may be different origins, but launch
-requires them to be the same **schemeful site**. In practice,
-`https://app.example.com` and `https://ceremony.example.com` qualify;
-`https://one.vercel.app` and `https://two.vercel.app` do not because
-`vercel.app` is a public suffix. A scheme change also changes the site.
+Three signaling paths provide progressively broader compatibility:
 
-Same-site deployment allows the embedded iframe and returned top-level popup
-to exchange browser-local signaling despite storage partitioning in supported
-browsers. It does not grant application authority. The iframe still
-exact-validates the browser-observed application origin against the server's
-configured allowlist, and the application exact-validates the ceremony-server
-origin.
+1. direct `postMessage` when the callback retains its opener;
+2. browser-local cookie signaling when the application and ceremony server can
+   share the server's cookies; and
+3. an authenticated signaling service otherwise.
 
-The server rejects an `allowedAppOrigins` deployment entry which is not
-same-site with its configured public origin. This is a compatibility admission
-rule, not application authentication. Runtime signaling failure still fails
-without attempting a weaker transport.
+The first two paths are communication-relay-free. The signaling service is a
+fallback for cross-site deployment, partitioned storage, or provider isolation.
+It learns bounded network metadata and may delay or drop negotiation, but
+signaling records are capability-authenticated and its modification cannot bind
+a peer to another ceremony. It never receives an OAuth return, proof request,
+progress event, proof, or external-navigation payload.
 
-The ceremony server is trusted to serve the popup, iframe, and prover code. A
+Same-site deployment remains useful because it preserves the local cookie
+fallback even after COOP severs the opener. It is no longer an admission rule:
+the server must not reject an allowed application merely because it is
+cross-site.
+
+The ceremony server is trusted to serve the bridge, popup, and prover code. A
 script compromised on that exact origin already controls OAuth credentials and
-proof generation; CCDP does not claim to protect against it.
+proof generation; CCDP does not claim to protect against it. A separately
+operated signaling service is not granted that trust.
 
-### Future cross-site deployment
-
-The RTC data plane is independent of web origins and sites after negotiation.
-Only browser-local signaling imposes the launch same-site restriction. Future
-cross-site support can therefore replace signaling without changing proof or
-application messages.
-
-A future revision requires either a durable cross-site browser primitive or an
-explicit signaling service with a separately reviewed trust and availability
-model. Partitioned storage, short-lived Service Workers, application-origin
-return pages, and another retained window do not satisfy the launch
-requirements. No speculative fallback is included now.
+The initial signaling capability is derived under a CCDP domain separator from
+the unpredictable ceremony ID already carried as OAuth `state`; no additional
+OAuth field is introduced. The signaling service receives only a lookup digest
+and capability-authenticated opaque records, not the ceremony ID or capability.
+The application and returned popup independently derive the same value. Every
+later connection uses a fresh random capability delivered over the preceding
+authenticated RTC channel and carried to the replacement document only in its
+cleared fragment. Exact derivation and record encoding are part of the signaling
+schema freeze.
 
 ## Document topology and response policies
 
-### Persistent ceremony iframe
+### Ceremony bridge
 
-One `/api/v1/ceremony/prover` iframe is created when a `CeremonyClient` is
-initialized and remains alive for that client's lifetime. It:
+One bare ceremony-server iframe may be created when a `CeremonyClient` is
+initialized. It:
 
-- establishes the authenticated application channel once;
-- creates independent signaling state for each ceremony;
-- begins selected-platform prefetch before provider authorization completes;
-- owns the WebRTC peer offered to the returned popup;
-- forwards popup events and results to the application; and
-- runs the prover itself when `crossOriginIsolated === true`.
+- authenticates its exact parent source and browser-observed application origin;
+- receives only bounded ceremony ID, platform, and version preparation data;
+- starts best-effort selected-platform prefetch;
+- retains one-use cookie signaling state when the browser exposes the same
+  server cookies to the callback; and
+- forwards signaling records between its authenticated parent and those
+  cookies.
 
-The iframe is frameable only by configured application origins. Its response
-requests Document Isolation Policy so supporting browsers may isolate it
-without requiring the application page to opt into COOP and COEP.
+It never receives the OAuth return, proof request, platform event, proof, or
+wallet payload. It owns no `RTCPeerConnection`. Cookie unavailability or later
+iframe suspension selects another signaling path rather than affecting proof
+execution.
 
-### Isolated ceremony popup
+The bridge is frameable only by configured application origins and has no
+network authority beyond immutable public assets and the configured signaling
+fallback. Its exact route is fixed by the server contract when the signaling
+schemas are frozen.
+
+### Ceremony popup
 
 The application opens the OAuth provider directly. A transient `about:blank`
 window may reserve user activation for scripted launch, but it is not a libID
 document or protocol participant.
 
 The provider returns to the configured callback alias of
-`/api/v1/ceremony/popup`. That response is always top-level, non-frameable, and
-cross-origin isolated. Its first script clears the callback query and fragment
-before loading subresources, reporting errors, or performing network access.
-The popup then establishes WebRTC with the iframe and either delegates proving
-to an isolated iframe or proves itself.
+`/api/v1/ceremony/popup`. The response is top-level, non-frameable, and
+deliberately **not** cross-origin isolated so a retained opener can provide the
+fast signaling path. Its first script copies and clears the callback query and
+fragment before loading subresources, reporting errors, storage access, or
+network access.
 
-The popup and iframe import the same proof-engine implementation. They remain
-different HTTP documents because their embedding policies are opposite: the
-iframe must be frameable by an allowed application, while the credential
-ingress popup must never be frameable. Response policy, not duplicated proving
-code, creates the distinction.
+Provider-set COOP may already have severed `window.opener`, `WindowProxy`, and
+the original browsing-context group. CCDP treats opener presence as an
+optimization and falls back to cookie or service signaling. Provider CSP, COEP,
+sandbox, document policy, and origin isolation do not carry into the later
+server-owned popup response.
 
-Provider-set COOP may sever `window.opener`, `WindowProxy`, transferred ports,
-and the original browsing-context group. CCDP depends on none of them after
-provider navigation. Provider CSP, COEP, sandbox, document policy, and origin
-isolation apply to the provider document and do not carry into the later
-server-owned callback response.
+The popup renders the persistent libID ceremony UI. It loads `/prover` as a
+same-origin child, forwards one accepted proof request to it, and forwards
+platform events and the proof to the application over RTC. The popup itself
+does not prove.
 
-The same popup route also has a fragment-selected return mode. It is the same
-static response and response policy, not another endpoint. In this mode its
-first script copies and clears the bounded return fragment, consumes the
-prearranged one-use signaling record, establishes a fresh RTC channel with the
-iframe, and forwards the opaque return bytes. It performs no OAuth parsing or
-proving.
+The same popup route also has a fragment-selected external-return mode. It
+clears the bounded fragment first, reconnects to the application through a
+fresh signaling capability, and delivers the opaque return. It performs no
+OAuth parsing or proving in that mode.
+
+### Prover
+
+`/api/v1/ceremony/prover` is one implementation and one response policy with
+two placements:
+
+- as a same-origin iframe under `/popup`, where Document Isolation Policy may
+  make it cross-origin isolated; or
+- as the top-level document reached by replacement-navigation of the same popup
+  window, where COOP and COEP provide isolation.
+
+Its framing policy permits only the server's own popup origin. In both
+placements it checks `crossOriginIsolated === true` and shared-memory support
+before receiving credentials or starting proof work. The same platform module,
+workers, assets, UI events, and proof type are used in either placement.
+
+When embedded isolation is unavailable, the prover requests top-level
+placement. The popup does not open another window or show a **Continue proving**
+button. It waits for the application to prepare reconnection, then navigates the
+existing popup window to `/prover`.
 
 ## Transport
 
-CCDP uses one transport per trust boundary.
-
 ### Why WebRTC is necessary
 
-Authenticated `postMessage` would be the simpler and more appropriate
-iframe/popup transport. It already provides browser-stamped sender origins and
-exact `targetOrigin` delivery, needs no ICE, SDP, mDNS, or signaling storage,
-and is sufficient for every CCDP message.
+Authenticated `postMessage` is the simpler and more appropriate popup
+transport. It provides browser-stamped sender origins and exact `targetOrigin`
+delivery without ICE, SDP, STUN, or signaling state.
 
-CCDP uses WebRTC only because a provider response may apply COOP which switches
-the popup into another browsing-context group and invalidates the retained
-`WindowProxy`. The security purpose of that switch is to remove the broader
-cross-origin window surface used by cross-site leaks and to permit process
-isolation; losing `postMessage` is not itself required for either property. The
-[standards discussion](https://github.com/whatwg/html/issues/6364) describes
-this loss as an artifact of COOP's current model, and the experimental
-`restrict-properties` policy demonstrated the intended smaller boundary by
-retaining only `postMessage` and `closed`. That policy is not part of the
+CCDP uses WebRTC because a provider or the top-level prover may apply COOP,
+switch the popup into another browsing-context group, and invalidate the
+retained `WindowProxy`. The security purpose of that switch is to reduce the
+cross-origin window surface and permit process isolation; losing `postMessage`
+is an artifact of COOP's current model. The
+[standards discussion](https://github.com/whatwg/html/issues/6364) and
+experimental `restrict-properties` policy demonstrate the missing narrower
+primitive, but that policy is not part of the
 [interoperable HTML COOP values](https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies).
 
-WebRTC and browser-local signaling are therefore a compatibility workaround
-for the absence of a portable postMessage-only cross-group opener capability,
-not a preferred transport abstraction. A broadly supported equivalent replaces
-them without changing CCDP messages or trust decisions.
+WebRTC is therefore a compatibility workaround, not a preferred abstraction. A
+broadly supported postMessage-only cross-group capability could replace it
+without changing ceremony data messages or trust decisions.
 
-### Application to iframe
+### Application to popup or top-level prover
 
-The application and persistent iframe use `postMessage`. Every accepted
-message requires:
+The application and current visible ceremony document use one ordered
+`RTCDataChannel`. It carries:
 
-- the exact expected `MessageEvent.source`;
-- the exact browser-stamped origin;
-- the supported CCDP version;
-- the expected lifecycle position; and
-- an exact closed message shape.
-
-The application sends with the configured server `targetOrigin`; the iframe
-sends only to the origin it observed and admitted during authentication. An
-origin supplied in message data, a URL, `Referer`, or `Sec-Fetch-Site` is never
-an authority input.
-
-### Iframe to popup
-
-The iframe and returned popup use one `RTCDataChannel` per ceremony. WebRTC is
-used because it remains available after browsing-context isolation and carries
-structured protocol data without a server relay. The channel transports:
-
-- the captured OAuth return;
-- proof dispatch when the popup is the prover;
+- the unchanged captured OAuth return;
+- the proof request;
 - platform progress events;
-- cancellation and technical failure; and
-- proof delivery.
+- cancellation and technical failure;
+- proof delivery; and
+- isolated external-navigation commands, results, and acknowledgement.
 
-The data channel uses the browser's authenticated DTLS connection. CCDP still
-binds negotiation to its own ceremony capability because WebRTC does not
-expose or authenticate a web origin to its peer.
+The channel uses browser DTLS. CCDP additionally binds each negotiation to one
+live ceremony, one connection purpose, and one one-use capability because
+WebRTC does not expose or authenticate a web origin to its peer.
 
-### Local ICE connectivity
+The application is always one RTC endpoint. The other endpoint is initially
+`/popup`; it is replaced by top-level `/prover` only when embedded isolation is
+unavailable. No RTC connection terminates in the application bridge or embedded
+prover.
 
-Both peers run in the same browser on the same device. Launch creates
-`RTCPeerConnection({ iceServers: [] })`: it configures no STUN or TURN service
-and therefore sends no ceremony traffic through an ICE relay.
+### Popup to embedded prover
 
-Connectivity relies on browser-generated host ICE candidates. Browsers may
-hide their local addresses behind randomized `.local` candidates, so the path
-also relies on the browser's
-[mDNS ICE-candidate](https://datatracker.ietf.org/doc/html/draft-ietf-rtcweb-mdns-ice-candidates)
-publication and resolution working between the two local contexts. mDNS
-establishes local reachability; it authenticates neither the web origin nor the
-ceremony. The ceremony capability, exact signaling match, and DTLS fingerprints
-retain those roles.
+The popup and its exact same-origin `/prover` child use `postMessage` or one
+transferred `MessagePort`. Both endpoints exact-check source, origin, protocol
+version, message shape, and lifecycle position. Only proof request, platform
+event, proof delivery, cancellation, and technical failure cross this local
+boundary.
 
-If the browser produces no viable host candidate pair or cannot resolve its
-mDNS candidates, the ceremony fails the RTC handshake. It does not add a
-public STUN/TURN server or fall back to relayed protocol traffic.
+The popup retains ceremony authority. A prover child cannot select another
+ceremony, platform, version, client, redirect, or OAuth return.
 
-### Browser-local signaling
+### Trickle ICE and STUN
 
-The iframe is the offerer and creates a fresh data channel, SDP offer, and
-32-byte capability for each ceremony. The popup is the answerer. Launch uses a
-bounded, expiring, one-use, host-only same-site record to move the offer from
-the embedded server-origin iframe to the returned server-origin popup and the
-answer back. ICE gathering completes before each side publishes its record, so
-CCDP needs no trickle-candidate channel.
+The peers use trickle ICE with a configured STUN server. Each side publishes
+its local description immediately, then republishes a monotonically growing
+candidate snapshot as candidates appear, followed by an explicit completion
+marker. A receiver may observe duplicate snapshots or skip intermediate ones;
+it accepts only an exact extension of the current generation.
 
-Signaling contains only routing, protocol, capability, and SDP data. It never
-contains the OAuth return, prover input, progress, or proof. The server is not
-used as a signaling API and does not interpret the records. The precise
-browser-storage encoding and bounds must be qualified by the browser PoC
-before the wire protocol is frozen.
+Trickle ICE lets an available host or mDNS candidate connect immediately and
+does not wait for the STUN lookup. Server-reflexive candidates provide the
+general path when mobile browsers cannot resolve mDNS candidates or would
+otherwise request local-network permission. STUN receives network metadata but
+no CCDP payload; DTLS protects the resulting data channel.
 
-## Handshakes
+TURN is not required for signaling. It may be added later as an ICE-connectivity
+fallback if measurements show that direct candidate pairs fail materially.
 
-The client-lifetime application handshake and ceremony-lifetime popup
-handshake authenticate different things and must not be collapsed.
+### Signaling selection
 
-### Application and iframe authentication
+The popup is the offerer and the application is the answerer. All signaling
+paths carry the same bounded, capability-bound offer/answer and cumulative
+candidate snapshots.
 
-The handshake runs once for a `CeremonyClient`:
+1. **Direct.** A popup with a live opener requests signaling through
+   `postMessage`. The application accepts only the exact configured
+   ceremony-server origin and either its retained popup source or, for native
+   anchor launch, the first source atomically bound to the matching live
+   ceremony. Both sides then exchange snapshots event-by-event.
+2. **Cookie.** If direct signaling is unavailable, the server-origin popup and
+   authenticated bridge exchange the latest cumulative snapshots through
+   bounded, expiring, host-only cookies. Polling may miss a write but not a
+   candidate because every value is cumulative. The bridge forwards snapshots
+   to the application; it never owns the peer.
+3. **Service.** If cookie signaling is unavailable or fails, both endpoints use
+   the signaling service. Records are one-use, expiring, capability-
+   authenticated, and opaque to the service. Delivery may be event-driven; the
+   exact service API belongs to the server contract.
 
-1. The iframe announces its supported CCDP version to `parent`.
-2. The client accepts only the configured server origin and exact iframe
-   `WindowProxy`.
-3. The client replies using the exact server `targetOrigin`.
-4. The iframe accepts only `MessageEvent.source === parent` and an observed
-   origin in its server-embedded application allowlist.
-5. Both endpoints bind that source, origin, and version for the iframe's
-   lifetime.
+A deployment which cannot rely on the cookie path arms its one-use service
+subscription before provider navigation: after a severed opener there is no
+remaining browser-local event with which the popup could wake the application.
+The subscription carries no signaling record until needed and is discarded if
+direct signaling wins. A same-site deployment with a qualified cookie bridge
+does not contact the signaling service on its normal path.
 
-The handshake authorizes the application to create ceremonies. It does not
-bind one ceremony ID and is not repeated after OAuth.
+The first successful path fixes the signaling mode for that connection. Late
+records from another path are ignored. Signaling is deleted or invalidated when
+the channel opens, fails, expires, or is superseded.
 
-### Per-ceremony preparation
+Signaling never contains the OAuth return, proof request, progress, proof, or
+external-navigation payload. The service is a signaling relay, never a CCDP
+data relay.
 
-For each ceremony:
+## Connection establishment
 
-1. The client sends the ceremony ID, platform, selected platform ceremony
-   version, and proof request inputs over the authenticated iframe channel.
-2. The iframe exact-validates the request and rejects a duplicate live ID.
-3. It creates the ceremony-scoped WebRTC offer and capability.
-4. It publishes the one-use offer record.
-5. It starts the selected platform's prefetch without awaiting completion.
-6. It tells the client that provider navigation may begin.
+### Initial callback connection
 
-Shared prover dependencies may already be warm from an earlier ceremony. The
-iframe fetches no unrelated platform circuit merely because it is persistent.
+OAuth `state` carries the ceremony ID used to select the live application
+ceremony. After first-script URL clearing:
 
-### Popup authentication
-
-OAuth `state` carries the ceremony ID needed to select the signaling record.
-After callback URL clearing:
-
-1. The popup extracts exactly one syntactically valid ceremony ID from the
+1. `/popup` extracts exactly one syntactically valid ceremony ID from the
    bounded OAuth return.
-2. It consumes the matching offer record and exact-validates its protocol
-   version, ceremony ID, expiry, and capability.
-3. It creates and publishes the answer record, repeating those bound values.
-4. The iframe consumes only the exact expected answer and applies it to the
-   ceremony's peer connection.
-5. `RTCDataChannel.onopen` completes popup authentication.
-6. Both offer and answer records are deleted; later duplicates are rejected.
+2. It tries direct signaling when an opener remains, otherwise starting at the
+   cookie path. Failure advances to the next available path.
+3. The popup creates the offer and data channel; the application creates the
+   answer. Both trickle cumulative candidates.
+4. Each side exact-validates ceremony, connection purpose, capability, expiry,
+   description, candidates, and DTLS fingerprint continuity.
+5. `RTCDataChannel.onopen` completes binding. Signaling state is consumed.
+6. The popup's first ceremony-data message carries the unchanged OAuth return.
 
-Possession of the host-only record identifies code executing on the configured
-ceremony-server host. The capability prevents concurrent ceremonies from
-crossing channels, while the SDP fingerprints bind the encrypted peer
-connection. No claimed origin is transported over WebRTC.
+The Ceremony Client selects the live platform/version parser and classifies the
+return as acceptance, provider denial, or invalid input. The popup neither
+classifies provider fields nor releases them through a signaling path.
 
-The popup's first data-channel message carries the unchanged bounded OAuth
-return. The iframe forwards it to the authenticated client for the selected
-platform/version parser to classify as acceptance, provider denial, or invalid
-input.
+### Embedded proving
 
-### Isolated popup navigation and return
+The popup starts the child prover and public-asset prefetch as early as its
+cleared callback page permits. The child reports readiness and whether it is
+isolated without receiving the OAuth return.
 
-After the popup channel is authenticated, the application may request one
-external-document detour without access to the severed `WindowProxy`:
+After the client accepts the OAuth return, it sends the exact proof request. If
+the child is isolated, the popup forwards the request once. The child emits
+platform events followed by one proof or a technical abort; the popup forwards
+those records over the existing RTC channel. This path uses one RTC connection.
 
-1. The application sends the target HTTPS URL and bounded opaque fragment bytes
-   to the authenticated iframe.
-2. The iframe validates the request, creates and publishes a fresh one-use RTC
-   offer and return capability, and only then forwards the navigation request
-   over the current popup channel.
-3. The popup combines the exact fragment-free base URL with the protocol-owned
-   return URL/capability and application-owned opaque fragment fields, then
-   calls `location.replace()`.
-4. The external document performs its own work. To return, it replacement-
-   navigates to `/api/v1/ceremony/popup` on the original ceremony-server origin
-   with the return capability and bounded opaque result in the fragment.
-5. Popup return mode clears that fragment before subresources, storage, errors,
-   or network access, consumes the prepared signaling record, and opens a fresh
-   RTC channel to the iframe.
-6. The iframe forwards the opaque result to the authenticated application. The
-   application commits it before acknowledging delivery; the popup may then
-   close.
+### Top-level proving fallback
 
-Navigation intentionally destroys the original popup document and RTC channel.
-That closure is expected protocol progress, not cancellation or transport
-failure. The return offer is prepared first so no opener, surviving worker,
-external-origin storage access, or signaling server is needed after navigation.
+If the child is not isolated, one popup still suffices, but two sequential RTC
+connections are required:
 
-CCDP interprets neither fragment payload. It owns only canonical framing,
-version, ceremony and return correlation, exact byte bounds, fixed return path,
-one-use capability, and delivery acknowledgement. The caller owns target and
-result codecs. A target base URL must be canonical HTTPS with no credentials or
-fragment. Any query is composition-owned public routing/configuration and may
-not duplicate opaque fragment bytes. Return always uses the current ceremony
-server's fixed popup path. Unknown, duplicate, expired, oversized, or
-post-terminal navigation traffic changes no state.
+1. The child sends the popup a top-level-placement request; the popup forwards
+   it to the application over the initial channel.
+2. The application creates a fresh one-use signaling capability with purpose
+   `top-level-prover` and prepares cookie and service fallback state.
+3. The application instructs the popup to navigate only after preparation
+   succeeds.
+4. The popup clears its retained proof input and replacement-navigates the same
+   window to `/api/v1/ceremony/prover`, carrying only the bounded reconnection
+   bootstrap in the fragment.
+5. Navigation destroys the initial popup document and RTC connection. Their
+   closure is expected progress, not cancellation.
+6. Top-level `/prover` clears the fragment first, establishes a fresh RTC
+   connection with the application through cookie signaling or the signaling
+   service, and proves only after isolation checks pass.
+7. The application resends its retained exact proof request. Events and the
+   proof return over the replacement channel.
+
+The ceremony ID remains constant, while each connection has a fresh purpose-
+bound capability. Once replacement begins, messages from the initial channel
+are inert. No credential, proof request, or proof is stored for navigation or
+sent through signaling.
+
+Avoiding this second connection would require a representative pre-OAuth DIP
+probe plus another registered callback mode, transient credential storage, or
+credential delivery over another transport. Launch accepts the extra handshake
+on the fallback path instead.
+
+### External-document navigation and return
+
+After proof delivery, the application may request one external-document detour:
+
+1. It prepares a fresh one-use return capability and signaling state.
+2. It sends the target canonical HTTPS URL and bounded opaque fragment bytes to
+   the current visible ceremony document over RTC.
+3. That document combines the fragment-free target with protocol-owned return
+   framing and calls `location.replace()`.
+4. The external document returns to `/api/v1/ceremony/popup` with the return
+   capability and opaque result in the fragment.
+5. Popup return mode clears the fragment first, establishes a fresh RTC channel
+   through cookie or service signaling, and sends the opaque result.
+6. The application commits the result before acknowledging it; the popup may
+   then close.
+
+CCDP interprets neither opaque payload. It owns only canonical framing,
+version, ceremony and return correlation, byte bounds, the fixed return path,
+one-use capability, and acknowledgement. A target base URL has no credentials
+or fragment. Unknown, duplicate, expired, oversized, or post-terminal traffic
+changes no state.
 
 ## Ceremony lifecycle
+
+### Embedded prover path
 
 ```mermaid
 sequenceDiagram
     participant A as Application and Ceremony Client
-    participant I as Persistent ceremony iframe
     participant O as OAuth provider
-    participant P as Isolated ceremony popup
+    participant P as /popup controller
+    participant V as Embedded /prover
 
-    Note over A,I: Client initialization
-    I-->>A: Supported CCDP version
-    A->>I: Authenticate client
-    Note over A,I: Source and exact origins are bound once
-
-    Note over A,I: Per-ceremony preparation
-    A->>I: Prepare ceremony
-    I->>I: Create RTC offer and start selected prefetch
-    I-->>A: Provider navigation ready
     A->>O: Open provider on user activation
     O->>P: Navigate to callback with OAuth return
-    P->>P: Clear callback URL
-    Note over I,P: Exchange one-use offer and answer through same-site signaling
-    I->>P: Open ceremony RTCDataChannel
-    P-->>I: Deliver unchanged OAuth return
-    I-->>A: Forward OAuth return
-
+    P->>P: Copy and clear callback URL
+    P->>V: Load prover and begin selected prefetch
+    Note over A,P: Signal directly, through cookies, or through service fallback
+    P->>A: Open initial RTCDataChannel
+    P-->>A: Deliver unchanged OAuth return
+    A->>A: Validate selected platform response
     alt Provider denial or invalid return
-        A->>I: Cancel ceremony
-        I-->>P: Cancel ceremony
-    else Accepted return
-        A->>I: Request proof
-        alt Iframe is cross-origin isolated
-            Note over I: Iframe proves with its prefetched state
-        else Iframe is not isolated
-            I-->>P: Request proof
-            Note over P: Popup proves in its isolated top-level document
-        end
+        A-->>P: Cancel ceremony
+    else Accepted return and embedded prover isolated
+        A->>P: Request proof
+        P->>V: Forward exact proof request
         loop Platform progress
-            P-->>I: Event when popup proves
-            I-->>A: Event from active prover
+            V-->>P: Platform event
+            P-->>A: Forward event
         end
-        I-->>A: Deliver proof from active prover
-    end
-
-    opt Application requests an external-document detour
-        A->>I: Navigate popup with opaque fragment
-        I->>I: Prepare fresh return offer and capability
-        I->>P: Navigate popup
-        P->>P: Replace through external document
-        P->>P: Return to fixed popup route and clear fragment
-        Note over I,P: Establish fresh one-use RTCDataChannel
-        P-->>I: Opaque navigation result
-        I-->>A: Opaque navigation result
-        A->>I: Result committed
+        V-->>P: Deliver proof
+        P-->>A: Forward proof
     end
 ```
 
-The diagram shows the popup proving branch for relayed events. When the iframe
-proves, it emits events and the proof directly to the application channel. The
-proof algorithm and result type are identical in either placement.
+### Top-level prover fallback
 
-The popup owns the visible proving status throughout callback handling and
-popup proving. When the iframe proves, it sends the same progress events over
-WebRTC so the popup can render matching status while the iframe forwards them
-to the application.
+```mermaid
+sequenceDiagram
+    participant A as Application and Ceremony Client
+    participant P as /popup controller
+    participant V as Embedded /prover
+    participant T as Top-level /prover
 
-## Proving placement
-
-Placement is a local runtime decision:
-
-- if the iframe observes `crossOriginIsolated === true`, it proves and reuses
-  its already initialized assets and workers;
-- otherwise, the always-isolated popup proves using the same proof engine and
-  cached immutable assets.
-
-CCDP never infers support from a browser name. Failure to obtain DIP isolation
-does not weaken the prover and requires no new user action. There is no second
-prover window, **Continue proving** button, isolation-request message, or
-BroadcastChannel relay.
-
-The popup remains isolated in both branches. This keeps callback ingress
-uniform and guarantees that the fallback placement is already available if
-iframe proving cannot start.
+    A->>P: Request proof on initial RTC
+    V-->>P: Request top-level placement
+    P-->>A: Forward placement request
+    A->>A: Prepare fresh purpose-bound signaling
+    A-->>P: Navigate to top-level prover
+    P->>T: Replacement-navigation with reconnection bootstrap
+    Note over A,P: Initial RTC closes as expected
+    Note over A,T: Signal through cookies, then service fallback
+    T->>A: Open replacement RTCDataChannel
+    A->>T: Resend retained proof request
+    loop Platform progress
+        T-->>A: Platform event
+    end
+    T-->>A: Deliver proof
+```
 
 ## Protocol surface
 
-One CCDP version covers both transports. A breaking message shape, ordering,
-or authentication change increments it; proof types and platform ceremony
-versions remain separate axes.
+One CCDP version covers ceremony data on direct, embedded-prover, and RTC
+boundaries. A breaking message shape, order, or authentication rule increments
+it; platform ceremony versions remain independent.
 
-The eventual closed message union needs only these semantic groups:
+The closed ceremony-data union needs only:
 
-### Application and iframe
-
-- client authentication and readiness;
-- ceremony preparation and provider-navigation readiness;
-- OAuth-return delivery;
+- unchanged OAuth-return delivery;
 - proof request;
 - platform event and proof delivery;
-- isolated-popup navigation request, opaque return, and committed
+- top-level-prover placement request and prepared-navigation command;
+- external-document navigation request, opaque result, and committed
   acknowledgement;
 - user cancellation; and
 - technical abort.
 
-### Iframe and popup
+Signaling snapshots, bridge commands, and signaling-service records form a
+separate closed signaling protocol. They cannot carry arbitrary CCDP messages.
+Prefetch status is local behavior, not a ceremony-data message.
 
-- OAuth-return delivery after the authenticated channel opens;
-- proof request when the popup is the active prover;
-- platform event and proof delivery;
-- external-document navigation and opaque return delivery on a fresh channel;
-- cancellation; and
-- technical abort.
+Every ceremony-scoped message carries its ceremony ID until a concrete channel
+is bound exclusively to that ceremony. The connection binding supplies the
+purpose and generation; ceremony data does not repeat signaling capabilities or
+SDP identifiers. Unknown, malformed, replayed, out-of-order, wrong-channel, or
+post-terminal messages change no state.
 
-Signaling records are not CCDP messages and do not share the data-channel
-union. Prefetch is iframe behavior initiated during preparation, not an
-independent cross-document protocol.
-
-Every ceremony-scoped message carries the ceremony ID until a concrete channel
-is bound exclusively to that ceremony. Unknown, malformed, replayed,
-out-of-order, off-channel, or post-terminal messages change no state. Adding a
-platform does not change CCDP: platform-specific values remain opaque at this
-boundary and are narrowed by the selected platform module.
+Adding a platform does not change CCDP. Platform-specific values remain opaque
+at this boundary and are narrowed by the selected platform module.
 
 ## Cancellation and failure
 
-Application cancellation travels through the iframe to the popup and active
-prover. It is best effort. The popup clears credentials and attempts to close;
-the iframe cancels reachable fetch and proving work.
+Application cancellation travels over the current RTC channel to the popup and
+active prover. It is best effort. Reachable proving work stops, credentials are
+cleared, and the visible document attempts to close.
 
-A popup or prover technical failure carries a bounded sanitized reason to the
-iframe, which terminates the ceremony and reports it to the client. Exact
-machine-readable reason codes may emerge from implementation experience; the
-protocol does not invent them before then.
+A popup or prover technical failure carries a bounded sanitized reason upstream.
+Exact machine-readable reason codes may emerge from implementation experience;
+the protocol does not invent them before then.
 
-Context loss may be silent. Popup closure, RTC disconnection, iframe removal,
+Context loss may be silent. Popup closure, RTC disconnection, bridge suspension,
 or visibility change is never success, denial, or explicit cancellation. The
-launch protocol is one-shot and has no OAuth or proof recovery checkpoint;
-interruption before proof delivery starts a new ceremony.
+initial RTC closing during prepared top-level navigation is the one expected
+transport replacement. The launch protocol otherwise remains one-shot and has
+no OAuth or proof recovery checkpoint.
 
 ## Security invariants
 
-- The iframe admits only an exact configured application origin observed on
-  the expected parent source.
-- The application admits only its exact iframe source at the configured
+- Direct signaling admits only the exact retained popup source and configured
   ceremony-server origin.
-- Each popup connection is bound to one live ceremony, one one-use capability,
-  and one SDP fingerprint pair.
-- Signaling state is bounded, expiring, one-use, deleted after consumption, and
-  contains no OAuth credential or proof material.
-- The protocol never depends on opener continuity after provider navigation.
-- Callback query and fragment are cleared before subresources, storage lookup,
+- The bridge admits only its exact parent source and a browser-observed origin
+  in the server-embedded allowlist.
+- Each RTC connection is bound to one live ceremony, one purpose, one one-use
+  capability, and one SDP fingerprint pair.
+- Cookie and service signaling state is bounded, expiring, one-use, and deleted
+  after consumption. It contains no ceremony data.
+- The signaling service cannot modify or cross two negotiations without failing
+  capability authentication. It remains able to delay or deny service.
+- The protocol never requires opener continuity after provider navigation.
+- Callback query and fragment are cleared before subresources, storage access,
   network access, error rendering, or logging.
-- The raw OAuth return reaches only the authenticated Ceremony Client for the
-  selected platform parser, then returns over the authenticated iframe channel
-  if proving proceeds. It is never placed in signaling storage or sent to a
-  communications relay.
-- Proof generation runs only when the active document reports
-  `crossOriginIsolated === true`.
+- The raw OAuth return reaches only the authenticated Ceremony Client and the
+  selected prover after validation. It never enters cookies or signaling.
+- Proof generation runs only in a document which reports
+  `crossOriginIsolated === true` and supports the required shared memory.
+- Top-level-prover navigation carries only reconnection bootstrap data. The
+  application resends the proof request after the replacement channel opens.
 - Navigation targets are canonical HTTPS URLs without credentials or a prior
-  fragment; return always uses the fixed ceremony popup path, and neither
-  opaque payload enters a request body, cookie, signaling record, or server
-  log.
-- The iframe prepares the exact one-use return offer before instructing the
-  popup to navigate. The returned document cannot reuse the destroyed channel
-  or claim another ceremony's return slot.
-- The popup is never frameable; the iframe is frameable only by configured
-  application origins.
-- Cross-origin modules, workers, WebAssembly, circuits, and CRS resources meet
-  the popup and iframe's COEP, CORS, CORP, MIME, and CSP requirements.
-- Duplicate, mixed, expired, or post-terminal ceremony traffic fails closed.
-- Popup closure and transport loss are never interpreted as protocol results.
+  fragment; return always uses the fixed popup path, and opaque payloads never
+  enter a request body, cookie, signaling record, or server log.
+- The popup is never frameable; `/prover` is frameable only by the ceremony
+  server's own popup origin.
+- Cross-origin modules, workers, WebAssembly, circuits, CRS resources, and STUN
+  configuration meet the prover's isolation and loading requirements.
+- Duplicate, mixed, expired, superseded, or post-terminal traffic fails closed.
+- Popup closure and unexpected transport loss are never interpreted as protocol
+  results.
 
 ## Browser and failure behavior
 
 Provider response headers are treated as adversarial. The design remains valid
-when a provider combines standardized policies which sever opener
-relationships, isolate its origin, restrict its own embedding or subresources,
-or disable communication APIs inside the provider document. The provider must
-still perform the registered callback navigation for OAuth to complete.
+when a provider combines standardized policies which sever opener relationships,
+isolate its origin, restrict its own embedding or subresources, or disable
+communication APIs inside the provider document. The provider must still
+perform the registered callback navigation for OAuth to complete.
 
-Same-site signaling is qualified in real Safari, Firefox, and Chromium. DIP is
-an optimization selected solely through `crossOriginIsolated`; its absence is
-the ordinary popup-proving path. Prefetch failure changes latency only. Asset
-or isolation-policy incompatibility fails proving rather than falling back to
-an unisolated execution mode.
+Signaling selection is capability-driven, not browser-name-driven. Embedded
+proving is selected only by the child's observed isolation state. Its absence is
+the ordinary automatic top-level-prover path, not a degraded proof mode.
+
+Trickle ICE with STUN is the general connectivity path. Host and mDNS candidates
+remain useful when available but are not required. A signaling-service failure
+after direct and cookie signaling are unavailable fails the ceremony without
+sending ceremony data through another channel.
 
 ## Conformance boundary
 
 CCDP conformance covers:
 
-- reciprocal application/iframe origin and source authentication;
-- rejection of cross-site deployment configuration;
-- concurrent ceremony separation and signaling replay rejection;
+- exact direct-signaling source and origin authentication;
+- same-site cookie signaling and partitioned-cookie failure;
+- cross-site signaling-service fallback, capability authentication, replay,
+  expiry, and denial;
+- trickle ICE with host, mDNS, and server-reflexive candidate paths;
 - return from a provider which has severed every opener-based channel;
-- WebRTC establishment after callback isolation;
-- same-device host ICE establishment with `iceServers: []`, including the
-  browser's mDNS-candidate path;
-- both DIP-iframe and popup proving placements;
+- direct application-to-popup RTC while the bridge is suspended;
+- embedded DIP proving in the foreground popup;
+- automatic one-window replacement by top-level `/prover`, expected initial
+  channel closure, fresh signaling, and proof-request resend;
 - unchanged OAuth-return transport and credential confinement;
-- continuous platform events in both placements;
+- continuous platform events and exact proof delivery in both placements;
 - proof, denial, cancellation, technical failure, and silent context loss;
-- isolated-popup navigation through an external origin, first-script return
-  fragment clearing, fresh-channel result delivery, acknowledgement, replay,
-  expiry, and one-byte-over bounds;
-- popup non-frameability and mandatory proof isolation; and
+- external-origin navigation, first-script return-fragment clearing,
+  fresh-channel delivery, acknowledgement, replay, expiry, and byte bounds;
+- popup non-frameability and mandatory prover isolation; and
 - the real nested proving asset graph under COEP in supported browsers.
 
 Tests should assert one property per stable identifier in
@@ -555,11 +566,13 @@ Tests should assert one property per stable identifier in
 
 | Decision | Reason | Revisit when |
 |---|---|---|
-| Persistent iframe | Gives the application one authenticated endpoint, starts prefetch early, and may reuse initialized assets for DIP proving | Measurement shows iframe proving or retained prefetch has no useful benefit |
-| WebRTC data channel | Works around COOP severing the otherwise sufficient `postMessage` channel, without a server relay or additional window | A portable postMessage-only cross-group capability is broadly supported |
-| Same-site signaling | It is the only qualified relay-free way to reconnect the returned popup across supported browsers | A durable cross-site signaling primitive is broadly supported, or an explicit relay is accepted |
-| Direct provider launch | Removes the non-isolated libID popup phase and its second handshake | A provider requires a package-owned page before authorization |
-| Always-isolated popup | Makes credential ingress uniform and provides the portable prover placement | All supported browsers provide qualified embedded document isolation |
-| Shared proof engine, separate documents | Avoids code duplication while preserving opposite framing policies | Browser response policy can vary safely without separate documents |
+| Application-owned RTC peer | Background iframe RTC was suspended while proving in foreground on mobile Safari | Browsers provide a durable worker-owned peer that survives the required transitions |
+| Non-isolated `/popup` controller | Preserves the direct event-driven signaling path while keeping credentials in the visible package-owned page | A portable isolated page can retain authenticated opener messaging |
+| Foreground `/prover` | Avoids throttling under the background application and keeps progress visible | Measurements show equivalent foreground scheduling elsewhere |
+| Embedded prover with automatic top-level fallback | Uses DIP without depending on it and preserves one popup with no extra click | All supported browsers provide qualified embedded isolation |
+| Two sequential RTC connections on top-level fallback | Avoids credential storage, credential relay, and speculative DIP preflight | Fallback frequency and reconnection latency become material |
+| Direct, cookie, then service signaling | Keeps the common path event-driven and local while supporting severed-opener and cross-site cases | A portable browser-local cross-site signaling primitive exists |
+| Trickle ICE with STUN | Avoids waiting for full gathering and removes dependence on unreliable mobile mDNS | Browser host connectivity alone becomes reliably portable |
+| Signaling-only service | Enables cross-site fallback without exposing ceremony data | A stronger browser primitive removes it or measurements justify TURN/data relay |
 | One-shot ceremonies | Avoids credential persistence, replay, migration, and recovery state | Recovery has a separately justified user case and protocol revision |
-| Opaque popup navigation | Lets a composition add a post-proof top-level authority step without an opener, relay, extra window, or CCDP dependency on wallet policy | No launch composition needs a cross-origin post-proof step |
+| Opaque popup navigation | Lets a composition add a post-proof authority step without another window or CCDP dependency on wallet policy | No launch composition needs a cross-origin post-proof step |
