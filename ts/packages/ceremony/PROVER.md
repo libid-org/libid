@@ -3,7 +3,7 @@
 This document defines the prover subsystem emitted by
 `@libid/ceremony/prover`: its input/output boundary, closed platform pipelines,
 progress steps, release assets, proving toolchain, service-worker prefetch and
-cache behavior, and worker graph.
+port handoff, cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document placement and messages are
@@ -18,8 +18,8 @@ Normative proof relations and authorization semantics remain in the
 ## Component boundary
 
 One dual-context `libid-ceremony-prover.js` artifact serves one prover document
-and its ServiceWorker. The document is instantiated in sequential browser
-placements:
+and its Service Worker. The document has two phases and at most one active
+post-callback placement:
 
 ```text
 Before OAuth
@@ -30,27 +30,29 @@ Before OAuth
 
 After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
-    fresh iframe joins the same fetches and either
-    ├── proves under DIP, or
-    └── coordinates /api/v1/ceremony/prover#<ceremonyId>
-        isolated top-level fallback window
+    one fresh iframe checks isolation
+      ├── qualified: receives the CCDP port, joins the same fetches, and proves
+      └── unqualified: receives no credential and is destroyed when the same
+          popup navigates to /prover and claims the port
 
-Shared ServiceWorker
-└── immutable-asset and CRS single flights survive document replacement
+Shared Service Worker
+├── immutable-asset and CRS single flights survive document replacement
+└── one in-memory port handoff spans only callback-to-prover navigation
 ```
 
 These are modes of one document and Window entrypoint: the prefetch grammar is
-explicit, while a bare ID uses iframe versus top-level placement to distinguish
-coordinator from fallback. OAuth navigation prevents reuse of the first iframe;
-the ServiceWorker and browser caches preserve its fetch work.
+explicit, while a bare ID first checks whether its current iframe can prove and
+otherwise runs as the top-level prover. OAuth navigation prevents reuse of the
+first iframe; the worker and browser caches preserve its fetch work.
 
 After the server bootstrap clears the URL, the Window branch starts through the
 single internal entrypoint defined by the [server contract](SERVER.md#prover-document).
-The same root evaluated as a ServiceWorker installs only its cache handlers and
-does not enter CCDP or a platform pipeline.
+The same root evaluated as a Service Worker installs only its cache and
+short-lived port-handoff handlers; it does not enter CCDP or a platform
+pipeline.
 
 The prover consumes one exact `AppRequestProof` after CCDP has authenticated
-the live ceremony and chosen a placement. It returns only bounded platform
+the live ceremony and transferred its port. It returns only bounded platform
 steps, one exact platform proof delivery, or a sanitized technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
@@ -309,13 +311,26 @@ their causal lifecycle remains a platform-ceremony-version change.
 
 ### Visible prover presentation
 
-The coordinator iframe renders no competing ceremony UI. When the prover runs
-as the user-visible isolated window, its root module renders the same persistent
-libID logo, milestone-progress bar and labels, and local 15-second slow-proving
-notice defined by the [popup presentation](POPUP.md#script-owned-presentation)
-and [slow-proving guidance](POPUP.md#slow-proving-guidance). This keeps the
-active window authoritative for progress when relay is missed. The UI is
-package-owned and adds no prover message, proof timeout, or result state.
+The active prover root renders the persistent inline libID logo and one
+accessible milestone-progress bar. Before the first event it shows
+**Preparing proof** with an empty active shimmer. Each valid platform event
+replaces the text label and moves only to its monotonic target; proof delivery
+alone reaches 100%. The renderer does not interpolate elapsed time or claim an
+ETA.
+
+If proving remains active after `SLOW_PROVING_HINT_MS = 15_000`, the view adds
+a nonblocking **Still proving** notice. It says that Vanadium users may
+optionally allow JavaScript JIT for this site through site controls for faster
+proving while keeping the current window open. It does not diagnose the cause,
+user-agent sniff, request permission, reload, cancel, weaken proving, emit a
+CCDP event, or change a timeout. Terminal cleanup removes the timer and notice.
+
+The UI is package-owned and accepts no application markup or renderer.
+
+On terminal cleanup, a top-level prover calls `window.close()`, while a
+qualified child calls its same-origin `parent.close()`. If the ceremony popup
+remains open, the active prover view renders the fixed safe fallback itself;
+closing does not require another CCDP message or popup relay.
 
 ## Shared toolchain and assets
 
@@ -410,14 +425,13 @@ prover document, whose Window branch registers its own deployed
 start only the selected platform/version profile's artifact single flights.
 There is no separate prefetch route, artifact, or mode flag.
 
-After registration, the Window branch addresses the newest available worker in
-`installing`, `waiting`, then `active` order. It does not wait for activation or
-send the request to an older active worker while an update is installing. It
-posts the exact selected profile and reports readiness without waiting for an
-acknowledgement, activation, or downloads. A worker which receives the request
+After registration, the Window branch selects the newest worker, waits for it
+to become active, posts the exact selected profile, and reports readiness
+without waiting for downloads. Worker activation is required because the same
+worker later carries the CCDP port; ordinary artifact fetching remains a
+best-effort latency optimization. A worker which receives the prefetch request
 exact-validates it and attaches the fetch work to the message event with
-`event.waitUntil`. This ordering avoids hidden-iframe WebKit activation
-throttling without adding a prefetch timeout.
+`event.waitUntil`.
 
 The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
@@ -432,8 +446,9 @@ closed platform implementation requires it, and combines those entries with
 the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
-The ServiceWorker branch contains no OAuth or application state. It owns each
-selected immutable asset fetch from the first byte, keys ordinary artifact
+The Service Worker branch contains no durable OAuth or application state. In
+addition to the short-lived port holder defined by CCDP, it owns each selected
+immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single
 flights, rejects a manifest conflict, and extends the initiating worker event
@@ -454,11 +469,12 @@ other request to the browser unchanged: ceremony routes, the GitHub token
 exchange, platform APIs, OAuth navigation, HTML, and configuration are never
 cached, rewritten, or synthesized by this worker.
 
-As soon as the registration/start attempt settles, without waiting for download
-completion, the prefetch child emits `ProverPrefetchingAssets`. Registration or
-startup failure records no weaker mode and leaves proving on the identical cold
-path. A later coordinator or prover window resolves the
-same profile using the exact `AppRequestProof` platform/version. Ordinary asset
+As soon as active-worker selection and the prefetch request settle, without
+waiting for download completion, the child emits `ProverPrefetchingAssets`.
+Registration or activation failure is terminal before OAuth because no later
+port handoff would be possible; artifact fetch failure records no weaker mode
+and leaves proving on the identical cold path. The active prover resolves
+the same profile using the exact `AppRequestProof` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
 asks the service worker to finish or restart the fixed CRS single flights;
 `Barretenberg.new({ srsSize: SRS_SIZE })` then reads the resulting bb.js
@@ -466,10 +482,9 @@ IndexedDB cache before proof generation.
 
 A later ceremony reuses every repeated artifact URL and the same CRS entries;
 only missing profile assets are fetched. OAuth navigation therefore neither
-restarts shared work nor downloads unrelated profiles. DIP iframe and
-top-level-window proving remain in the same origin and service-worker scope, so
-both placements reuse the same fetches and caches after COOP severs the
-fallback window's opener.
+restarts shared work nor downloads unrelated profiles. The prefetch iframe,
+callback popup, and active prover remain in the same origin and worker
+registration, so either final placement reuses the same fetches and caches.
 
 A new document reconnects to the worker rather than awaiting a Promise owned
 by a destroyed prefetch document. Worker termination after completion is
@@ -477,11 +492,11 @@ harmless because ordinary responses live in Cache Storage and completed CRS
 data lives in bb.js's IndexedDB cache; no separate durable completion marker
 exists.
 
-Registration, fetch, eviction, quota, or unsupported-worker failure changes
-latency only. A missing or malformed selected profile fails before OAuth;
-ordinary prefetch failure follows the identical selected-profile cold fetch
-path and never weakens isolation, worker count, or verification. Warm state is
-never a ceremony checkpoint.
+Registration, activation, and port-handoff failure are terminal. A missing or
+malformed selected profile also fails before OAuth. Fetch, eviction, or quota
+failure follows the identical selected-profile cold fetch path and changes
+latency only; it never weakens isolation, worker count, or verification. Warm
+state is never a ceremony checkpoint.
 
 ## Worker and network isolation
 
@@ -501,9 +516,10 @@ toolchain origins. Direct cross-origin worker construction, an unknown nested
 worker, opaque or partial fetches, mutable aliases, and an unisolated or
 single-threaded fallback fail closed.
 
-The DIP iframe and COOP-isolated window run the same multithreaded prover
-configuration. Placement changes CCDP transport, not platform semantics,
-workers, cache policy, or proof output.
+The qualified iframe or top-level document runs the same multithreaded prover
+configuration. An unqualified iframe receives no credential and performs no
+proving work. No unisolated or single-threaded fallback changes platform
+semantics, workers, cache policy, or proof output.
 
 ## Compatibility
 

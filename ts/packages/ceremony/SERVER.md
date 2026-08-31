@@ -73,7 +73,7 @@ An integrating server exposes:
 | `GET` | `/api/v1/ceremony/config` | always | public application configuration | server exact-checks request `Origin` against `allowedAppOrigins` and returns exact noncredentialed CORS |
 | `GET` | `/api/v1/ceremony/popup` | always | initial ceremony popup document | none at HTTP ingress; loaded popup exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
 | `GET` | configured callback path, default `/auth/v1/callback` | always | direct byte-identical alias of the popup document and registered OAuth `redirect_uri` | none at HTTP ingress; loaded popup performs the same browser-side check after provider return |
-| `GET` | `/api/v1/ceremony/prover` | always | shared prefetch, prover coordinator, and isolated-prover document | none at HTTP ingress; the fixed public document binds through CCDP and same-origin popup/prover channels after loading |
+| `GET` | `/api/v1/ceremony/prover` | always | shared prefetch and isolated-prover document | none at HTTP ingress; the fixed public document binds through the transferred CCDP port after loading |
 | `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | server requires `Origin` to equal the configured ceremony server origin and rejects cross-origin preflight |
 
 Server-side request-origin enforcement is used only where the browser reliably
@@ -207,7 +207,8 @@ The shared popup response uses:
 - `Cache-Control: no-store` and `Referrer-Policy: no-referrer`;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
-- `frame-src 'self'` only for the prover iframe;
+- `frame-src 'self'` only for prover prefetch and the one post-callback prover
+  iframe;
 - `connect-src 'self'`;
 - `style-src` permitting only the exact hash of the stylesheet text installed
   by the immutable popup root;
@@ -218,17 +219,18 @@ The shared popup response uses:
 ## Prover document
 
 `GET /api/v1/ceremony/prover` serves one deployment-generated response for all
-platforms and all three browser roles:
+platforms and browser placements:
 
 - `#prefetch(ceremonyId, platformId, ceremonyVersion)` starts selected-profile
   asset prefetch;
-- a bare ceremony ID creates the returned-popup coordinator when embedded and
-  the COOP-isolated fallback prover when top-level.
+- a bare ceremony ID first qualifies one post-callback iframe; a qualified
+  iframe receives the application port and proves in place, while an
+  unqualified iframe receives no credential and the same URL is then loaded as
+  the top-level isolated prover.
 
-Fragments do not reach the server. Every role therefore receives identical
-HTML, headers, embedded assets, and root module. A nonempty query is rejected;
-no server request parameter selects platform, role, isolation mode, asset, or
-CSP.
+Fragments do not reach the server. Both roles therefore receive identical HTML,
+headers, embedded assets, and root module. A nonempty query is rejected; no
+server request parameter selects platform, role, asset, or CSP.
 
 ### Embedded prover assets
 
@@ -276,19 +278,29 @@ cannot add or replace any URL.
 
 The bootstrap bounds and copies its fragment, clears it before storage,
 rendering, errors, module loading, or network activity, and then exact-validates
-the closed value and embedded `ProverAssets`. It imports the exact same-origin
-immutable `libid-ceremony-prover.js` root and passes both values to
-its Window entrypoint:
+the closed value and embedded `ProverAssets`. An executing branch imports the
+exact same-origin immutable `libid-ceremony-prover.js` root and passes its
+inputs to the Window entrypoint:
 
 ```ts
 declare function startProver(
   fragment: string,
   assets: ProverAssets,
+  port?: MessagePort,
 ): void
 ```
 
-The ServiceWorker branch installs its package-private handlers when the same
-root is evaluated in a worker and exports no protocol entrypoint.
+For a bare ceremony ID when `window.top !== window`, the clearing bootstrap
+reports `ProverPlacement` before importing the root or using the network. If
+qualified, it exact-matches one direct `DeliverProverPort`, imports the root,
+and supplies that port. If unqualified, it receives no port and imports
+nothing. For a bare ceremony ID when `window.top === window`, the bootstrap
+claims the matching port from the already-active worker before importing the
+root and supplies it as `port`.
+Prefetch supplies no port. Any other combination fails before package code or
+network use. The Service Worker branch installs its package-private cache and
+port-handoff handlers when the same root is evaluated in a worker and exports
+no protocol entrypoint.
 The prover root is also the module service-worker registration URL and permits
 a scope covering `/api/v1/ceremony/`; its response sets
 `Service-Worker-Allowed: /api/v1/ceremony/` when the script URL's default scope
@@ -298,12 +310,13 @@ does not already cover it. Popup and prover perform no configuration request.
 
 The prover response uses:
 
-- `Document-Isolation-Policy: isolate-and-require-corp`;
 - `Cross-Origin-Opener-Policy: same-origin`;
 - `Cross-Origin-Embedder-Policy: require-corp`;
+- `Document-Isolation-Policy: isolate-and-require-corp`;
 - `Content-Type: text/html` and `X-Content-Type-Options: nosniff`;
 - `Cache-Control: no-store` and `Referrer-Policy: no-referrer`;
-- same-origin framing only, for the DIP iframe placement;
+- same-origin framing only, for prefetch and qualified prover iframe
+  placements;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, and `form-action 'none'`;
 - the exact root, worker, `blob:`, WebAssembly, and network sources needed by

@@ -2,9 +2,10 @@
 
 This document defines the browser participant emitted as
 `libid-ceremony-popup.js`. The same fixed, non-isolated document runs before
-OAuth and at the configured provider callback. It preserves the application
-opener, owns the visible ceremony surface, and coordinates an isolated prover
-without storing a ceremony.
+OAuth and at the configured provider callback. It preserves and authenticates
+the application opener, transfers one CCDP port, and runs one qualified prover
+iframe or promotes the same popup to the isolated prover without storing a
+ceremony.
 
 The exact cross-document records and their order are defined by
 [CCDP](CCDP.md). The server-owned HTML bootstrap, callback alias, embedded
@@ -19,12 +20,12 @@ The popup owns:
 
 - classifying its already-cleared input as an initial launch or provider
   callback;
-- retaining `window.opener` and exact browser channel bindings;
+- retaining `window.opener` until exact callback authentication;
 - starting selected-profile prefetch before OAuth;
 - authenticating a returned callback before releasing its parameters;
-- creating and binding the post-callback prover coordinator;
-- relaying valid CCDP messages without interpreting platform proofs; and
-- script-owned native UI, one-shot transitions, cleanup, and best-effort closure.
+- selecting one prover placement and handing off one application
+  `MessagePort`; and
+- script-owned native transition UI, one-shot cleanup, and navigation.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
@@ -62,7 +63,7 @@ The popup accepts two closed inputs:
 
 The popup recognizes only enough callback grammar to find that single routing
 value. The application client's selected platform/version client leaf later
-classifies success, denial, transport placement, and fields. Unknown,
+classifies success, denial, query/fragment placement, and fields. Unknown,
 ambiguous, or malformed input enters a fixed terminal failure state without
 releasing the captured value or performing credential-bearing work. The server
 bootstrap rejects oversized input before package code runs.
@@ -76,8 +77,9 @@ initial launch
   validate launch -> start prover prefetch -> report readiness -> OAuth navigation
 
 provider callback
-  request opener authentication -> release OAuth return -> await app decision
-    -> cancel, or coordinate proving -> deliver proof / abort
+  load one prover iframe -> inspect placement -> authenticate opener -> bind port
+    -> release OAuth return -> transfer port to the iframe, or
+       hand it to the Service Worker and navigate the same popup
 ```
 
 OAuth navigation destroys all initial-launch memory. No in-memory transition,
@@ -94,90 +96,52 @@ no state.
 | Phase | Accepts and emits | Popup side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| Callback authentication | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` → `PopupDeliverParams` | create `/api/v1/ceremony/prover#ceremonyId`, address that server-origin child, validate exact opener/source/origin/ID, then release the unchanged return |
-| Application decision | `AppCancelCeremony` or byte-matching `AppRequestProof` | clean up, or forward the request once to the bound coordinator |
-| Isolation fallback | coordinator `ProverRequestIsolation` | show a real **Continue proving** anchor; the coordinator binds the user-opened window and forwards its retained request |
-| Active proving | `ProverNotifyEvent`, `ProverDeliverProof`, `AbortCeremony`, or `AppCancelCeremony` | validate and relay generic records; proof/abort is terminal and cancellation is best effort |
+| Prover placement | one child `ProverPlacement` | accept one same-server-origin result in the active placement phase; otherwise keep the child credential-free for automatic top-level promotion |
+| Callback authentication | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` with one port → `PopupDeliverParams` | validate exact opener/source/origin/ID, bind the port, and release the unchanged return through it |
+| Prover handoff | direct `DeliverProverPort`, or `HoldProverPort` → `ProverPortHeld` | transfer the bound port to the qualified child, or to the active worker before replacing this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 popup never constructs the provider URL. After callback it releases no value
-until authentication succeeds; failure or
-`REDIRECT_OPENER_TIMEOUT_MS = 30_000` clears the return, severs the opener, and
-renders the fixed unapproved-application result.
+until authentication succeeds and placement is known. The shared
+`REDIRECT_OPENER_TIMEOUT_MS = 30_000` setup deadline clears the return and
+renders the fixed prover-load failure for missing placement, or severs the
+opener and renders the fixed unapproved-application result for missing valid
+authentication.
 
-The popup addresses its exact coordinator child and accepts its messages only
-from the server origin in the expected phase; source equality is not required.
-It has no post-navigation platform config, so it cannot validate the
-platform, version, client, redirect, PKCE, or proof. It only byte-matches the
-echoed OAuth return and validates CCDP. The client and prover own the two
-platform-aware checks. Exact message ordering and fallback binding remain in
-[CCDP](CCDP.md); execution remains in [PROVER.md](PROVER.md).
-
-Progress is advisory and forwarded unchanged. Late output is ignored after a
-terminal transition, and popup closure alone is never a result.
+The popup has no post-navigation platform config, so it cannot validate the
+platform, version, client, redirect, PKCE, or proof. The client and prover own
+the platform-aware checks. Exact port binding and handoff remain in
+[CCDP](CCDP.md); execution and visible proving UI remain in
+[PROVER.md](PROVER.md).
 
 ### Script-owned presentation
 
 The server document contains only an empty mount point. The popup module bundles
-its stylesheet and inline libID logo and renders every view.
-
-Every package-rendered popup view displays the libID logo. The bundled logo is
-static inline vector markup with no external reference. During active proving,
-the popup displays exactly one primary proving affordance:
-
-- an accessibly labelled milestone-progress bar while a qualified prover is
-  working; or
-- the real **Continue proving** button while user activation is required to
-  open the isolated prover window.
-
-The validated platform label is inserted as text and its monotonic progress is
-the bar target. Before the first event the UI shows **Preparing proof** with an
-empty shimmer; proof delivery alone reaches 100%. The renderer neither invents
-progress nor presents it as an ETA.
-
-The button replaces the bar until activation. Afterwards popup and visible
-fallback render the same forwarded labels and progress; neither owns another
-percentage model.
+its stylesheet and inline libID logo and renders its initial, callback, and
+fixed failure views. The bundled logo is static inline vector markup with no
+external reference. The popup shell has no proving progress model or activation
+button. On the iframe path, the full-size child owns the visible proving UI; on
+the top-level path, the callback view lasts only until the acknowledged port
+handoff.
 
 The popup accepts no application markup or renderer. The clearing bootstrap may
 render only a fixed textual load failure after clearing the URL.
-
-### Slow-proving guidance
-
-The visible proving surface starts a local monotonic timer when active proving
-starts. On the DIP path this is when the popup dispatches `AppRequestProof`; a
-subsequent `ProverRequestIsolation` stops that timer while the UI waits for user
-activation. On the fallback path the popup restarts it when the user activates
-**Continue proving**, and the isolated prover window starts its own timer when
-it receives `AppRequestProof`.
-
-If proving remains active after `SLOW_PROVING_HINT_MS = 15_000`, the loading
-view adds a nonblocking **Still proving** notice. It says that Vanadium users may
-optionally allow JavaScript JIT for this site through site controls and
-permissions for faster proving, while keeping the current window open and
-continuing to wait. The hint does not claim JIT is the cause, user-agent sniff,
-request a permission, navigate, reload, cancel, or weaken proving. Enabling a
-site permission may help a later attempt; reloading the current one loses its
-one-shot ceremony.
-
-The timer and notice are presentation only. They emit no CCDP message or public
-`CeremonyEvent`, change no timeout, and do not affect proof authority. Success,
-failure, cancellation, or teardown removes the timer and notice.
 
 A sanitized `AbortCeremony.reason` is diagnostic input to the application, not
 arbitrary popup markup.
 
 Terminal cleanup clears retained query and fragment bytes, removes the prover
-child, listeners, and channels, severs references which are no longer needed,
-and attempts to close. If closing fails, the document renders one fixed safe
-fallback. No terminal history or recovery record is written.
+prefetch or untransferred placement child, listeners, and untransferred ports,
+severs references which are no longer needed, and attempts to close. If closing
+fails, the document renders one fixed safe fallback. No terminal history or
+recovery record is written.
 
 ## Validation ownership
 
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, embedded allowlist, and response policy | server bootstrap and response |
-| CCDP shape, direction, order, application source, internal server origin, phase, ceremony continuity, and echoed OAuth-return bytes | popup |
+| CCDP bootstrap shape, order, application source/origin, ceremony continuity, and exact port count | popup |
 | Popup source, server origin, CCDP version, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
 | Job authority and use of the returned Identity | application composition |
