@@ -31,7 +31,9 @@ The transport must:
 - require no additional top-level browsing context beyond the existing popup
   and no second user action;
 - keep active ceremony work in the visible popup without requiring the
-  application tab to remain visible or continuously scheduled; and
+  application tab to remain visible or continuously scheduled;
+- carry application-level messages directly between the two browser endpoints;
+  no server relays or stores them or terminates their channel; and
 - provide ordered bidirectional delivery across Safari, Firefox, and Chromium
   without browser-specific protocol branches or user-agent detection.
 
@@ -57,8 +59,9 @@ outcomes. Transport does not interpret any of them.
 - A carrier is selectable only after it authenticates both endpoints.
 - One transport admits at most one popup source, one carrier, and one
   cross-document continuation; losing races are inert.
-- Establishment, rendezvous, and continuity controls carry no transported
-  value. Cookies, durable storage, request data, and URLs carry none either.
+- Application-level messages travel only over the selected end-to-end carrier.
+  Establishment, rendezvous, and continuity controls carry none; neither do
+  cookies, durable storage, request data, or URLs.
 - A carrier may validate bounds and framing but cannot interpret, classify,
   synthesize, or alter a logical value.
 - Wrong, stale, duplicate, replayed, or post-close control messages cannot bind,
