@@ -14,9 +14,10 @@ and its unresolved [cross-group opener-messaging limitation](https://github.com/
 No known alternative to WebRTC satisfies the transport constraints after that
 severance: cross-site operation, current-engine support, mobile suspension, no
 application-origin endpoint, no additional window, and direct browser-local
-application messages. WebRTC is therefore the opener-independent fallback. Its
-signaling service establishes the peers but never relays application-level
-messages.
+application messages. WebRTC is therefore the available opener-independent
+fallback. Its signaling service establishes the peers but never relays
+application-level messages. A deployment without TURN accepts that direct ICE
+can fail on restrictive networks.
 
 ## Topology
 
@@ -44,10 +45,12 @@ the application answers.
 
 The signaling service is a bounded rendezvous, not a CCDP carrier. The
 application subscribes as answerer and the prover publishes as offerer under
-the same fresh, one-use ceremony ID. That random ID correlates requests but
-does not authenticate either role. The service exact-checks the application and
-ceremony-server origins; signaled DTLS fingerprints bind the resulting channel.
-No second ceremony nonce is added.
+the same fresh, unguessable, one-use ceremony ID. The ID is the rendezvous
+capability; the browser-stamped `Origin` restricts which browser role may present
+it but is not a general client credential. The service exact-checks the
+application and ceremony-server origins. Signaled DTLS fingerprints bind the
+resulting channel to the exchanged descriptions but do not independently
+authenticate the signaling service. No second ceremony nonce is added.
 
 The signaling contract accepts only:
 
@@ -57,12 +60,18 @@ The signaling contract accepts only:
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
-Records exact-match the caller-supplied application version, ceremony ID, role,
-and one live generation. They expire quickly, are consumed once, and never
-enter URLs, logs, analytics, or durable storage. The service may delay or deny
-the ceremony but cannot read DTLS-protected framed values. The configured
-server already supplies browser code, so signaling adds no second signature
-system.
+The live subscription exact-matches the caller-supplied application version,
+ceremony ID, and role and lasts only for that ceremony. Once RTC fallback starts,
+offer, answer, and candidate state is transient and is deleted when the channel
+opens, either side fails or disconnects, MessagePort wins, or the ceremony ends.
+Signaling records are consumed once and never enter signaling URLs, logs,
+analytics, or durable storage.
+
+An honest service is not on the data path and cannot read DTLS-protected framed
+values. A compromised service can replace exchanged fingerprints and
+man-in-the-middle the channel, but the signaling service is part of the same
+configured ceremony-server trust boundary that supplies both browser programs.
+It therefore adds no independent signature or trust system.
 
 The signaling service is selected over the available establishment mechanisms:
 
@@ -72,11 +81,11 @@ The signaling service is selected over the available establishment mechanisms:
 | Cookie or storage polling | Requires an additional ceremony-server iframe under the application and works only when application and ceremony server are same-site. Browser throttling made PoC signaling take more than one second, comparable to a service round trip, while still not covering cross-site deployments. |
 | `BroadcastChannel` or shared worker | Cannot reliably cross the origin and storage-partition boundary between application and ceremony server. |
 | Application endpoint or frontend-origin callback page | Can rendezvous the peers, but adds application-specific server or hosting integration that the deployment model excludes. |
-| TURN | Solves peer reachability rather than signaling and relays application messages, violating the browser-local transport constraint. |
+| TURN | Solves peer reachability rather than signaling. It relays encrypted DTLS/SCTP packets, placing a service on every packet path and violating the direct browser-local transport constraint, but does not terminate the data channel or read its plaintext. |
 
-The selected path therefore works when application and ceremony server are
-cross-site without turning the signaling service into an application-message
-relay.
+The selected path supports cross-site peers without turning the signaling
+service into an application-message relay. With STUN only, inability to form a
+direct ICE path fails the ceremony rather than selecting another carrier.
 
 ## API
 
@@ -97,29 +106,29 @@ interface WebRTCOptions {
 
 declare function connectApplicationWebRTC(
   options: WebRTCOptions,
-): Promise<RTCDataChannel>
+): Promise<Carrier>
 
 declare function connectCeremonyWebRTC(
   options: WebRTCOptions,
-): Promise<RTCDataChannel>
-
-declare function rtcDataChannelCarrier(channel: RTCDataChannel): Carrier
+): Promise<Carrier>
 ```
 
 `connectApplicationWebRTC` synchronously starts the bounded answerer
-subscription and returns a pending channel promise. It creates the answering
+subscription and returns a pending carrier promise. It creates the answering
 peer only after a valid offer arrives. `connectCeremonyWebRTC` creates the
 offering peer and data channel, publishes its offer and candidates, and consumes
-the answer and remote candidates. Each resolves only after its local channel
-opens. Internally they own every signaling request, trickled candidate update,
-origin-bound role, timeout, and cleanup operation.
+the answer and remote candidates. Each resolves with an authenticated carrier
+only after its local channel opens. Internally they retain the peer connection
+and channel and own every signaling request, trickled candidate update,
+origin-bound role, timeout, codec, framing, pressure, and cleanup operation.
 
-The application transport retains the first promise without awaiting it during
-OAuth. MessagePort selection aborts it. Under RTC selection each endpoint
-awaits its own operation, adapts its channel, and exposes only the common
-carrier API. Abort or establishment failure rejects, closes every reachable
-signaling and peer resource, and releases no transported value. No signaling
-API is exposed to CCDP or package consumers.
+The application transport observes and retains the first promise without
+awaiting it during OAuth, so an early failure produces no unhandled rejection.
+MessagePort selection aborts it. Under RTC selection each endpoint awaits its
+own operation and exposes only the common carrier API. Abort, carrier closure,
+or establishment failure closes every reachable signaling, peer, and channel
+resource and releases no transported value. No signaling API or native RTC
+resource is exposed to CCDP or package consumers.
 
 ## Peer establishment
 
@@ -130,14 +139,17 @@ the application answers. Neither peer sets `maxPacketLifeTime` nor
 Both use trickle ICE with deployment-configured STUN servers. They send each
 local description as soon as it exists and forward candidates as discovered.
 Host and mDNS candidates may connect immediately; server-reflexive candidates
-provide the mobile path without depending on mDNS resolution or local-network
+provide a mobile path without depending on mDNS resolution or local-network
 permission. ICE completion is diagnostic because the channel may open earlier.
+Launch configures no TURN server. Networks whose NAT or firewall prevents a
+direct path fail closed; this is an explicit availability tradeoff, not a
+transport downgrade or recovery signal.
 
-The selected SDP and DTLS fingerprints are immutable for the one generation.
+The selected SDP and DTLS fingerprints are immutable for the connection.
 Duplicate signaling records are idempotent; candidate records append only exact
 new candidates. Changed descriptions, roles, fingerprints, or accepted
 candidates fail. Signaling state is deleted when the channel opens, either side
-fails, MessagePort wins, or the bounded expiry passes.
+fails or disconnects, MessagePort wins, or the ceremony ends.
 
 ## Message delivery
 
@@ -145,10 +157,12 @@ fails, MessagePort wins, or the bounded expiry passes.
 accepts strings and binary buffers, not structured-clone objects. This carrier
 therefore owns one dependency-free wire codec in addition to bounded framing,
 reassembly, and send-buffer pressure. Its logical value domain is `null`,
-booleans, finite numbers, strings, arrays, plain records with own string keys,
-and `Uint8Array`. It rejects `undefined`, `bigint`, nonfinite numbers, functions,
-symbols, cycles, class instances, `Date`, `Map`, `Set`, raw `ArrayBuffer`, and
-other platform objects before sending.
+booleans, finite numbers other than negative zero, strings, dense arrays, plain
+records with enumerable own string-keyed data properties, and `Uint8Array`.
+It rejects `undefined`, `bigint`, nonfinite numbers, negative zero, sparse
+arrays or arrays with non-index properties, symbol or nonenumerable keys,
+accessors, functions, cycles, class instances, `Date`, `Map`, `Set`, raw
+`ArrayBuffer`, and other platform objects before sending.
 
 The codec recursively replaces each `Uint8Array` with the exact JSON object
 `{"$bytes":"<unpadded-base64url>"}`. `$bytes` is reserved and cannot be an
@@ -169,10 +183,10 @@ continuation:  0x00 | payload
 
 The first frame may complete the message. Otherwise continuation payloads append
 until exactly `totalLength` bytes have arrived. The carrier fragments below the
-browser's negotiated maximum and pauses its bounded send queue using
-`bufferedAmount` and `bufferedamountlow`. Ordering and the noninterleaving send
-queue remove the need for message IDs, chunk indexes, acknowledgements, or a
-checksum.
+retained peer connection's `RTCSctpTransport.maxMessageSize` and its own bounded
+chunk cap, and pauses its bounded send queue using `bufferedAmount` and
+`bufferedamountlow`. Ordering and the noninterleaving send queue remove the need
+for message IDs, chunk indexes, acknowledgements, or a checksum.
 
 On receipt the channel uses `binaryType = 'arraybuffer'`. The carrier exact-checks
 the frame sequence and total length, decodes UTF-8 fatally, parses JSON, restores
@@ -183,9 +197,9 @@ its registered `Decoder`; the carrier never reads a message discriminator.
 An unexpected start or continuation, incomplete or excess body, oversized
 message, invalid UTF-8 or JSON, malformed or noncanonical byte tag, unsupported
 value, decode failure, or send-buffer overflow closes the carrier before any
-value reaches a handler. Establishment returns the native `RTCDataChannel`;
-transport then wraps it. There is one connection, with no reconnection, carrier
-switch, or message resend.
+value reaches a handler. The connection functions return the carrier and retain
+the native peer and channel privately. There is one connection, with no
+reconnection, carrier switch, or message resend.
 
 ## Failure and security invariants
 
@@ -193,8 +207,11 @@ switch, or message resend.
   attestation, cancellation, or other transported value.
 - The application signaling handshake requires an allowed browser-stamped
   `Origin`; the prover handshake requires the exact ceremony-server origin.
-- Ceremony ID is fresh, unguessable, one-use, exact-matched to the live client
-  transport, and retired when either carrier wins.
+  Origin restricts browser callers but is not accepted as a standalone client
+  credential.
+- Ceremony ID is the fresh, unguessable, one-use rendezvous capability. It is
+  exact-matched to the live client transport and retired when either carrier
+  wins.
 - `RTCDataChannel` message encoding and framing are bounded and cannot add a
   value outside its authenticated connection.
 - Signaling loss, ICE failure, channel loss, popup closure, or context

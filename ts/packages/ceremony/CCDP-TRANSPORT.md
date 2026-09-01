@@ -50,8 +50,9 @@ Transport owns:
 - one-shot selection, navigation, closure, cleanup, and race resolution.
 
 Carriers own endpoint authentication, establishment, physical serialization
-where required, native framing, and delivery mechanics. Each caller-registered
-`Decoder` owns one message's structural decoding and routing discriminator.
+where required, native framing, resource cleanup, and delivery mechanics. Each
+caller-registered `Decoder` owns one message's structural decoding and routing
+discriminator.
 Callers own the permitted decoder set, protocol order, navigation destinations,
 route meanings, state transitions, and outcomes. Transport invokes decoding and
 dispatch but does not interpret the resulting message.
@@ -181,11 +182,11 @@ has no keeper, including a no-op implementation.
 
 ## Carriers
 
-A carrier is a transport-internal adapter from one native browser communication
-resource to the common `send`, `on`, and `close` operations. It owns
-endpoint authentication, establishment, and delivery mechanics. Each carrier
-defines the endpoint identities it accepts and returns its native resource only
-after authenticating both sides.
+A carrier is a transport-internal adapter from native browser communication
+resources to the common `send`, `on`, and `close` operations. It owns endpoint
+authentication, establishment, delivery mechanics, and its nontransferable
+native resources. Each carrier defines the endpoint identities it accepts and
+returns an adapter only after authenticating both sides.
 
 Transport selects and owns the resulting authenticated carrier. A carrier does
 not interpret transported values, choose another carrier, or navigate a
@@ -208,8 +209,9 @@ interface Carrier {
 }
 ```
 
-The adapter does not own navigation policy. Transport retains the native
-resource and invalidates its adapter when ownership moves or closes.
+The adapter does not own navigation policy. Transport retains a transferable
+`MessagePort` only when navigation moves ownership; the WebRTC carrier retains
+and closes its own peer and channel.
 
 ### Selection
 
@@ -237,9 +239,9 @@ Only MessagePort is transferable:
   queued value to the destination document; and
 - an established `RTCDataChannel` is never handed across navigation.
 
-The destination endpoint consumes the fallback value, establishes WebRTC
-through the already-started signaling subscription, adapts the resulting
-`RTCDataChannel`, and forwards that unchanged value first.
+The destination endpoint consumes the fallback value, establishes the WebRTC
+carrier through the already-started signaling subscription, and forwards that
+unchanged value first.
 
 ## Carrier continuity across document navigation
 
