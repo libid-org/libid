@@ -7,8 +7,9 @@ across document navigation.
 
 The launch-optimized shape is an ordinary browser tab running the application
 and one adjacent popup. The two documents may be cross-origin and cross-site.
-On mobile, the browser may present that popup as its own tab; only it may remain
-visible while the application tab is backgrounded or suspended.
+Mobile browsers are a launch-supported environment, not a degraded or optional
+mode. They may present the popup as its own tab; only it may remain visible
+while the application tab is backgrounded or suspended.
 
 ```text
 Application tab                              Ceremony popup
