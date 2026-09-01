@@ -1,13 +1,36 @@
 # CCDP transport
 
 This document defines the package-private transport used by the Ceremony
-Cross-Document Protocol (CCDP). It binds two browser endpoints, moves opaque
-values, selects a carrier, and preserves a transferable native resource across
-document navigation.
+Cross-Document Protocol (CCDP). It establishes a bidirectional communication
+channel between two browser documents, moves opaque values, selects a carrier,
+and preserves a transferable native resource across document navigation.
 
 [CCDP.md](CCDP.md) defines message shapes, directions, ordering, and handling.
 The [MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
 [WebRTC](CCDP-CARRIER-WEBRTC.md) documents define the two carriers.
+
+## Operating constraints
+
+The transport must:
+
+- work when its documents are cross-origin or cross-site;
+- continue when an intervening document or destination isolation policy severs
+  `window.opener`, its retained `WindowProxy`, transferred ports, or the
+  browsing-context group;
+- require no transport route, script, or server endpoint on the client origin;
+- use no additional window beyond the existing popup;
+- preserve ordered bidirectional values across Safari, Firefox, and Chromium
+  without browser or user-agent detection;
+- keep the normal MessagePort path browser-local and use the signaling service
+  only to establish the WebRTC fallback;
+- never send transported values through signaling, cookies, durable storage,
+  request data, or URLs; and
+- allow the popup to cross an external document and enter an isolated document
+  without requiring another user action or recovering its opener.
+
+The signaling service is a bounded control-plane fallback, not a data relay. It
+may delay or prevent connection establishment but never receives the values
+carried by the resulting channel.
 
 ## Boundary
 
