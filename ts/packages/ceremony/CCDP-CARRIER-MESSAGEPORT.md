@@ -89,7 +89,7 @@ The request may use an unrestricted target origin because it contains no
 capability or application value. The response targets the exact callback origin.
 Application-level delivery starts only on the authenticated port.
 
-## API and timing
+## API
 
 The endpoints have different operations because the client is armed before
 provider navigation while the returned callback exists only afterward:
@@ -114,13 +114,22 @@ declare function bindCallbackMessagePort(options: {
 declare function messagePortCarrier(port: MessagePort): Carrier
 ```
 
-The application starts `armClientMessagePort` before provider navigation. It
-installs the exact source/origin listener and leaves the returned promise pending
-without sending anything. The provider-return callback calls
-`bindCallbackMessagePort` only after its first script clears the URL and extracts
-the one ceremony ID. That operation sends the handshake request and waits for
-the authenticated port response. The initial prefetch document calls neither
-operation.
+`armClientMessagePort` installs the exact source/origin listener synchronously
+and returns a pending port promise without sending anything. The application
+keeps that promise, starts provider navigation, and awaits it only when it needs
+the carrier:
+
+```ts
+const portPromise = armClientMessagePort(options)
+navigateToProvider()
+const port = await portPromise
+```
+
+After returning from the provider and clearing its URL, the callback calls and
+awaits `bindCallbackMessagePort`. It sends the handshake request; the armed
+client handler validates it, creates the channel, sends the response, and
+resolves `portPromise` with its retained endpoint. The callback validates that
+response and resolves with the transferred endpoint.
 
 Each operation resolves once with its local endpoint or rejects without a
 carrier. Aborting removes its window listener and closes every reachable port.
