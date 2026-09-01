@@ -42,16 +42,17 @@ The carrier neither interprets those values nor persists or recovers them.
 
 ## Failure and security invariants
 
-- Window messages are untrusted until their browser-stamped source and origin,
-  exact record shape, direction, and compatibility tag match the current
-  binding. The callback additionally requires its one-use ceremony ID and
-  exactly one transferred port.
+- Events from another `WindowProxy` or without the `message-port`
+  discriminator are not handshake attempts and are ignored. A handshake from
+  the bound source is untrusted until its browser-stamped origin, exact record
+  shape, direction, and compatibility tag match. The callback additionally
+  requires its one-use ceremony ID and exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
   value. The response uses the exact callback origin, transfers only the new
   callback endpoint, and never exposes the client's retained endpoint.
-- An accepted handshake removes its window listener. Wrong, missing,
-  duplicate, replayed, late, or post-abort messages are inert; any received port
-  and its reachable local peer are closed.
+- Any handshake attempt which fails those checks rejects the binding and closes
+  every reachable port. An accepted handshake removes its window listener;
+  later window traffic is inert.
 - After binding, possession of the entangled port authenticates the peer.
   Application-level values travel only over that port; the carrier preserves
   their order and shape without interpreting them.
@@ -131,7 +132,8 @@ client handler validates it, creates the channel, sends the response, and
 resolves `portPromise` with its retained endpoint. The callback validates that
 response and resolves with the transferred endpoint.
 
-Each operation resolves once with its local endpoint or rejects without a
-carrier. Aborting removes its window listener and closes every reachable port.
-`messagePortCarrier` starts the port, forwards unchanged structured-clone values,
-and closes idempotently.
+Each operation resolves once with its local endpoint. A handshake attempt from
+the bound source that fails authentication rejects immediately; abort also
+rejects. Both paths remove the window listener and close every reachable port.
+The concrete error type is private. `messagePortCarrier` starts the port,
+forwards unchanged structured-clone values, and closes idempotently.
