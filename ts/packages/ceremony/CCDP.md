@@ -42,9 +42,10 @@ type CCDPVersion = 1
 ```
 
 `CCDPVersion` covers `CCDPMessage`, its direction, ordering, validation, and
-transport-binding semantics. The concrete transport verifies it during initial
-popup binding and carrier authentication. Same-release carrier and navigation
-controls have no independent negotiated version.
+transport-binding semantics. Ceremony code supplies it as the transport's
+opaque compatibility tag; transport exact-matches but does not interpret it.
+Same-release carrier and navigation controls have no independent negotiated
+version.
 
 ### Prefetch readiness
 

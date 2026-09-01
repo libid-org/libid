@@ -156,8 +156,9 @@ to configuration.
 
 ## Compatibility and acceptance
 
-Both carrier bindings exact-check `CCDPVersion` before delivering the OAuth
-return. An unsupported document restarts with fresh OAuth. Version axes are
-defined in [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
+Ceremony code supplies `CCDPVersion` as the transport compatibility tag, and
+both carrier bindings exact-match it before delivering the OAuth return. An
+unsupported document restarts with fresh OAuth. Version axes are defined in
+[ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
 
 Callback acceptance is covered by [TEST_PLAN.md](TEST_PLAN.md).

@@ -66,11 +66,12 @@ The signaling contract accepts only:
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
-Records exact-match CCDP version, ceremony ID, role, and one live
-generation. They expire quickly, are consumed once, and never enter URLs, logs,
-analytics, or durable storage. The service may delay or deny the ceremony but
-cannot read DTLS-protected framed values. The configured server already
-supplies browser code, so signaling adds no second signature system.
+Records exact-match the caller-supplied compatibility tag, ceremony ID, role,
+and one live generation. They expire quickly, are consumed once, and never
+enter URLs, logs, analytics, or durable storage. The service may delay or deny
+the ceremony but cannot read DTLS-protected framed values. The configured
+server already supplies browser code, so signaling adds no second signature
+system.
 
 No cookie, polling iframe, `BroadcastChannel`, TURN data relay, application
 backend endpoint, or frontend-origin callback page participates. The signaling

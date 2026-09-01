@@ -33,7 +33,7 @@ carried by the resulting channel.
 Transport owns:
 
 - browser-stamped source and origin checks;
-- ceremony and CCDP-version binding;
+- connection-ID and caller-supplied compatibility-tag binding;
 - the retained popup `WindowProxy`;
 - opaque ordered delivery;
 - MessagePort-first selection and WebRTC fallback;
@@ -54,17 +54,24 @@ const clientTransport = CCDPTransport.client(clientResources)
 const popupTransport = CCDPTransport.popup(popupResources)
 ```
 
-When the caller does not supply a `WindowProxy`, the client explicitly binds
-one:
+Both resource records include the same numeric `compatibilityTag`. Transport
+exact-matches it in private carrier and navigation controls but never interprets
+it. The caller owns its meaning and lifecycle.
+
+A popup endpoint constructed from `window.opener` and an immutable target-origin
+set can send an opaque value over `WindowProxy`. A caller-supplied popup handle
+is bound by the client constructor. Without one, the client explicitly binds a
+source:
 
 ```ts
 clientTransport.bindPopup(accept: (value: unknown) => boolean): Promise<void>
 ```
 
-It considers only values from the configured remote origin and commits the
-browser-stamped source of the first value accepted by the caller predicate.
-Transport never interprets the value, and rejected candidates bind nothing. A
-caller-supplied popup handle is instead bound by the constructor.
+`bindPopup` considers only values from the configured remote origin and commits
+the browser-stamped source of the first value accepted by the caller predicate.
+Transport never interprets the value, and rejected candidates bind nothing.
+Navigation destroys the popup endpoint; the client endpoint retains its bound
+source and any idle signaling subscription.
 
 Both endpoints expose the same opaque delivery operations:
 
@@ -91,18 +98,6 @@ or branches on that URL:
 The transport decides between those operations from the native resource it
 owns, never from the URL. A popup endpoint without the required navigation port
 rejects rather than navigating and losing live state.
-
-## WindowProxy path
-
-A popup endpoint constructed from `window.opener` and an immutable target-origin
-set can send an opaque value over `WindowProxy`. The client endpoint accepts a
-candidate only from its configured remote origin. `bindPopup` commits the
-browser-stamped source only after the caller-supplied predicate accepts the
-value. A caller-supplied handle is bound during construction instead.
-
-Navigation destroys that popup endpoint. The client endpoint retains the bound
-source and any idle signaling subscription. No private bootstrap record or
-MessagePort is required for this path.
 
 ## Carriers
 
@@ -233,6 +228,7 @@ browser resource. Transport contains no worker scope or route constant.
 ```ts
 async function holdNavigationPort(
   registration: ServiceWorkerRegistration,
+  compatibilityTag: number,
   ceremonyId: string,
   purpose: string,
   port: MessagePort,
@@ -250,6 +246,7 @@ package import or network use:
 ```ts
 async function claimNavigationPort(
   registration: ServiceWorkerRegistration,
+  compatibilityTag: number,
   ceremonyId: string,
 ): Promise<NavigationPayload>
 ```
@@ -261,12 +258,13 @@ values.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
-not yet exist. Ceremony ID, purpose bounds, transferable count, duplicate
-ownership, expiry, and one-use claim are checked before ownership changes.
-Wrong, missing, expired, duplicate, replayed, or post-terminal calls reject and
-close every reachable port. Worker loss or a failed acknowledgement prevents
-navigation with live state. No `BroadcastChannel`, cookie, IndexedDB record,
-request, or URL carries the port, purpose, or queued value.
+not yet exist. Compatibility tag, ceremony ID, purpose bounds, transferable
+count, duplicate ownership, expiry, and one-use claim are checked before
+ownership changes. Wrong, missing, expired, duplicate, replayed, or
+post-terminal calls reject and close every reachable port. Worker loss or a
+failed acknowledgement prevents navigation with live state. No
+`BroadcastChannel`, cookie, IndexedDB record, request, or URL carries the port,
+purpose, or queued value.
 
 ## Failure and security rules
 
@@ -284,8 +282,9 @@ request, or URL carries the port, purpose, or queued value.
 
 ## Versioning
 
-`CCDPVersion` covers source binding, carrier authentication, navigation
-continuity, and opaque delivery. Carriers and same-release worker controls have
-no separately negotiated version. Compatible releases may change internal
-framing, ICE policy, worker controls, or equivalent browser mechanics without
-changing the transport contract.
+Transport has no independently negotiated version. Its caller supplies one
+numeric compatibility tag, which transport exact-matches without assigning
+semantics. Compatible releases may change internal framing, ICE policy, worker
+controls, or equivalent browser mechanics without changing that contract. If
+transport later evolves independently, the same field can carry its version
+without changing transport mechanics.

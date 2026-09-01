@@ -29,12 +29,13 @@ endpoint across navigation through the shared handoff.
 
 ```ts
 interface CallbackRequestAuthentication {
-  ccdpVersion: CCDPVersion
+  compatibilityTag: number
   type: 'callback-request-authentication'
 }
 
 interface AppAuthenticateOrigin {
   type: 'app-authenticate-origin'
+  compatibilityTag: number
   ceremonyId: string
 }
 ```
@@ -44,13 +45,14 @@ valid OAuth state, the returned callback attempts this carrier only while its
 retained opener remains usable. It sends `CallbackRequestAuthentication`
 without the ceremony ID or OAuth return. The client transport accepts it only
 from the retained popup source at the configured callback origin and expected
-CCDP version.
+compatibility tag.
 
 The client transport creates one `MessageChannel`, retains one endpoint, and
 sends `AppAuthenticateOrigin` with the other endpoint as the only transferable.
 The callback accepts it only from `window.opener`, requires a browser-stamped
 origin in its immutable server-provided allowlist, exact-matches the supplied
-ceremony ID to OAuth state, and rejects a missing or additional port.
+compatibility tag and ceremony ID to its current binding and OAuth state, and
+rejects a missing or additional port.
 
 The authentication operation returns the native `MessagePort`; transport wraps
 it only after these checks. No ceremony payload crosses the WindowProxy
@@ -64,7 +66,7 @@ replace that selection.
 ## Failure and security invariants
 
 - Every window control exact-checks browser-stamped source, origin, shape, and
-  version against the current binding.
+  compatibility tag against the current binding.
 - A transferred application port is accepted exactly once and only after the
   ceremony ID matches cleared OAuth state.
 - Wrong, missing, duplicate, replayed, or post-terminal controls fail closed

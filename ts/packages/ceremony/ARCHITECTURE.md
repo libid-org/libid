@@ -662,8 +662,9 @@ output-shape versions. A proof change normally changes the assembled
 public compatibility axis. One package release may retain older platform-version
 validators during its compatibility window.
 
-[`CCDPVersion`](CCDP.md#protocol-version) independently versions the browser
-message protocol. Local Job schema versioning remains owned by the client
-store; deployment route and asset versioning remain release concerns. A Job
-which has already committed Identity has left the ceremony and remains usable
-under its composition's own compatibility rules.
+[`CCDPVersion`](CCDP.md#version) independently versions the browser message
+protocol. Ceremony code supplies it as the transport's opaque compatibility
+tag; transport defines no version axis of its own. Local Job schema versioning
+remains owned by the client store; deployment route and asset versioning remain
+release concerns. A Job which has already committed Identity has left the
+ceremony and remains usable under its composition's own compatibility rules.
