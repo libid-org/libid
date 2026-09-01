@@ -25,7 +25,7 @@ public APIs, extension points, or durable state.
 ## Boundary
 
 The carrier begins with caller-supplied browser handles, expected origins,
-compatibility tag, ceremony ID, and cancellation signal. It ends with one
+application version, ceremony ID, and cancellation signal. It ends with one
 authenticated local `MessagePort` at each endpoint.
 
 Within that boundary it owns:
@@ -45,7 +45,7 @@ The carrier neither interprets those values nor persists or recovers them.
 - Events from another `WindowProxy` are ignored. Before binding, every event
   from the bound source is a handshake attempt and must exact-match its
   browser-stamped origin, `message-port` discriminator, record shape, direction,
-  and compatibility tag. The callback additionally requires its one-use
+  and application version. The callback additionally requires its one-use
   ceremony ID and exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
   value. The response uses the exact callback origin, transfers only the new
@@ -69,7 +69,7 @@ Both directions use one carrier-local record:
 ```ts
 interface MessagePortHandshake {
   type: 'message-port'
-  compatibilityTag: number
+  applicationVersion: number
   ceremonyId: string | null
 }
 ```
@@ -77,13 +77,13 @@ interface MessagePortHandshake {
 The returned popup sends the record with `ceremonyId: null` and no transferable.
 It contains no ceremony ID, OAuth return, or other application-level value. The
 application accepts it only from its retained popup source, configured callback
-origin, and expected compatibility tag.
+origin, and expected application version.
 
 The application creates one `MessageChannel`, retains one endpoint, and sends
 the same record back with the live ceremony ID and the other endpoint as its
 only transferable. The popup accepts it only from its exact opener and a
 browser-stamped origin in its immutable server-provided allowlist, and only when
-the compatibility tag and ceremony ID match its current binding and cleared
+the application version and ceremony ID match its current binding and cleared
 OAuth state. It rejects a missing or additional port.
 
 The request may use an unrestricted target origin because it contains no
@@ -99,7 +99,7 @@ provider navigation while the returned callback exists only afterward:
 declare function armClientMessagePort(options: {
   popup: WindowProxy
   callbackOrigin: string
-  compatibilityTag: number
+  applicationVersion: number
   ceremonyId: string
   signal: AbortSignal
 }): Promise<MessagePort>
@@ -107,7 +107,7 @@ declare function armClientMessagePort(options: {
 declare function bindCallbackMessagePort(options: {
   opener: WindowProxy
   allowedAppOrigins: readonly string[]
-  compatibilityTag: number
+  applicationVersion: number
   ceremonyId: string
   signal: AbortSignal
 }): Promise<MessagePort>

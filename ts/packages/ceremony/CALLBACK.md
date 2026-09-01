@@ -156,7 +156,7 @@ to configuration.
 
 ## Compatibility and acceptance
 
-Ceremony code supplies `CCDPVersion` as the transport compatibility tag, and
+Ceremony code supplies `CCDPVersion` as the transport application version, and
 both carrier bindings exact-match it before delivering the OAuth return. An
 unsupported document restarts with fresh OAuth. Version axes are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).

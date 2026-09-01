@@ -43,7 +43,7 @@ The transport must:
 Transport owns:
 
 - one logical connection bound to the caller-supplied connection ID and
-  compatibility tag;
+  application version;
 - the popup navigation handle;
 - selection and ownership of one authenticated carrier;
 - ordered opaque delivery and continuity across popup document replacement;
@@ -86,9 +86,9 @@ const clientTransport = CCDPTransport.client(clientResources)
 const popupTransport = CCDPTransport.popup(popupResources)
 ```
 
-Both resource records include the same numeric `compatibilityTag`. Transport
-exact-matches it in private carrier and navigation controls but never interprets
-it. The caller owns its meaning and lifecycle.
+Both resource records include the same numeric `applicationVersion`. It
+identifies the caller's application protocol. Transport exact-matches it in
+private carrier and navigation controls but never interprets it.
 
 A popup endpoint constructed from `window.opener` and an immutable target-origin
 set can send an opaque value over `WindowProxy`. A caller-supplied popup handle
@@ -270,7 +270,7 @@ interprets its purpose.
 declare class PortKeeper {
   constructor(
     registration: ServiceWorkerRegistration,
-    compatibilityTag: number,
+    applicationVersion: number,
   )
 
   keep(
@@ -286,8 +286,8 @@ declare class PortKeeper {
 }
 ```
 
-The constructor fixes the active registration and caller-owned compatibility
-tag for both operations. `keep` resolves only after the worker owns the exact
+The constructor fixes the active registration and caller-owned application
+version for both operations. `keep` resolves only after the worker owns the exact
 port, after which transport may replace the source document. `claim` atomically
 returns and removes the unchanged purpose and port before the destination loads
 caller code or uses the network. For MessagePort, the returned port is the
@@ -297,7 +297,7 @@ value used before the destination establishes its data channel.
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
 not yet exist. The Service Worker record and control-message encoding are
-implementation details. Compatibility tag, ceremony ID, purpose bounds,
+implementation details. Application version, ceremony ID, purpose bounds,
 transferable count, duplicate ownership, expiry, and one-use claim are checked
 before ownership changes. Wrong, missing, expired, duplicate, replayed, or
 post-terminal calls reject and close every reachable port. Worker loss or a
@@ -308,8 +308,8 @@ purpose, or queued value.
 ## Versioning
 
 Transport has no independently negotiated version. Its caller supplies one
-numeric compatibility tag, which transport exact-matches without assigning
-semantics. Compatible releases may change internal framing, ICE policy, worker
-controls, or equivalent browser mechanics without changing that contract. If
-transport later evolves independently, the same field can carry its version
-without changing transport mechanics.
+numeric `applicationVersion`, which transport exact-matches without assigning
+application semantics. Compatible releases may change internal framing, ICE
+policy, worker controls, or equivalent browser mechanics without changing that
+contract. An independently incompatible transport change requires its own
+version; it does not repurpose the application version.

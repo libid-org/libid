@@ -66,7 +66,7 @@ The signaling contract accepts only:
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
-Records exact-match the caller-supplied compatibility tag, ceremony ID, role,
+Records exact-match the caller-supplied application version, ceremony ID, role,
 and one live generation. They expire quickly, are consumed once, and never
 enter URLs, logs, analytics, or durable storage. The service may delay or deny
 the ceremony but cannot read DTLS-protected framed values. The configured

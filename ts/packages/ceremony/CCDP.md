@@ -43,7 +43,7 @@ type CCDPVersion = 1
 
 `CCDPVersion` covers `CCDPMessage`, its direction, ordering, validation, and
 transport-binding semantics. Ceremony code supplies it as the transport's
-opaque compatibility tag; transport exact-matches but does not interpret it.
+`applicationVersion`; transport exact-matches but does not interpret it.
 Same-release carrier and navigation controls have no independent negotiated
 version.
 
