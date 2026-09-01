@@ -16,8 +16,9 @@ is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The integrating server's routes, deployment inputs, and response policy are
-defined in [SERVER.md](SERVER.md). These documents are implementation
-architecture, not part of the normative protocol specification.
+defined in [SERVER.md](SERVER.md). The package's measurement and export
+boundary is defined in [METRICS.md](METRICS.md). These documents are
+implementation architecture, not part of the normative protocol specification.
 
 The normative libID specification owns the proof statement and authorization
 encoding. See the

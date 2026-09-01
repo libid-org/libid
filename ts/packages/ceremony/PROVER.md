@@ -271,6 +271,8 @@ catalog entry also owns one bounded user-facing label. Labels describe current
 work, such as **Loading proving assets**, **Connecting to notary**, **Preparing
 proof inputs**, or **Generating proof**; they never contain a credential,
 identity, URL, caller value, raw exception, or raw service error.
+Collection, privacy, aggregation, and optional export are defined in
+[METRICS.md](METRICS.md).
 
 Every profile includes these spans:
 
