@@ -26,11 +26,11 @@ iframe, worker, signaling service, or ceremony server terminates the
 `RTCDataChannel`.
 
 ```text
-Application transport       Signaling relay       Isolated prover transport
+Application transport      Signaling service      Isolated prover transport
         |<--- SDP / ICE --------->|<--- SDP / ICE --------->|
         |<========== direct RTCDataChannel =================>|
 
-        ---- signaling through relay
+        ---- signaling through service
         ==== direct browser-to-browser application data
 ```
 
