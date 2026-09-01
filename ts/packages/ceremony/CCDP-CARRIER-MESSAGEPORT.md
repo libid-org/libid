@@ -123,7 +123,7 @@ declare function connectCeremonyMessagePort(options: {
   signal: AbortSignal
 }): Promise<MessagePort>
 
-declare function messagePortCarrier(port: MessagePort): Carrier
+declare function messagePortCarrier<M>(port: MessagePort): Carrier<M>
 ```
 
 `connectApplicationMessagePort` installs the exact source/origin listener

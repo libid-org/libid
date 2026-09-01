@@ -202,12 +202,17 @@ Each carrier module owns construction of its native browser resource and adapts
 it to the same transport-internal delivery operations:
 
 ```ts
-interface Carrier {
-  send(value: unknown): void
+interface Carrier<M> {
+  send(value: M): void
   on(handler: (value: unknown) => void): () => void
   close(): void
 }
 ```
+
+`M` is the caller's closed outbound message type, so local sends are checked at
+compile time without making the carrier understand the protocol. Received
+values remain `unknown`: they crossed a remote browser boundary and become `M`
+only after transport selects and runs the registered `Decoder`.
 
 The adapter does not own navigation policy. Transport retains a transferable
 `MessagePort` only when navigation moves ownership; the WebRTC carrier retains
