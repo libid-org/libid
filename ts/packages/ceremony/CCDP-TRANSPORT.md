@@ -20,48 +20,49 @@ https://app.example                          https://ceremony.example
 
 The transport must:
 
-- work when its documents are cross-origin or cross-site;
-- continue when an intervening document or destination isolation policy severs
-  the documents' initial browsing-context relationship;
-- require no transport route, script, or server endpoint on the client origin;
-- use no additional window beyond the existing popup;
-- preserve ordered bidirectional values across Safari, Firefox, and Chromium
-  without browser or user-agent detection;
-- release no carrier-delivered value until that carrier authenticates both
-  endpoints;
-- never expose transported values through carrier establishment, rendezvous,
-  cookies, durable storage, request data, or URLs; and
-- allow the popup to cross an external document and enter an isolated document
-  without requiring another user action or recovering its opener.
+- connect the application tab and popup across origins or sites;
+- preserve one logical connection while the popup crosses an external document,
+  loses its initial browsing-context relationship, and enters an isolated
+  document;
+- require no transport-owned route, standalone script, or server endpoint on
+  the application origin;
+- require no additional top-level browsing context beyond the existing popup
+  and no second user action; and
+- provide ordered bidirectional delivery across Safari, Firefox, and Chromium
+  without browser-specific protocol branches or user-agent detection.
 
 ## Boundary
 
 Transport owns:
 
-- connection-ID and caller-supplied compatibility-tag binding;
-- the retained popup navigation handle;
-- opaque ordered delivery;
-- selection and ownership of exactly one authenticated carrier;
-- native carrier resources and cross-document continuity; and
-- one-shot closure and race resolution.
+- one logical connection bound to the caller-supplied connection ID and
+  compatibility tag;
+- the popup navigation handle;
+- selection and ownership of one authenticated carrier;
+- ordered opaque delivery and continuity across popup document replacement;
+  and
+- one-shot selection, navigation, closure, cleanup, and race resolution.
 
-Transport does not know value types, codecs, directions, ordering, route
-meanings, or caller state. Callers construct, decode, and handle every value.
+Carriers own endpoint authentication, establishment, native framing, and
+delivery mechanics. Callers own value types, codecs, protocol direction and
+order, navigation destinations, route meanings, state transitions, and
+outcomes. Transport does not interpret any of them.
 
 ## Failure and security rules
 
-- One transport accepts one popup source, one carrier selection, and one
-  cross-document continuation.
-- An unauthenticated carrier cannot be selected or release a transported value.
-- Each carrier exact-checks its native endpoint identity and authentication
-  controls before binding or releasing a value.
-- Carriers cannot inspect, add, remove, or classify transported values.
-- Carrier establishment and rendezvous carry no transported value.
-- Wrong, stale, duplicate, replayed, or post-close values change no state.
-- Carrier, endpoint, continuity mechanism, or browser context loss is never
-  successful delivery or recovery.
-- Observable failure closes reachable transport resources; the caller decides
-  its outcome.
+- A carrier is selectable only after it authenticates both endpoints.
+- One transport admits at most one popup source, one carrier, and one
+  cross-document continuation; losing races are inert.
+- Establishment, rendezvous, and continuity controls carry no transported
+  value. Cookies, durable storage, request data, and URLs carry none either.
+- A carrier may validate bounds and framing but cannot interpret, classify,
+  synthesize, or alter a logical value.
+- Wrong, stale, duplicate, replayed, or post-close control messages cannot bind,
+  select, reopen, or mutate transport. Callers validate transported values.
+- Carrier, endpoint, continuity mechanism, or browser-context loss is never
+  delivery, success, cancellation, or recovery.
+- An observed failure closes reachable resources and releases no later value;
+  the caller determines the outcome.
 
 ## API
 
