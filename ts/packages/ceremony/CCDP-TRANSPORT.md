@@ -222,15 +222,13 @@ There is no portable browser-specific minimum lifetime. The PoC observed:
 | Chromium | More than 60 seconds; the upper boundary was not found. |
 | Firefox | Approximately 60 seconds. |
 | Playwright WebKit | Seven seconds succeeded and eight seconds lost the port. |
-| Safari and iOS WebKit | Not inferred from emulation; real-device qualification remains required. |
 
 These are observations, not guaranteed browser contracts. Launch uses one
 conservative `CARRIER_CLAIM_TIMEOUT_MS = 5_000` across engines, below the
 observed WebKit boundary. Transport does not sniff the user agent or select a
 browser-specific deadline. Suspension, process loss, memory pressure, or
 expiry may still break continuity; failure is terminal and never selects a
-weaker path. Any deadline change requires renewed real-device qualification but
-does not change the transported protocol.
+weaker path.
 
 ### Payload
 
