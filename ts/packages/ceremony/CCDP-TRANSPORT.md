@@ -150,16 +150,10 @@ The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) and
 opener-independent [WebRTC carrier](CCDP-CARRIER-WEBRTC.md) are the two
 implementations.
 
-### Native resources
+### Carrier API
 
-Carrier setup returns its natural browser resource:
-
-```ts
-authenticateMessagePort(/* binding inputs */): Promise<MessagePort>
-establishWebRTC(/* signaling inputs */): Promise<RTCDataChannel>
-```
-
-Transport adapts either resource to the same internal delivery operations:
+Each carrier module owns construction of its native browser resource and adapts
+it to the same transport-internal delivery operations:
 
 ```ts
 interface Carrier {
@@ -167,12 +161,9 @@ interface Carrier {
   onMessage(handler: (value: unknown) => void): () => void
   close(): void
 }
-
-messagePortCarrier(port: MessagePort): Carrier
-webRTCCarrier(channel: RTCDataChannel): Carrier
 ```
 
-The adapters do not own navigation policy. Transport retains each native
+The adapter does not own navigation policy. Transport retains the native
 resource and invalidates its adapter when ownership moves or closes.
 
 ### Selection

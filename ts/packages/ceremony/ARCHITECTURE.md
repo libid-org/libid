@@ -326,9 +326,9 @@ lowercase UUIDv4. A composition normally generates one value and calls it
 composition invariant, not a shared branded type. The identifier is not chain
 authorization, but its unpredictability and one-use handling provide browser
 continuity: the initial callback discloses it to the initiating app, the
-post-OAuth callback withholds it from window messages, and
-`AppAuthenticateOrigin` must return it on the MessagePort path. On the RTC
-path, the same one-use value selects the live application's signaling
+post-OAuth callback withholds it from window messages, and the
+`MessagePortHandshake` response must return it on the MessagePort path. On the
+RTC path, the same one-use value selects the live application's signaling
 subscription; it is not a second authorization secret.
 
 `new` chooses the platform ceremony version, generates the fresh authorization
