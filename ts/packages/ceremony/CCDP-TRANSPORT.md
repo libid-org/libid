@@ -37,7 +37,7 @@ Transport owns:
 - the retained popup `WindowProxy`;
 - opaque ordered delivery;
 - MessagePort-first selection and WebRTC fallback;
-- native carrier resources and navigation handoff; and
+- native carrier resources and cross-document continuity; and
 - one-shot closure and race resolution.
 
 Transport does not know value types, codecs, directions, ordering, route
@@ -92,11 +92,11 @@ result.
 or branches on that URL:
 
 - the client endpoint navigates its exact retained `WindowProxy` directly; or
-- the popup endpoint first hands off its owned navigation port, awaits worker
-  ownership, and then replaces its current document.
+- the popup endpoint first preserves its carrier port, awaits worker ownership,
+  and then replaces its current document.
 
 The transport decides between those operations from the native resource it
-owns, never from the URL. A popup endpoint without the required navigation port
+owns, never from the URL. A popup endpoint without the required carrier port
 rejects rather than navigating and losing live state.
 
 ## Carriers
@@ -157,8 +157,7 @@ nor parses that value.
 
 Only MessagePort is transferable:
 
-- a selected MessagePort is both the active carrier resource and the
-  source-to-destination navigation payload;
+- transport preserves a selected MessagePort as the active carrier resource;
 - WebRTC fallback uses a transport-created `MessageChannel` only to carry the
   queued value to the destination document; and
 - an established `RTCDataChannel` is never handed across navigation.
@@ -167,20 +166,24 @@ The destination endpoint consumes the fallback value, establishes WebRTC
 through the pre-armed signaling subscription, adapts the resulting
 `RTCDataChannel`, and forwards that unchanged value first.
 
-## Navigation port handoff
+## Carrier continuity across document navigation
 
 ### Purpose
 
-Replacing a popup document destroys its JavaScript heap. Any live
-`MessagePort` owned only by that document becomes unreachable, while the
-destination document does not exist yet and therefore cannot receive the port
-directly. The handoff gives the port a temporary same-origin owner across that
-gap:
+Carrier continuity means that the logical transport remains usable after the
+popup replaces one document with another. It does not preserve the old
+JavaScript heap or an `RTCDataChannel`.
+
+Replacing a popup document normally destroys its side of the communication
+channel together with its JavaScript heap. Any live `MessagePort` owned only by
+that document becomes unreachable, while the destination document does not
+exist yet and therefore cannot receive it directly. Carrier continuity gives
+the port a temporary same-origin owner across that gap:
 
 ```text
 source document          Service Worker          destination document
       |                         |                           |
-      |--- hold(port) --------->|                           |
+      |--- preserve(port) ----->|                           |
       |<-- ownership accepted --|                           |
       |--- navigate --------------------------------------->|
       |                         |<-------- claim(port) ------|
@@ -194,17 +197,16 @@ repeating its handshake. For WebRTC fallback, it preserves the single queued
 value until the destination establishes the data channel. Both paths avoid
 another popup, user action, or data relay.
 
-The handoff is a short in-memory navigation bridge, not persistence or
-recovery. Worker loss fails the handoff; no later document can reconstruct or
-resume the channel.
+This is a short in-memory continuity bridge, not persistence or recovery.
+Worker loss breaks continuity; no later document can reconstruct or resume the
+channel.
 
 ### Payload
 
-Transport records exactly one popup-side navigation payload after carrier
-selection:
+Transport records exactly one popup-side carrier continuation after selection:
 
 ```ts
-interface NavigationPayload {
+interface CarrierContinuation {
   purpose: string
   port: MessagePort
 }
@@ -213,20 +215,20 @@ interface NavigationPayload {
 For MessagePort, this is the selected popup endpoint. For WebRTC fallback, it
 is the peer endpoint of the local channel containing the queued value.
 The exact purpose literals and contents remain transport-private; the worker
-handoff treats both as opaque.
+bridge treats both as opaque.
 
 An active `RTCDataChannel` cannot be transferred. The WebRTC path therefore
-hands off only the local `MessagePort` containing its queued first value; the
+preserves only the local `MessagePort` containing its queued first value; the
 destination establishes the data channel after claiming it.
 
-### Hold and claim
+### Preserve and claim
 
 The caller resolves the active `ServiceWorkerRegistration` and supplies it as a
 browser resource. Transport contains no worker scope or route constant.
 `navigatePopup` performs:
 
 ```ts
-async function holdNavigationPort(
+async function preserveCarrierPort(
   registration: ServiceWorkerRegistration,
   compatibilityTag: number,
   ceremonyId: string,
@@ -235,26 +237,27 @@ async function holdNavigationPort(
 ): Promise<void>
 ```
 
-The hold transfers the payload and a fresh receipt port to the worker. It
-resolves only after the worker accepts one holder for the exact ceremony ID in
-its short-lived in-memory map. Transport clears its local ownership only after
-transfer and replaces the source document only after acknowledgement.
+The preserve operation transfers the continuation and a fresh receipt port to
+the worker. It resolves only after the worker accepts one continuation for the
+exact ceremony ID in its short-lived in-memory map. Transport clears its local
+ownership only after transfer and replaces the source document only after
+acknowledgement.
 
 The destination document resolves the same registration and claims before
 package import or network use:
 
 ```ts
-async function claimNavigationPort(
+async function claimCarrierPort(
   registration: ServiceWorkerRegistration,
   compatibilityTag: number,
   ceremonyId: string,
-): Promise<NavigationPayload>
+): Promise<CarrierContinuation>
 ```
 
-The worker atomically removes the holder and returns the unchanged purpose and
-port. Receipt ports close after their replies. The worker extends each handling
-event through its reply, keeps no durable record, and never reads queued port
-values.
+The worker atomically removes the continuation and returns the unchanged
+purpose and port. Receipt ports close after their replies. The worker extends
+each handling event through its reply, keeps no durable record, and never reads
+queued port values.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
@@ -269,7 +272,7 @@ purpose, or queued value.
 ## Failure and security rules
 
 - One transport accepts one popup source, one carrier selection, and one
-  navigation handoff.
+  carrier continuation.
 - Window controls exact-check browser-stamped source and origin before binding
   or releasing a value.
 - Carriers cannot inspect, add, remove, or classify transported values.

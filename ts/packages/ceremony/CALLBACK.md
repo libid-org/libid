@@ -26,8 +26,8 @@ The callback owns:
 - constructing, decoding, and handling its CCDP values; and
 - script-owned native transition UI and one-shot cleanup.
 
-The concrete transport owns opener authentication, carrier selection, the
-in-memory navigation handoff, and popup replacement.
+The concrete transport owns opener authentication, carrier selection,
+cross-document carrier continuity, and popup replacement.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
@@ -82,7 +82,7 @@ provider callback
   validate OAuth state
     -> create the returned transport endpoint
     -> let it choose MessagePort or WebRTC
-    -> let it hand off state and navigate the same popup to /prover
+    -> preserve carrier continuity and navigate the same popup to /prover
 ```
 
 OAuth navigation destroys all initial-launch memory. No in-memory transition,
@@ -100,16 +100,16 @@ no state.
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct popup transport over the opener, bind one `/prover#prefetch(...)` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
 | Provider return | one OAuth state and `CallbackDeliverParams` | construct a fresh popup transport; it exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
-| Prover transition | transport handoff resolves | transport replaces this document with `/api/v1/ceremony/prover#ceremonyId` |
+| Prover transition | carrier port is preserved | transport replaces this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 callback never constructs the provider URL. After provider return it releases no value
 to the application until one carrier binds. An absent or severed opener commits
 WebRTC immediately; an otherwise usable opener receives the bounded
 `CALLBACK_OPENER_TIMEOUT_MS = 30_000` local-authentication deadline before RTC
-selection. A late local reply is inert. Failure to hand the selected port to
-the worker clears the return and renders the fixed prover-load failure instead
-of navigating.
+selection. A late local reply is inert. A failure to preserve the selected
+carrier port through the worker clears the return and renders the fixed
+prover-load failure instead of navigating.
 
 The callback has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
@@ -123,7 +123,7 @@ The server document contains only an empty mount point. The callback module bund
 its stylesheet and inline libID logo and renders its initial, callback, and
 fixed failure views. The bundled logo is static inline vector markup with no
 external reference. The callback shell has no proving progress model or activation
-button. The callback view lasts only until the acknowledged port handoff; the
+button. The callback view lasts only until carrier preservation is acknowledged; the
 top-level prover then owns the visible proving UI.
 
 The callback accepts no application markup or renderer. The clearing bootstrap may

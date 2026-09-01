@@ -3,7 +3,7 @@
 This document defines the prover subsystem emitted by
 `@libid/ceremony/prover`: its input/output boundary, closed platform pipelines,
 progress steps, release assets, proving toolchain, service-worker prefetch and
-use of the shared port handoff, cache behavior, and worker graph.
+use of the carrier-continuity bridge, cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
@@ -35,13 +35,13 @@ Before OAuth
 After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
     same popup navigates here as a top-level document
-      ├── claims the navigation port
+      ├── claims the preserved carrier port
       ├── resumes MessagePort or opens WebRTC from its queued return
       └── joins the same fetches and proves
 
 Shared Service Worker
 ├── immutable-asset and CRS single flights survive document replacement
-└── one in-memory port handoff spans only callback-to-prover navigation
+└── one in-memory carrier continuation spans only callback-to-prover navigation
 ```
 
 These are modes of one document and Window entrypoint: the prefetch grammar is
@@ -52,11 +52,11 @@ preserve its fetch work.
 After the server bootstrap clears the URL, the Window branch starts through the
 single internal entrypoint defined by the [server contract](SERVER.md#prover-document).
 The same root evaluated as a Service Worker installs only its cache and
-short-lived port-handoff handlers; it does not enter CCDP or a platform
+short-lived carrier-continuity handlers; it does not enter CCDP or a platform
 pipeline.
 
 The prover creates the isolated popup transport endpoint, which claims the
-navigation port and exact-validates its opaque purpose. It either resumes the
+preserved carrier port and exact-validates its opaque purpose. It either resumes the
 already application-bound MessagePort carrier or consumes the single queued
 `CallbackDeliverParams`, opens WebRTC, and forwards that message unchanged. The
 prover then consumes one exact `AppRequestProof` and returns only bounded
@@ -435,7 +435,7 @@ There is no separate prefetch route, artifact, or mode flag.
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
 without waiting for downloads. Worker activation is required because the same
-worker later carries the navigation port; ordinary artifact fetching remains a
+worker later preserves the carrier port; ordinary artifact fetching remains a
 best-effort latency optimization. A worker which receives the prefetch request
 exact-validates it and attaches the fetch work to the message event with
 `event.waitUntil`.
@@ -455,7 +455,7 @@ can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
 addition to the
-[short-lived transport port holder](CCDP-TRANSPORT.md#navigation-port-handoff),
+[short-lived carrier-continuity bridge](CCDP-TRANSPORT.md#carrier-continuity-across-document-navigation),
 it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
@@ -481,7 +481,7 @@ cached, rewritten, or synthesized by this worker.
 As soon as active-worker selection and the prefetch request settle, without
 waiting for download completion, the child emits `ProverPrefetchingAssets`.
 Registration or activation failure is terminal before OAuth because no later
-port handoff would be possible; artifact fetch failure records no weaker mode
+carrier preservation would be possible; artifact fetch failure records no weaker mode
 and leaves proving on the identical cold path. The active prover resolves
 the same profile using the exact `AppRequestProof` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
@@ -501,7 +501,7 @@ harmless because ordinary responses live in Cache Storage and completed CRS
 data lives in bb.js's IndexedDB cache; no separate durable completion marker
 exists.
 
-Registration, activation, and port-handoff failure are terminal. A missing or
+Registration, activation, and carrier-continuity failure are terminal. A missing or
 malformed selected profile also fails before OAuth. Fetch, eviction, or quota
 failure follows the identical selected-profile cold fetch path and changes
 latency only; it never weakens isolation, worker count, or verification. Warm
