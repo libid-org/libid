@@ -36,9 +36,9 @@ Application transport      Signaling service      Isolated prover transport
 
 The client transport arms one bounded, one-use signaling subscription before
 provider navigation. Arming creates no peer connection, SDP, ICE candidate, or
-ceremony-data record. The coordinator closes it unused when MessagePort wins.
-When RTC is committed, the final prover creates the offer and the application
-answers.
+ceremony-data record. The client transport closes it unused when MessagePort
+wins. When RTC is committed, the final prover creates the offer and the
+application answers.
 
 ## Signaling service
 
@@ -77,6 +77,48 @@ The signaling service is selected over the available establishment mechanisms:
 The selected path therefore works when application and ceremony server are
 cross-site without turning the signaling service into an application-message
 relay.
+
+## API
+
+Signaling is private carrier machinery. Both endpoints receive the ceremony ID
+as a transport-construction input before any CCDP message exists; neither finds
+it by inspecting a transported value. The client arms its endpoint before OAuth,
+and the final prover connects only after transport commits RTC fallback:
+
+```ts
+interface WebRTCEndpointOptions {
+  signalingServiceUrl: string
+  stunUrls: readonly string[]
+  applicationVersion: number
+  ceremonyId: string
+  signal: AbortSignal
+}
+
+declare function armClientWebRTC(
+  options: WebRTCEndpointOptions,
+): Promise<RTCDataChannel>
+
+declare function connectProverWebRTC(
+  options: WebRTCEndpointOptions,
+): Promise<RTCDataChannel>
+
+declare function rtcDataChannelCarrier(channel: RTCDataChannel): Carrier
+```
+
+`armClientWebRTC` synchronously starts the bounded answerer subscription and
+returns a pending channel promise. It creates the answering peer only after a
+valid offer arrives. `connectProverWebRTC` creates the offering peer and data
+channel, publishes its offer and candidates, and consumes the answer and remote
+candidates. Each resolves only after its local channel opens. Internally they
+own every signaling request, trickled candidate update, origin-bound role,
+timeout, and cleanup operation.
+
+The client transport retains the first promise without awaiting it during
+OAuth. MessagePort selection aborts it. Under RTC selection each endpoint
+awaits its own operation, adapts its channel, and exposes only the common
+carrier API. Abort or establishment failure rejects, closes every reachable
+signaling and peer resource, and releases no transported value. No signaling
+API is exposed to CCDP or package consumers.
 
 ## Peer establishment
 

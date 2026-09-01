@@ -96,9 +96,12 @@ These are construction-specific implementations of the same API, not a public
 role field or a branch performed for each operation. Callers supply browser
 resources, never a keeper, continuity purpose, route, or phase.
 
-Both resource records include the same numeric `applicationVersion`. It
-identifies the caller's application protocol. Transport exact-matches it in
-private carrier and navigation controls but never interprets it.
+Both resource records include the same ceremony ID and numeric
+`applicationVersion`. The ceremony ID is the caller-supplied connection ID;
+transport uses it for authentication, continuity, and private signaling without
+recovering it from transported values. The application version identifies the
+caller's application protocol. Transport exact-matches both in private carrier
+and navigation controls but never interprets either.
 
 A popup endpoint constructed from `window.opener` and an immutable target-origin
 set can send an opaque value over `WindowProxy`. A caller-supplied popup handle
