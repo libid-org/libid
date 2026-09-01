@@ -38,17 +38,12 @@ const clientTransport = CCDPTransport.client(clientResources)
 const popupTransport = CCDPTransport.popup(popupResources)
 ```
 
-Before real-anchor launch supplies a source, the client uses one generic
-admission operation:
-
-```ts
-clientTransport.bindPopup(accept: (value: unknown) => boolean): Promise<void>
-```
-
-It considers only values from the configured callback origin and commits the
-browser-stamped source of the first value accepted by the participant callback.
-With a caller-supplied popup handle, that source must also equal the expected
-handle. Transport never interprets the value. Rejected candidates bind nothing.
+`clientResources` includes the configured callback origin, optional
+caller-supplied popup handle, and a participant-owned
+`acceptInitial(value: unknown): boolean` predicate. The constructor installs
+the initial listener. It commits only the browser-stamped source of a value from
+that origin which the predicate accepts; a supplied handle must also match.
+Transport never interprets the value, and rejected candidates bind nothing.
 
 Both endpoints expose the same opaque delivery operations:
 
@@ -86,11 +81,12 @@ over `WindowProxy` with exact configured target origins. Transport neither
 executes prefetch nor identifies the value.
 
 The client transport accepts a candidate only from the configured callback
-origin. `bindPopup` delegates exact `ProverPrefetchingAssets` validation to the
-Ceremony Client and commits the browser-stamped source only when that predicate
-accepts the live ceremony's record. A supplied scripted-open handle must already
-equal that source; real-anchor launch learns the source here. The client then
-asks transport to navigate the retained popup to the frozen provider URL.
+origin. Its constructor-supplied predicate delegates exact
+`ProverPrefetchingAssets` validation to the Ceremony Client and commits the
+browser-stamped source only when that predicate accepts the live ceremony's
+record. A supplied scripted-open handle must already equal that source;
+real-anchor launch learns the source here. The client then asks transport to
+navigate the retained popup to the frozen provider URL.
 
 Provider navigation destroys the initial popup transport. The client transport
 retains the bound popup source and its idle WebRTC signaling subscription.
@@ -238,7 +234,7 @@ sequenceDiagram
     participant P as Prover transport
 
     C0-->>A: ProverPrefetchingAssets through popup transport
-    Note over A: CCDP handler validates; client transport binds source
+    Note over A: Constructor predicate validates; client transport binds source
     A->>C0: navigatePopup(provider URL)
     C0->>O: Replace popup
     O-->>C1: Return authorization result
