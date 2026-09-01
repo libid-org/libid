@@ -97,9 +97,9 @@ no state.
 | Phase | Accepts and emits | Callback side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| MessagePort transport | one OAuth state; `CallbackRequestAuthentication` → `AppAuthenticateOrigin` with one port → `CallbackDeliverParams` | validate exact opener/source/origin/ID, bind MessagePort, deliver the unchanged return, and select `ccdp` handoff |
-| RTC transport | local authentication is unavailable or expires | queue the unchanged return on a fresh local port and select `rtc-bootstrap` handoff; send nothing to signaling |
-| Prover handoff | `HoldNavigationPort` and one receipt acknowledgement | transfer the selected port to the active worker before replacing this document with `/api/v1/ceremony/prover#ceremonyId` |
+| MessagePort transport | one OAuth state; `CallbackRequestAuthentication` → `AppAuthenticateOrigin` with one port → `CallbackDeliverParams` | validate exact opener/source/origin/ID, bind MessagePort, deliver the unchanged return, and delegate its endpoint to the transport's handoff path |
+| RTC transport | local authentication is unavailable or expires | queue the unchanged return on a fresh local port and delegate its endpoint to the transport's handoff path; send nothing to signaling |
+| Prover handoff | `holdNavigationPort` resolves | replace this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 callback never constructs the provider URL. After provider return it releases no value
@@ -112,9 +112,11 @@ of navigating.
 
 The callback has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
-the platform-aware checks. Exact transport binding and navigation handoff remain
-in the two CCDP transport documents; execution and visible proving UI remain in
-[PROVER.md](PROVER.md).
+the platform-aware checks. Exact transport bindings remain in their transport
+documents; shared selection and navigation handoff remain in
+[CCDP.md](CCDP.md#transport-selection) and
+[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md). Execution and visible proving UI
+remain in [PROVER.md](PROVER.md).
 
 ### Script-owned presentation
 

@@ -2,8 +2,7 @@
 
 This document defines the browser-local transport used by the Ceremony
 Cross-Document Protocol (CCDP): pre-OAuth callback readiness, callback opener
-authentication, `MessageChannel` binding, and the short-lived Service Worker
-port courier across callback-to-prover navigation.
+authentication, and `MessageChannel` binding.
 
 The transport-neutral contract, ceremony messages, ordering, and transport
 selection are defined in [CCDP.md](CCDP.md). The WebRTC fallback is defined in
@@ -23,14 +22,13 @@ The MessagePort transport owns:
 - callback authentication from browser-stamped source and origin;
 - creation of one ceremony-bound `MessageChannel`;
 - adaptation of its endpoints to `CCDPTransport`;
-- in-memory transfer of one port across immediate same-origin navigation; and
-- exact cleanup when binding or transfer fails.
+- exact cleanup when binding fails.
 
 It does not parse a platform OAuth result, select proof semantics, inspect CCDP
 payloads after binding, persist credentials, recover a ceremony, or send data
-through the ceremony server. The WebRTC transport may reuse only the navigation
-port courier to move the cleared OAuth return into the replacement prover; that
-does not make its `RTCDataChannel` a MessagePort transport.
+through the ceremony server. Transport selection and the shared
+callback-to-prover navigation requirement are defined in [CCDP.md](CCDP.md);
+[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md) defines its implementation.
 
 ## Pre-OAuth readiness
 
@@ -94,83 +92,13 @@ protocol version.
 
 The retained application endpoint and callback endpoint each become a
 `CCDPTransport`. The callback sends `CallbackDeliverParams` through that transport,
-then hands its endpoint to the navigation courier. Application replies remain
-ordered and queued while ownership moves to the top-level prover.
+then passes its endpoint to `holdNavigationPort` with this transport's private
+`message-port` purpose. Application replies remain ordered and queued while
+ownership moves to the top-level prover.
 
 An absent, severed, wrong-source, wrong-origin, malformed, or timed-out opener
-binding releases no OAuth return through this transport. Transport selection then
-uses the WebRTC path defined in [CCDP-RTC.md](CCDP-RTC.md); a late local reply
-cannot replace the selected transport.
-
-## Navigation port courier
-
-The same-popup top-level prover cannot inherit JavaScript memory across
-navigation. The already-active prover Service Worker temporarily holds one
-port. It never receives or decodes messages queued on that port.
-
-```ts
-type NavigationPortPurpose = 'ccdp' | 'rtc-bootstrap'
-
-interface HoldNavigationPort {
-  type: 'hold-navigation-port'
-  ceremonyId: string
-  purpose: NavigationPortPurpose
-}
-
-interface ClaimNavigationPort {
-  type: 'claim-navigation-port'
-  ceremonyId: string
-}
-```
-
-There are four `postMessage` operations but only two control schemas:
-
-```text
-Callback -> Worker: HoldNavigationPort + held port + receipt port
-Worker   -> Callback receipt port: null
-
-Callback replaces itself with /prover
-
-Prover   -> Worker: ClaimNavigationPort + receipt port
-Worker   -> Prover receipt port: purpose + held port
-```
-
-Both replies travel through fresh one-use receipt ports, so they need no
-discriminator or repeated ceremony ID. The hold acknowledgement is `null`. The
-claim reply is the exact `NavigationPortPurpose` literal with the held port as
-its only transferable.
-
-The first round trip establishes worker ownership before the callback destroys
-itself. The second is required because the destination document does not exist
-before navigation. Removing the hold acknowledgement reintroduces a race
-between worker event handling and the new document's claim; discovering the
-new client from the worker would merely replace the explicit claim with a
-readiness race.
-
-The callback obtains the active registration with
-`navigator.serviceWorker.getRegistration('/api/v1/ceremony/')`. It does not use
-`navigator.serviceWorker.ready`, because the developer-configurable callback
-path need not be controlled by that scope. The worker exact-validates the
-record, purpose, transferable count, duplicate ID, and expiry before storing
-the port in memory and acknowledging it.
-
-Only after acknowledgement does the callback replace itself with
-`/api/v1/ceremony/prover#ceremonyId`. The clearing top-level bootstrap creates
-a fresh `MessageChannel` and contacts the active worker from the same registration
-before importing package code or using the network. The worker atomically
-removes the matching holder and returns its purpose and port. Both receipt
-ports then close.
-
-For `ccdp`, the delivered port is already bound to the application and is
-adapted directly to `CCDPTransport`. For `rtc-bootstrap`, the delivered port
-contains exactly one queued, bounded `CallbackDeliverParams`; the prover consumes
-it locally and forwards it only after the RTC transport opens. The worker sees
-neither variant's payload.
-
-Service Worker lifetime is required only for this acknowledged, immediate
-same-origin navigation—not provider consent time. The hold event remains alive
-until claim or a short implementation-bounded expiry. The worker keeps no
-durable record, OAuth bytes, proof request, progress, or proof.
+binding releases no OAuth return through this transport. CCDP selects its
+fallback transport; a late local reply cannot replace the selection.
 
 ## Failure and security invariants
 
@@ -178,17 +106,12 @@ durable record, OAuth bytes, proof request, progress, or proof.
   origin, shape, version, and current phase.
 - A transferred application port is accepted exactly once and only after the
   ceremony ID matches cleared OAuth state.
-- Hold and claim exact-check ceremony ID, purpose, transferable count, phase,
-  and one-use ownership.
-- Wrong, missing, expired, duplicate, replayed, or post-terminal controls fail
-  closed without storage, another window, or a fresh ceremony.
-- The worker cannot read a transferred port's queued CCDP or OAuth data.
-- Messages queued while an endpoint has no document owner preserve their
-  order when the top-level prover claims it.
+- Wrong, missing, duplicate, replayed, or post-terminal authentication controls
+  fail closed without releasing the OAuth return.
 - `MessagePort` closure or context destruction may be silent; neither is a
   protocol result or recovery signal.
 - No `BroadcastChannel`, cookie, IndexedDB record, request body, or URL carries
-  the transport endpoint or OAuth return.
+  the MessagePort endpoint or OAuth return.
 
 ## Sequence
 
@@ -196,23 +119,9 @@ durable record, OAuth bytes, proof request, progress, or proof.
 sequenceDiagram
     participant A as Application
     participant C as Callback document
-    participant S as Prover Service Worker
-    participant P as Top-level prover
 
-    alt Retained opener is usable
-        C-->>A: CallbackRequestAuthentication
-        A->>C: AppAuthenticateOrigin + MessagePort
-        C-->>A: CallbackDeliverParams through CCDPTransport
-        C->>S: HoldNavigationPort(ccdp) + transport port
-    else RTC fallback
-        C->>C: Queue CallbackDeliverParams on local port
-        C->>S: HoldNavigationPort(rtc-bootstrap) + local port
-    end
-    S-->>C: null acknowledgement
-    C->>P: Replace popup with /prover#ceremonyId
-    P->>S: ClaimNavigationPort + receipt port
-    S-->>P: purpose + held port
+    C-->>A: CallbackRequestAuthentication
+    A->>C: AppAuthenticateOrigin + MessagePort
+    C-->>A: CallbackDeliverParams through CCDPTransport
+    Note over A,C: Selected endpoint enters the shared navigation handoff
 ```
-
-The RTC negotiation which follows `rtc-bootstrap` is defined only in
-[CCDP-RTC.md](CCDP-RTC.md).

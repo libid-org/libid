@@ -3,7 +3,7 @@
 This document defines the prover subsystem emitted by
 `@libid/ceremony/prover`: its input/output boundary, closed platform pipelines,
 progress steps, release assets, proving toolchain, service-worker prefetch and
-port handoff, cache behavior, and worker graph.
+use of the shared port handoff, cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
@@ -53,12 +53,13 @@ The same root evaluated as a Service Worker installs only its cache and
 short-lived port-handoff handlers; it does not enter CCDP or a platform
 pipeline.
 
-The prover claims one `NavigationPortPurpose`. For `ccdp`, its port is
-already the application-bound transport endpoint. For `rtc-bootstrap`, it consumes the
-single locally queued `CallbackDeliverParams`, establishes the application RTC
-transport, and forwards that message unchanged. It then consumes one exact
-`AppRequestProof`. It returns only bounded platform steps, one exact platform
-proof delivery, or a sanitized technical failure.
+The prover calls `claimNavigationPort` and dispatches its opaque purpose to the
+owning transport. The MessagePort transport adopts its already application-bound
+endpoint; the RTC transport consumes the single locally queued
+`CallbackDeliverParams`, establishes the application transport, and forwards
+that message unchanged. It then consumes one exact `AppRequestProof`. It returns
+only bounded platform steps, one exact platform proof delivery, or a sanitized
+technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
@@ -452,7 +453,7 @@ can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
 addition to the short-lived port holder defined by
-[the MessagePort transport](CCDP-MESSAGEPORT.md#navigation-port-courier), it owns each selected
+[the navigation handoff](NAVIGATION-HANDOFF.md), it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single

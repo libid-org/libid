@@ -116,12 +116,13 @@ Launch publishes one `@libid/ceremony` package:
 @libid/ceremony
 ├── ccdp
 │   ├── index         ceremony records, codecs, validation, transport contract, and wire version
-│   ├── message-port  window authentication and Service Worker port courier
+│   ├── message-port  prefetch readiness, window authentication, and MessagePort adapter
 │   └── rtc           signaling, ICE, framing, and RTCDataChannel adapter
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for libid-ceremony-callback.js
+├── navigation-handoff  opaque MessagePort transfer across callback-to-prover navigation
 ├── prover
-│   ├── index          source entrypoint for libid-ceremony-prover.js, workers, WASM, prefetch, and port handoff
+│   ├── index          source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    client-safe platform/version catalog and derived public result types
@@ -151,7 +152,8 @@ are build entrypoints, not separately versioned packages. They emit `libid-cerem
 package release. The prover artifact runs in both Window and Service Worker
 contexts: its Window branch runs iframe prefetch or the one active top-level
 prover, while its Service Worker branch owns shared asset single flights,
-cache, and the short-lived CCDP port handoff. `prover/notarization` is an internal leaf shared by
+cache, and the worker handlers used by the short-lived navigation handoff.
+`prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
 Server implementations are outside the package. The GitHub version's prover
@@ -177,6 +179,7 @@ prover ───> platforms/<platform>/<version>/prover ───> types
 platforms/{x,github}/<version>/prover ───> prover/notarization
 
 client, callback, prover, platforms/index ───> ccdp
+callback, prover, ccdp/{message-port,rtc} ───> navigation-handoff
 wallet-client ─────────> client + ceremony + wallet/protocol
 ```
 
@@ -193,7 +196,7 @@ The package-facing API surface is:
 | `@libid/ceremony/ccdp` | internal `CCDPTransport`, `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch owns package-private asset-prefetch single flights and the immediate callback-to-prover port handoff |
+| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and navigation-handoff handlers |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.

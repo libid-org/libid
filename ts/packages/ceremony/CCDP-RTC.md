@@ -6,8 +6,9 @@ MessagePort transport cannot authenticate. It preserves the same CCDP messages,
 transport contract, one-popup UX, and server-independent ceremony data path.
 
 The transport-neutral contract and selection rule are defined in
-[CCDP.md](CCDP.md). Browser-local authentication and the navigation port
-courier are defined in [CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md). The signaling
+[CCDP.md](CCDP.md). The shared navigation machinery is defined in
+[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md), and browser-local authentication
+in [CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md). The signaling
 service API and deployment configuration are intentionally left to later server
 work; this document defines only the behavior the transport requires.
 
@@ -57,14 +58,14 @@ When local callback authentication is unavailable, the callback:
 
 1. clears and bounds the provider return and extracts its ceremony ID;
 2. queues exactly one `CallbackDeliverParams` on a fresh local `MessagePort`;
-3. asks the navigation courier to hold the peer port with purpose
+3. calls `holdNavigationPort` with the peer port and this transport's private
    `rtc-bootstrap`; and
 4. after acknowledgement, replaces itself with the top-level prover.
 
-The prover claims that port before package import or network use, consumes the
-single queued return in memory, and then creates the RTC offer. The raw return
-never enters signaling, storage, a request, or another URL. The Service Worker
-cannot read it.
+The prover claims that port before package import or network use, exact-matches
+the `rtc-bootstrap` purpose, consumes the single queued return in memory, and
+then creates the RTC offer. The raw return never enters signaling, storage, a
+request, or another URL. The Service Worker cannot read it.
 
 ## Signaling service
 
@@ -189,10 +190,10 @@ sequenceDiagram
     A->>G: Arm one-use ceremony subscription
     Note over A,C: Provider return severs opener-based authentication
     C->>C: Queue CallbackDeliverParams on local port
-    C->>S: HoldNavigationPort(rtc-bootstrap) + port
+    C->>S: holdNavigationPort(ceremonyId, rtc-bootstrap, port)
     S-->>C: Acknowledge hold
     C->>P: Replace popup with /prover#ceremonyId
-    P->>S: ClaimNavigationPort
+    P->>S: claimNavigationPort(ceremonyId)
     S-->>P: rtc-bootstrap + local port
     P->>G: Offer + trickled ICE candidates
     G-->>A: Deliver offer/candidates

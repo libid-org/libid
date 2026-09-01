@@ -7,9 +7,10 @@ protocol compatibility.
 
 The browser-local MessagePort transport is defined in
 [CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md). The WebRTC fallback is defined in
-[CCDP-RTC.md](CCDP-RTC.md). The package API and result lifecycle are defined in
-[ARCHITECTURE.md](ARCHITECTURE.md), callback behavior in [CALLBACK.md](CALLBACK.md),
-proving in [PROVER.md](PROVER.md), and deployed routes in
+[CCDP-RTC.md](CCDP-RTC.md), and their shared navigation primitive in
+[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md). The package API and result
+lifecycle are defined in [ARCHITECTURE.md](ARCHITECTURE.md), callback behavior in
+[CALLBACK.md](CALLBACK.md), proving in [PROVER.md](PROVER.md), and deployed routes in
 [SERVER.md](SERVER.md). These are implementation architecture, not part of the
 normative proof specification. Package acceptance requirements are indexed by
 [TEST_PLAN.md](TEST_PLAN.md).
@@ -88,7 +89,7 @@ selection produces one application-to-current-ceremony transport. The callback
 then becomes the top-level prover. The MessagePort transport moves its endpoint
 through the Service Worker; the RTC transport moves only the cleared OAuth
 return locally and opens its `RTCDataChannel` from the final prover. Exact mechanics
-live in the transport documents.
+live in the transport and navigation-handoff documents.
 
 The caller's scripted-open and real-anchor launch paths are defined by the
 [client lifecycle](ARCHITECTURE.md#client-lifecycle). Both use the same popup,
@@ -145,6 +146,15 @@ Both transports provide:
 - the same exact CCDP validation after receipt;
 - bounded values with no transport-selected platform or extension; and
 - best-effort cancellation and failure notification without recovery.
+
+### Shared navigation handoff
+
+Both selections must cross the immediate same-origin callback-to-prover
+navigation without placing the OAuth return in storage or another URL. Each
+transport constructs and interprets its own port, while the package-private
+[navigation port handoff](NAVIGATION-HANDOFF.md) moves that opaque port through
+the already-active Service Worker. The handoff is shared browser machinery, not
+part of `CCDPMessage`, `CCDPVersion`, or either transport.
 
 ## Protocol definition
 
@@ -286,9 +296,10 @@ type CCDPMessage =
 ```
 
 Prefetch readiness, opener authentication, Service Worker controls, SDP, and
-ICE candidates are not ceremony messages. MessagePort controls are defined in
-its transport document; the RTC document defines signaling behavior while its
-exact service records remain part of later server work.
+ICE candidates are not ceremony messages. The MessagePort transport defines its
+bootstrap controls, the navigation handoff defines its private API, and the RTC
+document defines signaling behavior while its exact service records remain part
+of later server work.
 
 ## Ceremony sequence
 
