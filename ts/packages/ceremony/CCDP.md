@@ -1,14 +1,14 @@
 # Ceremony Cross-Document Protocol (CCDP)
 
 This document defines the closed browser protocol used by `@libid/ceremony`
-across the application, OAuth popup, and isolated prover. It owns the logical
+across the application, callback, and isolated prover. It owns the logical
 transport contract, transport selection, ceremony messages, ordering, and
 protocol compatibility.
 
 The browser-local MessagePort transport is defined in
 [CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md). The WebRTC fallback is defined in
 [CCDP-RTC.md](CCDP-RTC.md). The package API and result lifecycle are defined in
-[ARCHITECTURE.md](ARCHITECTURE.md), popup behavior in [POPUP.md](POPUP.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), callback behavior in [CALLBACK.md](CALLBACK.md),
 proving in [PROVER.md](PROVER.md), and deployed routes in
 [SERVER.md](SERVER.md). These are implementation architecture, not part of the
 normative proof specification. Package acceptance requirements are indexed by
@@ -26,7 +26,7 @@ contract.
 | Context | Owns | Browser constraint |
 |---|---|---|
 | Application page | operation inputs, live `Ceremony`, durable application Job, and final result commit | has application-defined headers and lifecycle; may be cross-site from the ceremony server |
-| Ceremony popup/callback | OAuth navigation and return, initial opener authentication when available, and transition to proving | remains top-level and non-isolated until its cleared callback chooses a transport; its callback alias is the registered server-hosted `redirect_uri` |
+| Callback | OAuth navigation and return, initial opener authentication when available, and transition to proving | remains top-level and non-isolated until the returned document chooses a transport; its configured alias is the registered server-hosted `redirect_uri` |
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
 No single document can satisfy every browser constraint. OAuth returns by
@@ -51,7 +51,7 @@ cannot change during the ceremony.
 
 | Decision | Constraint and rationale | Cost and revisit condition |
 |---|---|---|
-| Serve fixed popup and prover documents from the configured server | OAuth callback, isolation, CSP, allowed origins, and deployed assets are response properties | revisit only if browsers provide an authenticated callback and isolated prover without separate documents |
+| Serve fixed callback and prover documents from the configured server | OAuth callback, isolation, CSP, allowed origins, and deployed assets are response properties | revisit only if browsers provide an authenticated callback and isolated prover without separate documents |
 | Reuse one ceremony popup across provider navigation, callback, and proving | preserves activation and one visible ceremony surface without another popup or button | document replacement destroys memory, so transports must preserve only the live transport endpoint or cleared OAuth return |
 | Always promote the callback to the top-level prover | one common path avoids prover-placement negotiation and keeps proving foregrounded | costs one same-origin navigation; a [Document Isolation Policy](https://github.com/WICG/document-isolation-policy) iframe may become an internal optimization after broader browser adoption or measured need |
 | Prefer MessagePort and fall back to WebRTC only when opener authentication is unavailable | keeps the ordinary path browser-local while surviving adversarial provider opener policy | WebRTC requires an idle signaling subscription, STUN, framing, and ICE only for the fallback |
@@ -71,8 +71,8 @@ Application origin
               │ MessagePort normally, RTC after opener severance
               ▼
 Configured ceremony server origin
-  /api/v1/ceremony/popup and callback alias
-    non-isolated OAuth popup
+  /api/v1/ceremony/callback and configured callback alias
+    non-isolated callback document
               ├─ top-level navigation ── OAuth provider and back
               └─ immediate same-popup promotion after callback
               ▼
@@ -82,7 +82,7 @@ Configured ceremony server origin
               └─ optional same-origin confidential platform route
 ```
 
-The initial popup uses the browser-local bootstrap to activate prefetch and let
+The initial callback document uses the browser-local bootstrap to activate prefetch and let
 the application retain its source before OAuth. After callback, transport
 selection produces one application-to-current-ceremony transport. The callback
 then becomes the top-level prover. The MessagePort transport moves its endpoint
@@ -163,8 +163,8 @@ it cannot negotiate another version.
 ### OAuth-return delivery
 
 ```ts
-interface PopupDeliverParams {
-  type: 'popup-deliver-params'
+interface CallbackDeliverParams {
+  type: 'callback-deliver-params'
   oauthReturn: {
     query: string
     fragment: string
@@ -172,16 +172,16 @@ interface PopupDeliverParams {
 }
 ```
 
-The popup creates this message from the bounded query and fragment copied and
+The callback creates this message from the bounded query and fragment copied and
 cleared by the server bootstrap. It extracts only the single OAuth state needed
 for ceremony routing and does not classify approval, denial, transport, or
 platform fields.
 
-`PopupDeliverParams` is the first CCDP message delivered to the application.
+`CallbackDeliverParams` is the first CCDP message delivered to the application.
 On MessagePort it comes directly from the authenticated callback before the
 endpoint moves. On RTC the callback queues the same message locally and the
 replacement prover forwards it unchanged after the `RTCDataChannel` opens. The
-`Popup` prefix records the creator, not the final forwarding document.
+`Callback` prefix records its creator, even when the prover forwards it.
 
 The application-scoped client selects its live `Ceremony` from the transport and
 uses that ceremony's platform/version parser to exact-validate transport,
@@ -267,7 +267,7 @@ cancellation, valid provider denial, invalid callback classification, or
 retired application authority. Reachable proving work clears queued input and
 attempts to close; no acknowledgement or platform-specific cancel path exists.
 
-`AbortCeremony` is the upstream technical-failure message created by popup or
+`AbortCeremony` is the upstream technical-failure message created by callback or
 prover code. Its reason is a bounded sanitized diagnostic string, not a stable
 code or raw exception. Exact reason enums may emerge from implementation
 experience. The application rejects the live ceremony for every observable
@@ -277,7 +277,7 @@ abort. Context or transport loss may produce no message.
 
 ```ts
 type CCDPMessage =
-  | PopupDeliverParams
+  | CallbackDeliverParams
   | AppRequestProof
   | AppCancelCeremony
   | ProverNotifyEvent
@@ -295,19 +295,19 @@ exact service records remain part of later server work.
 ```mermaid
 sequenceDiagram
     participant A as Application / Ceremony Client
-    participant C as Callback popup
+    participant C as Callback document
     participant P as Top-level prover
 
     Note over A,C: Pre-OAuth readiness retains the popup source and starts prefetch
     Note over A,C: Provider authorization returns to the cleared callback
     alt Retained opener authenticates
         Note over A,C: MessagePort transport binds
-        C-->>A: PopupDeliverParams
+        C-->>A: CallbackDeliverParams
         C->>P: Move transport endpoint and replace popup
     else Opener path unavailable
         C->>P: Move cleared return and replace popup
         Note over A,P: RTC transport binds through signaling-only service
-        P-->>A: PopupDeliverParams created by callback
+        P-->>A: CallbackDeliverParams
     end
     alt Application does not proceed
         A-->>P: AppCancelCeremony
@@ -325,13 +325,13 @@ sequenceDiagram
 ```
 
 The diagram intentionally hides MessagePort transfer, worker receipts, SDP,
-ICE, framing, URL clearing, and popup UI. Those mechanics are transport or
+ICE, framing, URL clearing, and callback/prover UI. Those mechanics are transport or
 participant concerns and do not alter the CCDP sequence observed after
 transport binding.
 
 ## Shared invariants
 
-- One live ceremony accepts one transport and one first `PopupDeliverParams`.
+- One live ceremony accepts one transport and one first `CallbackDeliverParams`.
 - A transport authenticates and binds before any OAuth return reaches the
   application or signaling carries data.
 - Transport records cannot carry or invent a CCDP message.
@@ -345,7 +345,7 @@ transport binding.
   result.
 - No ceremony recovery, durable browser checkpoint, or transport migration
   exists.
-- Popup owns callback capture and transition UI; prover owns credentials,
+- Callback owns return capture and transition UI; prover owns credentials,
   workers, visible proving UI, and proof behavior; transports own only binding
   and delivery.
 

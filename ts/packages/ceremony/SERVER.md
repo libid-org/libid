@@ -5,8 +5,8 @@ This document defines the HTTP and deployment contract expected by
 package supplies the browser modules, exact public-record validators, and
 browser-side platform codecs.
 
-The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), the popup
-participant in [POPUP.md](POPUP.md), and the prover subsystem in
+The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), the callback
+participant in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). The browser documents communicate through the
 [Ceremony Cross-Document Protocol](CCDP.md). The normative libID specification
 owns authorization, platform-return, token-exchange, and proof semantics; this
@@ -18,7 +18,7 @@ The ceremony server owns:
 
 - OAuth application registrations and confidential client credentials;
 - the public ceremony configuration;
-- fixed popup, callback, and prover documents and their response policy;
+- fixed callback and prover documents and their response policy;
 - immutable ceremony browser assets and configured libID prover assets; and
 - the confidential platform endpoint required by an enabled platform.
 
@@ -41,15 +41,15 @@ One deployment has these server-owned inputs:
 | Input | Contract |
 |---|---|
 | Server origin | Canonical HTTPS origin used by every ceremony route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
-| `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned popup |
-| Callback path | Developer-configurable path whose default is `/auth/v1/callback` |
+| `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned callback |
+| Callback alias path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Popup and prover roots | Immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
+| Callback and prover roots | Immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
 | Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
 `allowedAppOrigins` uses set semantics and has no protocol maximum. The same
-value drives configuration CORS and is embedded into the popup document. It is
+value drives configuration CORS and is embedded into the callback document. It is
 deployment data, never inferred from a request's `Origin`, `Referer`, query,
 fragment, or body.
 
@@ -71,15 +71,15 @@ An integrating server exposes:
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
 | `GET` | `/api/v1/ceremony/config` | always | public application configuration | server exact-checks request `Origin` against `allowedAppOrigins` and returns exact noncredentialed CORS |
-| `GET` | `/api/v1/ceremony/popup` | always | initial ceremony popup document | none at HTTP ingress; loaded popup exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
-| `GET` | configured callback path, default `/auth/v1/callback` | always | direct byte-identical alias of the popup document and registered OAuth `redirect_uri` | none at HTTP ingress; loaded popup performs the same browser-side check after provider return |
+| `GET` | `/api/v1/ceremony/callback` | always | initial callback document | none at HTTP ingress; loaded callback exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
+| `GET` | configured callback alias, default `/auth/v1/callback` | always | direct byte-identical alias of the callback document and registered OAuth `redirect_uri` | none at HTTP ingress; loaded callback performs the same browser-side check after provider return |
 | `GET` | `/api/v1/ceremony/prover` | always | shared prefetch and isolated-prover document | none at HTTP ingress; the fixed public document binds through the transferred CCDP port after loading |
 | `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | server requires `Origin` to equal the configured ceremony server origin and rejects cross-origin preflight |
 
 Server-side request-origin enforcement is used only where the browser reliably
 sends an authoritative `Origin`. Top-level and iframe navigation may omit it,
 and the OAuth callback may identify the provider rather than the application;
-`Referer` is never an authority input. The fixed popup, callback, and prover
+`Referer` is never an authority input. The fixed callback and prover
 documents therefore remain public and request-invariant, with authority
 established by their browser protocol after loading.
 
@@ -132,17 +132,17 @@ served as `application/json` with `Cache-Control: no-store` and
 returning configuration. Request values do not alter the response record.
 
 The application-scoped `CeremonyClient` fetches and validates this record once
-at creation. Popup and prover documents never fetch it. The client freezes the
+at creation. Callback and prover documents never fetch it. The client freezes the
 selected client ID, redirect URI, and mutually supported platform ceremony
 version in each live Ceremony.
 
-## Popup document and callback alias
+## Callback document and configured alias
 
-`GET /api/v1/ceremony/popup` and the configured callback path directly serve
-one deployment-generated popup document with the same bytes and security
-headers. The callback path is an alias, not a second document or an HTTP
+`GET /api/v1/ceremony/callback` and the configured callback alias directly serve
+one deployment-generated callback document with the same bytes and security
+headers. The configured path is an alias, not a second document or an HTTP
 redirect. The OAuth registration uses the callback URL, while application
-launch uses `/api/v1/ceremony/popup`.
+launch uses `/api/v1/ceremony/callback`.
 
 The response is invariant across requests. In particular, its HTML, headers,
 root module URL, CSP, and embedded `allowedAppOrigins` do not depend on the
@@ -162,21 +162,21 @@ The document contains one CSP-hashed inline bootstrap. Before storage,
 rendering, error reporting, module loading, or network activity, it:
 
 1. bounds the combined raw query and fragment to
-   `MAX_OAUTH_REDIRECT_BYTES = 32 KiB`;
+   `MAX_OAUTH_RETURN_BYTES = 32 KiB`;
 2. copies the exact `location.search` and `location.hash`, including their
    leading delimiters when nonempty;
 3. clears both with `history.replaceState`;
-4. imports the exact immutable `libid-ceremony-popup.js` root URL; and
+4. imports the exact immutable `libid-ceremony-callback.js` root URL; and
 5. invokes the package entrypoint with the captured values and embedded
    deployment allowlist:
 
 ```ts
-declare function startPopup(
+declare function startCallback(
   oauthReturn: { query: string; fragment: string },
   allowedAppOrigins: readonly string[],
 ): void
 
-startPopup(oauthReturn, allowedAppOrigins)
+startCallback(oauthReturn, allowedAppOrigins)
 ```
 
 Malformed and oversized input follows the same clearing order; an oversized
@@ -185,11 +185,11 @@ gone.
 
 A root import failure is terminal for that document. The bootstrap does not
 retry the same module URL because browsers retain a failed module-map entry; a
-user retry starts in a fresh popup document.
+user retry starts in a fresh callback document.
 
-The bootstrap does not parse platform fields or derive an allowlist. The popup
+The bootstrap does not parse platform fields or derive an allowlist. The callback
 module owns the closed launch/callback grammar and local lifecycle after URL
-clearing, as defined in [POPUP.md](POPUP.md#entrypoint-and-trusted-inputs).
+clearing, as defined in [CALLBACK.md](CALLBACK.md#entrypoint-and-trusted-inputs).
 CCDP owns its cross-document messages and ordering.
 
 Google returns its credential in the fragment, which is never sent to the
@@ -198,9 +198,9 @@ The server and every upstream proxy suppress or redact callback query strings
 from access logs, traces, analytics, metrics labels, and error reports. No later
 URL carries the captured return.
 
-### Popup response policy
+### Callback response policy
 
-The shared popup response uses:
+The shared callback response uses:
 
 - `Cross-Origin-Opener-Policy: unsafe-none`;
 - `Content-Type: text/html` and `X-Content-Type-Options: nosniff`;
@@ -210,7 +210,7 @@ The shared popup response uses:
 - `frame-src 'self'` only for prover prefetch;
 - `connect-src 'self'`;
 - `style-src` permitting only the exact hash of the stylesheet text installed
-  by the immutable popup root;
+  by the immutable callback root;
 - one exact hash for the inline clearing bootstrap and only the deployment's
   immutable root-module source; and
 - no broad `https:`, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
@@ -297,7 +297,7 @@ no protocol entrypoint.
 The prover root is also the module service-worker registration URL and permits
 a scope covering `/api/v1/ceremony/`; its response sets
 `Service-Worker-Allowed: /api/v1/ceremony/` when the script URL's default scope
-does not already cover it. Popup and prover perform no configuration request.
+does not already cover it. Callback and prover perform no configuration request.
 
 ### Prover response policy
 
@@ -359,7 +359,7 @@ typed members are invalid. No `schema` member is carried because
 `/api/v1/ceremony/github-token` already versions this transport.
 
 `TokenRequest.code` is the exact GitHub authorization code captured by the
-popup. It is nonempty printable ASCII without whitespace or control bytes and
+callback. It is nonempty printable ASCII without whitespace or control bytes and
 is at most 1,024 bytes. `codeVerifier` is the Ceremony Client's exact PKCE code
 verifier and matches `[A-Za-z0-9_-]{43}`. Neither value is normalized before
 the server constructs the platform request.
@@ -385,7 +385,7 @@ The route contract is:
 
 - the method is `POST`, the query is empty, and the media type is exactly
   `application/json`;
-- `Origin` exactly equals the configured server origin used by the popup and
+- `Origin` exactly equals the configured server origin used by the callback and
   prover; cross-origin preflight and credentialed cross-origin use are rejected;
 - the request is an exact, bounded `TokenRequest`; malformed UTF-8 or JSON and
   invalid record fields fail before token exchange;
@@ -421,12 +421,12 @@ metadata, including media type, CORS/CORP behavior, and worker or isolation
 policy. Launch trusts HTTPS and the deployment's immutable release URLs; it
 does not hash downloaded prover dependencies at runtime.
 
-Popup/prover markup, stylesheet text, and the inline libID logo are compiled
+Callback/prover markup, stylesheet text, and the inline libID logo are compiled
 into their root modules. The package release publishes their exact stylesheet
-hashes for CSP construction; it publishes no separate popup HTML template,
+hashes for CSP construction; it publishes no separate callback HTML template,
 logo, stylesheet, theme, or renderer artifact.
 
-Popup and prover HTML may embed deployment-specific values but is invariant
+Callback and prover HTML may embed deployment-specific values but is invariant
 within that deployment release and remains `no-store`. A production deployment
 uses immutable root URLs. Serving mutable bytes at one of those URLs or
 broadening CSP is unsupported.

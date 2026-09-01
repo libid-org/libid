@@ -1,14 +1,14 @@
 # CCDP MessagePort transport
 
 This document defines the browser-local transport used by the Ceremony
-Cross-Document Protocol (CCDP): pre-OAuth popup readiness, callback opener
+Cross-Document Protocol (CCDP): pre-OAuth callback readiness, callback opener
 authentication, `MessageChannel` binding, and the short-lived Service Worker
 port courier across callback-to-prover navigation.
 
 The transport-neutral contract, ceremony messages, ordering, and transport
 selection are defined in [CCDP.md](CCDP.md). The WebRTC fallback is defined in
-[CCDP-RTC.md](CCDP-RTC.md). Popup and prover behavior are defined in
-[POPUP.md](POPUP.md) and [PROVER.md](PROVER.md). Server routes, worker scope,
+[CCDP-RTC.md](CCDP-RTC.md). Callback and prover behavior are defined in
+[CALLBACK.md](CALLBACK.md) and [PROVER.md](PROVER.md). Server routes, worker scope,
 and response policy are defined in [SERVER.md](SERVER.md).
 
 These records and mechanics are package-private browser controls. They are not
@@ -44,7 +44,7 @@ interface ProverPrefetchingAssets {
 }
 ```
 
-On initial launch, the popup exact-validates and clears its fragment's ceremony
+On initial launch, the callback exact-validates and clears its fragment's ceremony
 ID, platform ID, and ceremony version, then loads
 `/api/v1/ceremony/prover#prefetch(ceremonyId, platformId,
 platformCeremonyVersion)`. The child clears that fragment, resolves the exact
@@ -52,7 +52,7 @@ profile, activates the prover Service Worker, and starts selected-profile
 prefetch. It returns `ProverPrefetchingAssets` after registration and dispatch
 settle; it does not wait for downloads.
 
-The popup accepts the record only from its exact child at the configured server
+The callback accepts the record only from its exact child at the configured server
 origin in the active prefetch phase and forwards it unchanged to each embedded
 allowed application origin. The application exact-matches version, ceremony,
 profile, server origin, and retained source. A scripted launch already knows
@@ -60,16 +60,16 @@ the expected `WindowProxy`; a real-anchor launch atomically binds the matching
 source. The application then navigates that source to the frozen provider URL.
 
 Prefetch handles public assets and requires no application reply or transport.
-Provider navigation would destroy any early popup endpoint. Missing profile,
+Provider navigation would destroy any early callback endpoint. Missing profile,
 document load, registration, or activation fails before OAuth; an ordinary
 artifact fetch failure continues on the same cold proving path.
 
 ## Callback authentication
 
 ```ts
-interface PopupRequestAuthentication {
+interface CallbackRequestAuthentication {
   ccdpVersion: CCDPVersion
-  type: 'popup-request-authentication'
+  type: 'callback-request-authentication'
 }
 
 interface AppAuthenticateOrigin {
@@ -80,20 +80,20 @@ interface AppAuthenticateOrigin {
 
 After first-script URL clearing and extraction of exactly one syntactically
 valid OAuth `state`, the callback attempts this transport only while its retained
-opener remains usable. It sends `PopupRequestAuthentication` without the
+opener remains usable. It sends `CallbackRequestAuthentication` without the
 ceremony ID or OAuth return. The application accepts it only from the retained
 popup source at the configured server origin and expected CCDP version.
 
 The application creates one `MessageChannel`, retains one endpoint, and sends
 `AppAuthenticateOrigin` with the other endpoint as the only transferable. The
-popup accepts it only from `window.opener`, requires a browser-stamped origin in
+callback accepts it only from `window.opener`, requires a browser-stamped origin in
 its immutable server-provided allowlist, exact-matches the supplied ceremony ID
 to OAuth state, and rejects a missing or additional port. This exchange binds
 the transport to one popup source, application origin, live ceremony, and
 protocol version.
 
 The retained application endpoint and callback endpoint each become a
-`CCDPTransport`. The callback sends `PopupDeliverParams` through that transport,
+`CCDPTransport`. The callback sends `CallbackDeliverParams` through that transport,
 then hands its endpoint to the navigation courier. Application replies remain
 ordered and queued while ownership moves to the top-level prover.
 
@@ -163,7 +163,7 @@ ports then close.
 
 For `ccdp`, the delivered port is already bound to the application and is
 adapted directly to `CCDPTransport`. For `rtc-bootstrap`, the delivered port
-contains exactly one queued, bounded `PopupDeliverParams`; the prover consumes
+contains exactly one queued, bounded `CallbackDeliverParams`; the prover consumes
 it locally and forwards it only after the RTC transport opens. The worker sees
 neither variant's payload.
 
@@ -195,17 +195,17 @@ durable record, OAuth bytes, proof request, progress, or proof.
 ```mermaid
 sequenceDiagram
     participant A as Application
-    participant C as Callback popup
+    participant C as Callback document
     participant S as Prover Service Worker
     participant P as Top-level prover
 
     alt Retained opener is usable
-        C-->>A: PopupRequestAuthentication
+        C-->>A: CallbackRequestAuthentication
         A->>C: AppAuthenticateOrigin + MessagePort
-        C-->>A: PopupDeliverParams through CCDPTransport
+        C-->>A: CallbackDeliverParams through CCDPTransport
         C->>S: HoldNavigationPort(ccdp) + transport port
     else RTC fallback
-        C->>C: Queue PopupDeliverParams on local port
+        C->>C: Queue CallbackDeliverParams on local port
         C->>S: HoldNavigationPort(rtc-bootstrap) + local port
     end
     S-->>C: null acknowledgement

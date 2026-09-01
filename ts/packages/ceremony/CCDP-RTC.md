@@ -1,7 +1,7 @@
 # CCDP WebRTC transport
 
 This document defines the WebRTC transport used when provider response policy has
-severed the callback popup's opener relationship and the browser-local
+severed the callback's opener relationship and the browser-local
 MessagePort transport cannot authenticate. It preserves the same CCDP messages,
 transport contract, one-popup UX, and server-independent ceremony data path.
 
@@ -34,7 +34,7 @@ cross-group messaging can replace it without changing `CCDPMessage`.
 ## Topology and activation
 
 The application page and final top-level `/prover` document are the only RTC
-peers. The callback popup never creates an `RTCPeerConnection`: its immediate
+peers. The callback document never creates an `RTCPeerConnection`: its immediate
 replacement navigation would destroy it. No application iframe, worker,
 signaling service, or ceremony server terminates the `RTCDataChannel`.
 
@@ -56,7 +56,7 @@ offer exists.
 When local callback authentication is unavailable, the callback:
 
 1. clears and bounds the provider return and extracts its ceremony ID;
-2. queues exactly one `PopupDeliverParams` on a fresh local `MessagePort`;
+2. queues exactly one `CallbackDeliverParams` on a fresh local `MessagePort`;
 3. asks the navigation courier to hold the peer port with purpose
    `rtc-bootstrap`; and
 4. after acknowledgement, replaces itself with the top-level prover.
@@ -134,7 +134,7 @@ oversized message, decode failure, or buffer overflow aborts the transport befor
 the value reaches CCDP.
 
 After `RTCDataChannel.onopen`, the prover forwards the queued
-`PopupDeliverParams` unchanged as the first CCDP message. The application then
+`CallbackDeliverParams` unchanged as the first CCDP message. The application then
 classifies the OAuth result and sends `AppRequestProof` or
 `AppCancelCeremony`. Progress, proof delivery, cancellation, and technical
 failure use the same transport. There is no second connection, reconnection,
@@ -150,7 +150,7 @@ Selection is one-shot in the application ceremony state:
 
 - a valid `AppAuthenticateOrigin` selects MessagePort and closes signaling;
 - an accepted prover offer selects RTC and makes a late local bootstrap inert;
-- only one selected transport may deliver `PopupDeliverParams`; and
+- only one selected transport may deliver `CallbackDeliverParams`; and
 - transport loss does not select the other transport or recover the ceremony.
 
 The prover offer cannot race a still-live callback because it is created only
@@ -182,13 +182,13 @@ ceremony IDs, signaling entries, worker holders, peer connections, and
 sequenceDiagram
     participant A as Application
     participant G as Signaling service
-    participant C as Callback popup
+    participant C as Callback document
     participant S as Prover Service Worker
     participant P as Top-level prover
 
     A->>G: Arm one-use ceremony subscription
     Note over A,C: Provider return severs opener-based authentication
-    C->>C: Queue PopupDeliverParams on local port
+    C->>C: Queue CallbackDeliverParams on local port
     C->>S: HoldNavigationPort(rtc-bootstrap) + port
     S-->>C: Acknowledge hold
     C->>P: Replace popup with /prover#ceremonyId
@@ -199,6 +199,6 @@ sequenceDiagram
     A->>G: Answer + trickled ICE candidates
     G-->>P: Deliver answer/candidates
     P-->>A: Ordered reliable RTCDataChannel opens
-    P-->>A: PopupDeliverParams
+    P-->>A: CallbackDeliverParams
     Note over A,G: Delete signaling state
 ```

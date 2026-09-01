@@ -55,7 +55,7 @@ pipeline.
 
 The prover claims one `NavigationPortPurpose`. For `ccdp`, its port is
 already the application-bound transport endpoint. For `rtc-bootstrap`, it consumes the
-single locally queued `PopupDeliverParams`, establishes the application RTC
+single locally queued `CallbackDeliverParams`, establishes the application RTC
 transport, and forwards that message unchanged. It then consumes one exact
 `AppRequestProof`. It returns only bounded platform steps, one exact platform
 proof delivery, or a sanitized technical failure.
@@ -334,7 +334,7 @@ The UI is package-owned and accepts no application markup or renderer.
 
 On terminal cleanup, the prover calls `window.close()`. If the ceremony popup
 remains open, the prover view renders the fixed safe fallback itself; closing
-does not require another CCDP message or popup relay.
+does not require another CCDP message or callback relay.
 
 ## Shared toolchain and assets
 
@@ -423,7 +423,7 @@ semantics.
 ## Prefetch and cache lifecycle
 
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
-behavior, not configuration or action input. The initial popup loads the fixed
+behavior, not configuration or action input. The initial callback loads the fixed
 prover document, whose Window branch registers its own deployed
 `libid-ceremony-prover.js` module URL as a module service worker and asks it to
 start only the selected platform/version profile's artifact single flights.
@@ -488,7 +488,7 @@ IndexedDB cache before proof generation.
 A later ceremony reuses every repeated artifact URL and the same CRS entries;
 only missing profile assets are fetched. OAuth navigation therefore neither
 restarts shared work nor downloads unrelated profiles. The prefetch iframe,
-callback popup, and active prover remain in the same origin and worker
+callback document and active prover remain in the same origin and worker
 registration, so the final prover reuses the same fetches and caches.
 
 A new document reconnects to the worker rather than awaiting a Promise owned
