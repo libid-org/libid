@@ -42,11 +42,11 @@ The carrier neither interprets those values nor persists or recovers them.
 
 ## Failure and security invariants
 
-- Events from another `WindowProxy` or without the `message-port`
-  discriminator are not handshake attempts and are ignored. A handshake from
-  the bound source is untrusted until its browser-stamped origin, exact record
-  shape, direction, and compatibility tag match. The callback additionally
-  requires its one-use ceremony ID and exactly one transferred port.
+- Events from another `WindowProxy` are ignored. Before binding, every event
+  from the bound source is a handshake attempt and must exact-match its
+  browser-stamped origin, `message-port` discriminator, record shape, direction,
+  and compatibility tag. The callback additionally requires its one-use
+  ceremony ID and exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
   value. The response uses the exact callback origin, transfers only the new
   callback endpoint, and never exposes the client's retained endpoint.
