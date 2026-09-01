@@ -215,17 +215,22 @@ Worker lifetime model remains event-based: registrations persist, but a worker
 heap may be terminated when no event is pending or under abnormal resource
 pressure.
 
-There is no portable browser-specific minimum lifetime:
+There is no portable browser-specific minimum lifetime. The PoC observed:
 
-| Browser family | Launch assumption |
+| Browser engine | Empirical hold result |
 |---|---|
-| Chromium and Firefox | The immediate preserve, navigate, and claim sequence is qualified. Any longer observed survival is outside the contract. |
-| WebKit and Safari | Only the same immediate sequence is supported. The PoC lost a port held across an OAuth-length navigation, so no pre-OAuth or idle retention is assumed. |
-| All engines | Suspension, process loss, memory pressure, or expiry may still break continuity. Failure is terminal and never selects a weaker path. |
+| Chromium | More than 60 seconds; the upper boundary was not found. |
+| Firefox | Approximately 60 seconds. |
+| Playwright WebKit | Seven seconds succeeded and eight seconds lost the port. |
+| Safari and iOS WebKit | Not inferred from emulation; real-device qualification remains required. |
 
-One conservative claim deadline applies across engines; transport does not
-sniff the user agent or choose browser-specific timing. Its exact value is an
-implementation and real-device qualification choice, not a protocol guarantee.
+These are observations, not guaranteed browser contracts. Launch uses one
+conservative `CARRIER_CLAIM_TIMEOUT_MS = 5_000` across engines, below the
+observed WebKit boundary. Transport does not sniff the user agent or select a
+browser-specific deadline. Suspension, process loss, memory pressure, or
+expiry may still break continuity; failure is terminal and never selects a
+weaker path. Any deadline change requires renewed real-device qualification but
+does not change the transported protocol.
 
 ### Payload
 
