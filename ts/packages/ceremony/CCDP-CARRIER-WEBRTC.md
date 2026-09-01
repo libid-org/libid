@@ -219,39 +219,22 @@ reconnection, carrier switch, or message resend.
 - Observable failure clears reachable inputs without selecting another carrier;
   failure may otherwise be silent.
 
-## Sequence
+## Connection establishment
 
-This diagram represents only RTC fallback establishment. The application opens
-its idle signaling subscription before provider navigation; OAuth, callback
-processing, fallback selection, and callback-to-prover continuity occur outside
-the RTC carrier and are collapsed into the middle note. The final prover starts
-the offer only after transport has committed RTC. The sequence ends when both
-connection functions resolve their carriers; it does not show CCDP values.
-Labels describe logical signaling actions rather than the deferred service wire
-records.
+This diagram shows the logical RTC fallback establishment; it does not define
+the signaling-service wire records or show CCDP values.
 
 ```mermaid
 sequenceDiagram
     participant A as Application transport
     participant G as Signaling service
-    participant P as Final prover transport
+    participant P as Prover transport
 
-    Note over A,G: Before provider navigation
-    A->>G: Open one-use answerer subscription
-    Note over A,P: OAuth, callback processing, fallback selection, and popup navigation
-    P->>G: Open offerer connection
-    P->>G: Publish SDP offer
-    G-->>A: Forward offer
-    A->>G: Publish SDP answer
-    G-->>P: Forward answer
-    P->>G: Trickle prover ICE candidates
-    G-->>A: Forward prover candidates
-    A->>G: Trickle application ICE candidates
-    G-->>P: Forward application candidates
-    Note over A,P: Candidate exchange may overlap SDP processing
-    P-->>A: Direct ordered reliable RTCDataChannel opens
-    Note over A,P: Both connection functions resolve Carrier
-    A->>G: Close answerer subscription
-    P->>G: Close offerer connection
-    Note over G: Delete signaling state
+    A->>G: Arm one-use subscription
+    P->>G: Offer + trickled ICE candidates
+    G-->>A: Deliver offer and candidates
+    A->>G: Answer + trickled ICE candidates
+    G-->>P: Deliver answer and candidates
+    P-->>A: Ordered reliable RTCDataChannel opens
+    Note over A,G: Delete signaling state
 ```
