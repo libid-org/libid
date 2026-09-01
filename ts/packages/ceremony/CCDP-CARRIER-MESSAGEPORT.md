@@ -40,6 +40,27 @@ The transport owns timeout, carrier selection, navigation continuity, and the
 logical connection. The caller owns every transported value and its meaning.
 The carrier neither interprets those values nor persists or recovers them.
 
+## Failure and security invariants
+
+- Window messages are untrusted until their browser-stamped source and origin,
+  exact record shape, direction, and compatibility tag match the current
+  binding. The callback additionally requires its one-use ceremony ID and
+  exactly one transferred port.
+- The wildcard-targeted request contains no capability or application-level
+  value. The response uses the exact callback origin, transfers only the new
+  callback endpoint, and never exposes the client's retained endpoint.
+- An accepted handshake removes its window listener. Wrong, missing,
+  duplicate, replayed, late, or post-abort messages are inert; any received port
+  and its reachable local peer are closed.
+- After binding, possession of the entangled port authenticates the peer.
+  Application-level values travel only over that port; the carrier preserves
+  their order and shape without interpreting them.
+- Abort, timeout, `messageerror`, port closure, or browser-context destruction
+  closes reachable resources and releases no later value. There is no
+  reconnect, resend, or recovery inside this carrier.
+- Port loss may be silent. It is a transport failure, never delivery, success,
+  denial, cancellation, or any other ceremony outcome.
+
 ## Authentication
 
 Both directions use one carrier-local record:
@@ -105,24 +126,3 @@ Each operation resolves once with its local endpoint or rejects without a
 carrier. Aborting removes its window listener and closes every reachable port.
 `messagePortCarrier` starts the port, forwards unchanged structured-clone values,
 and closes idempotently.
-
-## Failure and security invariants
-
-- Window messages are untrusted until their browser-stamped source and origin,
-  exact record shape, direction, and compatibility tag match the current
-  binding. The callback additionally requires its one-use ceremony ID and
-  exactly one transferred port.
-- The wildcard-targeted request contains no capability or application-level
-  value. The response uses the exact callback origin, transfers only the new
-  callback endpoint, and never exposes the client's retained endpoint.
-- An accepted handshake removes its window listener. Wrong, missing,
-  duplicate, replayed, late, or post-abort messages are inert; any received port
-  and its reachable local peer are closed.
-- After binding, possession of the entangled port authenticates the peer.
-  Application-level values travel only over that port; the carrier preserves
-  their order and shape without interpreting them.
-- Abort, timeout, `messageerror`, port closure, or browser-context destruction
-  closes reachable resources and releases no later value. There is no
-  reconnect, resend, or recovery inside this carrier.
-- Port loss may be silent. It is a transport failure, never delivery, success,
-  denial, cancellation, or any other ceremony outcome.
