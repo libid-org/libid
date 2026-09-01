@@ -8,9 +8,11 @@ to verify.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md), with its [MessagePort](CCDP-MESSAGEPORT.md) and
-[WebRTC](CCDP-RTC.md) transports defined separately. The callback participant is
-defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
+in [CCDP.md](CCDP.md), its concrete orchestration in
+[CCDP-TRANSPORT.md](CCDP-TRANSPORT.md), and its
+[MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
+[WebRTC](CCDP-CARRIER-WEBRTC.md) carriers separately. The callback participant
+is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The integrating server's routes, deployment inputs, and response policy are
@@ -58,11 +60,11 @@ sequenceDiagram
     U->>O: Approve or deny
     O-->>P: Return to callback alias
     alt Retained opener authenticates
-        P-->>C: Bind MessagePort transport and deliver OAuth return
+        P-->>C: Select MessagePort carrier and deliver OAuth return
         P->>R: Hand off transport endpoint and navigate same popup
     else Opener path unavailable
         P->>R: Hand off OAuth return and navigate same popup
-        R-->>C: Bind RTC transport and deliver OAuth return
+        R-->>C: Select WebRTC carrier and deliver OAuth return
     end
     alt User denied
         C-->>R: Cancel through transport
@@ -104,9 +106,10 @@ resumable independently.
 ## Ceremony Cross-Document Protocol
 
 [CCDP.md](CCDP.md) defines the package-owned protocol between the application,
-callback, and isolated prover; [CALLBACK.md](CALLBACK.md) defines the callback's local
-state machine and UI. This document owns only the package and public client
-contracts around them.
+callback, and isolated prover; [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md) defines its
+browser routing; and [CALLBACK.md](CALLBACK.md) defines the callback's local
+state and UI. This document owns only the package and public client contracts
+around them.
 
 ## Package composition
 
@@ -115,9 +118,10 @@ Launch publishes one `@libid/ceremony` package:
 ```text
 @libid/ceremony
 ├── ccdp
-│   ├── index         ceremony records, codecs, validation, transport contract, and wire version
-│   ├── message-port  window authentication and MessagePort adapter
-│   └── rtc           signaling, ICE, framing, and RTCDataChannel adapter
+│   ├── index                 ceremony records, codecs, phase rules, and wire version
+│   ├── transport             endpoint lifecycle, routing, carrier selection, and navigation
+│   ├── carrier-message-port  window authentication and MessagePort delivery
+│   └── carrier-webrtc        signaling, ICE, framing, and RTCDataChannel delivery
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for libid-ceremony-callback.js
 ├── navigation-handoff  opaque MessagePort transfer across callback-to-prover navigation
@@ -134,8 +138,9 @@ Launch publishes one `@libid/ceremony` package:
 
 `ccdp/index` is the pure protocol leaf imported by client, callback, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
-construction, or cryptographic proof verification. Its transport leaves implement
-the same internal `CCDPTransport` and never enter the public API.
+construction, or cryptographic proof verification. `ccdp/transport` is one
+concrete package-private coordinator; its carriers contain only their browser
+delivery mechanics and never enter the public API.
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
@@ -179,7 +184,9 @@ prover ───> platforms/<platform>/<version>/prover ───> types
 platforms/{x,github}/<version>/prover ───> prover/notarization
 
 client, callback, prover, platforms/index ───> ccdp
-callback, prover, ccdp/{message-port,rtc} ───> navigation-handoff
+client, callback, prover ───> ccdp/transport
+ccdp/transport ───> ccdp/{carrier-message-port,carrier-webrtc}
+ccdp/transport ───> navigation-handoff
 wallet-client ─────────> client + ceremony + wallet/protocol
 ```
 
@@ -193,7 +200,7 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | internal `CCDPTransport`, `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation; no application export |
+| `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, phase rules, exact codecs, and concrete `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and navigation-handoff handlers |

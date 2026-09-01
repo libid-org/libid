@@ -7,9 +7,11 @@ use of the shared port handoff, cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
-[CCDP.md](CCDP.md), with [MessagePort](CCDP-MESSAGEPORT.md) and
-[WebRTC](CCDP-RTC.md) transport mechanics defined separately. The integrating
-server's prover route, embedded `ProverAssets`, and response
+[CCDP.md](CCDP.md), transport lifecycle by
+[CCDP-TRANSPORT.md](CCDP-TRANSPORT.md), and carrier mechanics by
+[CCDP-CARRIER-MESSAGEPORT.md](CCDP-CARRIER-MESSAGEPORT.md) and
+[CCDP-CARRIER-WEBRTC.md](CCDP-CARRIER-WEBRTC.md). The integrating server's
+prover route, embedded `ProverAssets`, and response
 headers are defined in [SERVER.md](SERVER.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
@@ -34,7 +36,7 @@ After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
     same popup navigates here as a top-level document
       ├── claims the navigation port
-      ├── adopts its bound CCDP transport or opens RTC from its queued return
+      ├── resumes MessagePort or opens WebRTC from its queued return
       └── joins the same fetches and proves
 
 Shared Service Worker
@@ -53,13 +55,13 @@ The same root evaluated as a Service Worker installs only its cache and
 short-lived port-handoff handlers; it does not enter CCDP or a platform
 pipeline.
 
-The prover calls `claimNavigationPort` and dispatches its opaque purpose to the
-owning transport. The MessagePort transport adopts its already application-bound
-endpoint; the RTC transport consumes the single locally queued
-`CallbackDeliverParams`, establishes the application transport, and forwards
-that message unchanged. It then consumes one exact `AppRequestProof`. It returns
-only bounded platform steps, one exact platform proof delivery, or a sanitized
-technical failure.
+The prover creates the isolated popup transport endpoint, which claims the
+navigation port and exact-validates its opaque purpose. It either resumes the
+already application-bound MessagePort carrier or consumes the single queued
+`CallbackDeliverParams`, opens WebRTC, and forwards that message unchanged. The
+prover then consumes one exact `AppRequestProof` and returns only bounded
+platform steps, one exact platform proof delivery, or a sanitized technical
+failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
@@ -452,7 +454,7 @@ the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
-addition to the short-lived port holder defined by
+addition to the transport's short-lived port holder defined by
 [the navigation handoff](NAVIGATION-HANDOFF.md), it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—

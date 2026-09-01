@@ -5,10 +5,9 @@ This document defines the package-private mechanism which moves one opaque
 infrastructure, not a CCDP message, transport, public API, or durable ceremony
 record.
 
-[CCDP.md](CCDP.md) defines transport selection. The
-[MessagePort](CCDP-MESSAGEPORT.md) and [RTC](CCDP-RTC.md) transports construct
-and interpret their own ports. [CALLBACK.md](CALLBACK.md) and
-[PROVER.md](PROVER.md) are the two users of this handoff.
+[CCDP-TRANSPORT.md](CCDP-TRANSPORT.md) defines the transport lifecycle which
+constructs and interprets these ports. [CALLBACK.md](CALLBACK.md) and
+[PROVER.md](PROVER.md) host its two popup-side endpoints.
 
 ## API
 
@@ -25,10 +24,9 @@ async function claimNavigationPort(ceremonyId: string): Promise<{
 }>
 ```
 
-`purpose` is an opaque, bounded string chosen and exact-validated by the caller.
-The handoff defines no purpose registry or transport enum and never interprets
-the port. The MessagePort and RTC transports own their respective purpose
-literals and port semantics.
+`purpose` is an opaque, bounded string chosen and exact-validated by the
+transport coordinator. The handoff defines no purpose registry or carrier enum
+and never interprets the port.
 
 ## Behavior
 

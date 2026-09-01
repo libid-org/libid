@@ -3,14 +3,15 @@
 This document defines the browser participant emitted as
 `libid-ceremony-callback.js`. The same fixed, non-isolated document runs before
 OAuth and at the configured provider callback. It preserves and authenticates
-the application opener when available, selects the matching CCDP transport, and
-promotes the same popup to the isolated prover without storing a ceremony.
+the application opener when available and delegates phase routing, carrier
+selection, and same-popup promotion to the concrete CCDP transport.
 
 The exact cross-document records and their order are defined by
-[CCDP](CCDP.md), with browser-local controls in
-[CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md) and opener-severed fallback in
-[CCDP-RTC.md](CCDP-RTC.md). The server-owned HTML bootstrap, callback alias, embedded
-allowlist, and response headers are defined by the
+[CCDP](CCDP.md), transport lifecycle in
+[CCDP-TRANSPORT.md](CCDP-TRANSPORT.md), browser-local authentication in
+[CCDP-CARRIER-MESSAGEPORT.md](CCDP-CARRIER-MESSAGEPORT.md), and opener-severed
+fallback in [CCDP-CARRIER-WEBRTC.md](CCDP-CARRIER-WEBRTC.md). The server-owned
+HTML bootstrap, callback alias, embedded allowlist, and response headers are defined by the
 [server contract](SERVER.md#callback-document-and-configured-alias). Prover
 execution is defined in [PROVER.md](PROVER.md). This document
 owns only the callback participant's local lifecycle.
@@ -21,11 +22,12 @@ The callback owns:
 
 - classifying its already-cleared input as an initial launch or provider
   callback;
-- using `window.opener` for exact callback authentication when it survives;
 - starting selected-profile prefetch before OAuth;
-- selecting MessagePort or RTC without releasing parameters to signaling;
-- handing one in-memory port through the prover Service Worker; and
-- script-owned native transition UI, one-shot cleanup, and navigation.
+- supplying its phase-local CCDP handlers to the concrete transport; and
+- script-owned native transition UI and one-shot cleanup.
+
+The concrete transport owns opener authentication, carrier selection, the
+in-memory navigation handoff, and popup replacement.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
@@ -78,9 +80,9 @@ initial launch
 
 provider callback
   validate OAuth state
-    -> authenticate opener and bind MessagePort, or choose RTC fallback
-    -> hand the bound transport endpoint or queued return to the Service Worker
-    -> navigate the same popup to /prover
+    -> create the post-auth transport endpoint
+    -> let it choose MessagePort or WebRTC
+    -> let it hand off state and navigate the same popup to /prover
 ```
 
 OAuth navigation destroys all initial-launch memory. No in-memory transition,
@@ -97,14 +99,13 @@ no state.
 | Phase | Accepts and emits | Callback side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| MessagePort transport | one OAuth state; `CallbackRequestAuthentication` → `AppAuthenticateOrigin` with one port → `CallbackDeliverParams` | validate exact opener/source/origin/ID, bind MessagePort, deliver the unchanged return, and delegate its endpoint to the transport's handoff path |
-| RTC transport | local authentication is unavailable or expires | queue the unchanged return on a fresh local port and delegate its endpoint to the transport's handoff path; send nothing to signaling |
-| Prover handoff | `holdNavigationPort` resolves | replace this document with `/api/v1/ceremony/prover#ceremonyId` |
+| Post-auth transport | one OAuth state and `CallbackDeliverParams` | create the popup endpoint; the transport exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
+| Prover transition | transport handoff resolves | transport replaces this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 callback never constructs the provider URL. After provider return it releases no value
-to the application until one transport binds. An absent or severed opener selects
-RTC immediately; an otherwise usable opener receives the bounded
+to the application until one carrier binds. An absent or severed opener commits
+WebRTC immediately; an otherwise usable opener receives the bounded
 `CALLBACK_OPENER_TIMEOUT_MS = 30_000` local-authentication deadline before RTC
 selection. A late local reply is inert. Failure to hand the selected port to
 the worker clears the return and renders the fixed prover-load failure instead
@@ -112,11 +113,9 @@ of navigating.
 
 The callback has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
-the platform-aware checks. Exact transport bindings remain in their transport
-documents; shared selection and navigation handoff remain in
-[CCDP.md](CCDP.md#transport-selection) and
-[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md). Execution and visible proving UI
-remain in [PROVER.md](PROVER.md).
+the platform-aware checks. Exact phase routing, carrier selection, and
+navigation are defined in [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md). Execution and
+visible proving UI remain in [PROVER.md](PROVER.md).
 
 ### Script-owned presentation
 
@@ -144,8 +143,8 @@ recovery record is written.
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, embedded allowlist, and response policy | server bootstrap and response |
-| MessagePort bootstrap shape, order, application source/origin, ceremony continuity, transport selection, and exact port count | callback and MessagePort transport |
-| RTC signaling origin, role, one-use ceremony binding, and ICE/DTLS continuity | RTC transport and signaling service |
+| MessagePort bootstrap shape, order, application source/origin, ceremony continuity, carrier selection, and exact port count | concrete transport and MessagePort carrier |
+| RTC signaling origin, role, one-use ceremony binding, and ICE/DTLS continuity | concrete transport, WebRTC carrier, and signaling service |
 | Popup `WindowProxy` source or RTC ceremony binding, CCDP version, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
 | Job authority and use of the returned Identity | application composition |
@@ -157,7 +156,7 @@ to configuration.
 
 ## Compatibility and acceptance
 
-Both transport bindings exact-check `CCDPVersion` before delivering the OAuth
+Both carrier bindings exact-check `CCDPVersion` before delivering the OAuth
 return. An unsupported document restarts with fresh OAuth. Version axes are
 defined in [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
 

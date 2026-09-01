@@ -1,105 +1,52 @@
 # Ceremony Cross-Document Protocol (CCDP)
 
 This document defines the closed browser protocol used by `@libid/ceremony`
-across the application, callback, and isolated prover. It owns the logical
-transport contract, transport selection, ceremony messages, ordering, and
-protocol compatibility.
+across the application, callback, and isolated prover. It owns ceremony
+messages, their valid transport phases, ordering, and protocol compatibility.
 
-The browser-local MessagePort transport is defined in
-[CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md). The WebRTC fallback is defined in
-[CCDP-RTC.md](CCDP-RTC.md), and their shared navigation primitive in
-[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md). The package API and result
-lifecycle are defined in [ARCHITECTURE.md](ARCHITECTURE.md), callback behavior in
-[CALLBACK.md](CALLBACK.md), proving in [PROVER.md](PROVER.md), and deployed routes in
-[SERVER.md](SERVER.md). These are implementation architecture, not part of the
-normative proof specification. Package acceptance requirements are indexed by
-[TEST_PLAN.md](TEST_PLAN.md).
+The concrete [CCDP transport](CCDP-TRANSPORT.md) owns phase routing, carrier
+selection, and navigation. Its browser-local
+[MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and fallback
+[WebRTC](CCDP-CARRIER-WEBRTC.md) carriers are defined separately. The package
+API and result lifecycle are defined in [ARCHITECTURE.md](ARCHITECTURE.md),
+callback behavior in [CALLBACK.md](CALLBACK.md), proving in
+[PROVER.md](PROVER.md), and deployed routes in [SERVER.md](SERVER.md). These are
+implementation architecture, not part of the normative proof specification.
+Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 
 Shared package types such as `PlatformId`, `PlatformCeremonyVersion`, and
 `PlatformStep` retain their definitions in the architecture document.
 `CeremonyConfig` and deployed prover inputs retain theirs in the server
 contract.
 
-## Architecture drivers
-
-### Execution contexts
+## Protocol boundary
 
 | Context | Owns | Browser constraint |
 |---|---|---|
 | Application page | operation inputs, live `Ceremony`, durable application Job, and final result commit | has application-defined headers and lifecycle; may be cross-site from the ceremony server |
-| Callback | OAuth navigation and return, initial opener authentication when available, and transition to proving | remains top-level and non-isolated until the returned document chooses a transport; its configured alias is the registered server-hosted `redirect_uri` |
+| Callback | OAuth navigation and return, initial opener authentication when available, and transition to proving | remains top-level and non-isolated until the returned transport endpoint selects a carrier; its configured alias is the registered server-hosted `redirect_uri` |
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
-No single document can satisfy every browser constraint. OAuth returns by
-replacing the document which started provider navigation, while multithreaded
-proving requires response-level isolation which cannot be added by an
-application library. A provider may also apply opener isolation before the
-callback, making `window.opener` unavailable.
+CCDP is transport-neutral. It defines what each message means and the phase in
+which it is valid. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md) owns how those phases
+cross browser documents and carriers. Callback and prover code register exact
+message codecs with that concrete transport rather than implementing another
+dispatcher or transport state machine.
 
-CCDP therefore separates **protocol** from **transport**:
+## Protocol definition
 
-- CCDP defines the messages and lifecycle visible to the Ceremony Client and
-  prover.
-- A transport authenticates one live ceremony and exposes one `CCDPTransport`.
-- MessagePort is the local path when the callback retains its opener.
-- WebRTC is the fallback when provider policy severs that path.
+### Version
 
-Neither transport changes authorization, OAuth parsing, proving, progress, or
-proof-delivery semantics. Once selected, the transport is invisible to CCDP and
-cannot change during the ceremony.
-
-### Decision summary
-
-| Decision | Constraint and rationale | Cost and revisit condition |
-|---|---|---|
-| Serve fixed callback and prover documents from the configured server | OAuth callback, isolation, CSP, allowed origins, and deployed assets are response properties | revisit only if browsers provide an authenticated callback and isolated prover without separate documents |
-| Reuse one ceremony popup across provider navigation, callback, and proving | preserves activation and one visible ceremony surface without another popup or button | document replacement destroys memory, so transports must preserve only the live transport endpoint or cleared OAuth return |
-| Always promote the callback to the top-level prover | one common path avoids prover-placement negotiation and keeps proving foregrounded | costs one same-origin navigation; a [Document Isolation Policy](https://github.com/WICG/document-isolation-policy) iframe may become an internal optimization after broader browser adoption or measured need |
-| Prefer MessagePort and fall back to WebRTC only when opener authentication is unavailable | keeps the ordinary path browser-local while surviving adversarial provider opener policy | WebRTC requires an idle signaling subscription, STUN, framing, and ICE only for the fallback |
-| Expose one transport-neutral interface | protocol code should not branch on browser transport | transports must preserve ordered one-shot delivery and report only observable failures |
-| Signal selected-profile prefetch readiness before OAuth | consent time can overlap public downloads without waiting for them | CCDP owns this transport-independent bootstrap; it waits only for worker activation and dispatch |
-| Keep ceremonies memory-only and one-shot | recovery would add credential storage, replay, migration, and cleanup state | interruption before Identity delivery repeats OAuth |
-| Use one `CCDPVersion` | messages and transport semantics are one package-owned browser protocol | a breaking protocol or binding change increments it; no per-message negotiation |
-
-## Browser topology
-
-```text
-Application origin
-  composition + Ceremony Client
-  durable Job and live Ceremony
-              │
-              │ one CCDPTransport
-              │ MessagePort normally, RTC after opener severance
-              ▼
-Configured ceremony server origin
-  /api/v1/ceremony/callback and configured callback alias
-    non-isolated callback document
-              ├─ top-level navigation ── OAuth provider and back
-              └─ immediate same-popup promotion after callback
-              ▼
-  /api/v1/ceremony/prover
-    isolated foreground prover + workers/WASM
-              ├─ platform/notary/JWK network selected by platform version
-              └─ optional same-origin confidential platform route
+```ts
+type CCDPVersion = 1
 ```
 
-The initial callback document uses the browser-local bootstrap to activate prefetch and let
-the application retain its source before OAuth. After callback, transport
-selection produces one application-to-current-ceremony transport. The callback
-then becomes the top-level prover. The MessagePort transport moves its endpoint
-through the Service Worker; the RTC transport moves only the cleared OAuth
-return locally and opens its `RTCDataChannel` from the final prover. Exact mechanics
-live in the transport and navigation-handoff documents.
+`CCDPVersion` covers `CCDPMessage`, its phase assignments, ordering, validation,
+and transport-binding semantics. The concrete transport verifies it before
+delivering a message. Same-release carrier and navigation controls have no
+independent negotiated version.
 
-The caller's scripted-open and real-anchor launch paths are defined by the
-[client lifecycle](ARCHITECTURE.md#client-lifecycle). Both use the same popup,
-prefetch, OAuth, transport selection, proving, and cleanup. Window versus tab is
-presentation, not a protocol or transport mode.
-
-## Pre-transport bootstrap
-
-`ProverPrefetchingAssets` is the application-facing readiness message sent before
-a `CCDPTransport` exists:
+### Prefetch readiness
 
 ```ts
 interface ProverPrefetchingAssets {
@@ -111,107 +58,25 @@ interface ProverPrefetchingAssets {
 }
 ```
 
-On initial launch, the top-level callback exact-validates and clears its
-ceremony-ID, platform-ID, and ceremony-version fragment, then loads the
-same-origin `/api/v1/ceremony/prover#prefetch(ceremonyId, platformId,
-platformCeremonyVersion)` child. The child clears that fragment, resolves the
-exact profile, activates the prover Service Worker, starts only the selected
-profile's public fetches, and emits `ProverPrefetchingAssets` after registration
-and dispatch settle. It does not wait for downloads.
+`ProverPrefetchingAssets` is the only `pre-auth` CCDP message. The initial
+top-level callback loads the same-origin prover prefetch child. That child
+clears and exact-validates its bootstrap fragment, resolves the selected
+profile, activates the prover Service Worker, starts the profile's public
+fetches, and emits readiness after registration and dispatch settle. It does
+not wait for downloads.
 
-The callback accepts the record only from its exact child at the configured
-server origin in the active prefetch phase and forwards it unchanged to each
-embedded allowed application origin. The application exact-matches protocol
-version, ceremony, profile, server origin, and source. A scripted launch already
-knows the expected `WindowProxy`; a real-anchor launch atomically binds the
-matching source. The application then navigates that source to the frozen
-provider URL without replying.
+The callback accepts the message only from its exact child at the configured
+server origin and forwards it unchanged through the pre-auth transport phase.
+The application exact-matches version, ceremony, profile, callback origin, and
+popup source. A real-anchor launch binds the observed source here. Its handler
+then asks the transport to navigate that popup to the frozen provider URL.
 
-The top-level callback visit is required even though prefetch itself runs in an
-iframe. It places the child, Service Worker, and caches in the ceremony server's
-first-party partition—the same partition later used by the top-level prover—and
-binds the actual popup source before OAuth. An iframe embedded directly by the
-application may occupy another storage partition, so its worker and cached work
-cannot be a launch dependency.
-
-Missing profile, document load, registration, or activation fails before OAuth.
-An ordinary artifact-fetch failure continues on the same cold proving path. This
-bootstrap neither authenticates nor selects the eventual transport and is not a
-member of `CCDPMessage`.
-
-## Transport contract
-
-```ts
-interface CCDPTransport {
-  send(message: CCDPMessage): void
-  receive(handler: (message: unknown) => void): () => void
-  close(): void
-}
-```
-
-This is an internal package boundary, not a public application API. An
-implementation returns one transport only after binding it to one live ceremony
-and protocol version. `send` accepts a message into the transport's local
-ordered queue; it is not a delivery acknowledgement. `receive` installs the one active receiver and
-returns its removal function. Received values remain `unknown` until the CCDP
-directional and phase validator accepts them. `close` is idempotent and sends
-no protocol result.
-
-The interface deliberately exposes no transport kind, ceremony ID, origin,
-transferable, reconnect, retry, readiness, or remote-close promise. MessagePort
-may not report remote context loss, so CCDP permits silent failure under either
-transport. RTC buffering and binary framing remain inside its implementation.
-
-### Transport selection
-
-The application prepares its live ceremony, retains the popup source, and arms
-one idle RTC signaling subscription before provider navigation. The callback
-then chooses exactly one path:
-
-1. If the retained opener can complete exact source/origin authentication, the
-   MessagePort transport binds immediately and the unused signaling subscription
-   closes before any offer exists.
-2. If the opener is absent, severed, invalid, or does not authenticate within
-   the bounded callback deadline, the callback queues its cleared OAuth return
-   for the replacement prover. That prover establishes the RTC transport through
-   the pre-armed signaling subscription.
-
-MessagePort has priority until callback navigation commits the RTC path. The
-live application ceremony atomically accepts the first valid selected transport;
-late authentication, signaling, or messages from another transport are inert.
-After selection, transport failure rejects or strands the one-shot ceremony—it
-never falls back again.
-
-Both transports provide:
-
-- one authenticated application/current-prover transport bound to one ceremony;
-- ordered, nonduplicated logical messages;
-- the same exact CCDP validation after receipt;
-- bounded values with no transport-selected platform or extension; and
-- best-effort cancellation and failure notification without recovery.
-
-### Shared navigation handoff
-
-Both selections must cross the immediate same-origin callback-to-prover
-navigation without placing the OAuth return in storage or another URL. Each
-transport constructs and interprets its own port, while the package-private
-[navigation port handoff](NAVIGATION-HANDOFF.md) moves that opaque port through
-the already-active Service Worker. The handoff is shared browser machinery, not
-part of `CCDPMessage`, `CCDPVersion`, or either transport.
-
-## Protocol definition
-
-### Version
-
-```ts
-type CCDPVersion = 1
-```
-
-`CCDPVersion` covers the pre-transport bootstrap, `CCDPMessage`, its ordering and
-validation, and the common transport-binding semantics. Each transport verifies
-it before exposing a transport. The Service Worker's same-release navigation
-controls need no independent wire version. RTC signaling carries the version
-only to reject incompatible peers; it cannot negotiate another version.
+The top-level callback visit places the child, Service Worker, and caches in the
+ceremony server's first-party partition, which the later top-level prover
+reuses. An application-hosted iframe may occupy another storage partition and
+is not a launch dependency. Missing profile, document load, registration, or
+activation fails before OAuth; an ordinary artifact-fetch failure continues on
+the cold proving path.
 
 ### OAuth-return delivery
 
@@ -230,7 +95,7 @@ cleared by the server bootstrap. It extracts only the single OAuth state needed
 for ceremony routing and does not classify approval, denial, transport, or
 platform fields.
 
-`CallbackDeliverParams` is the first CCDP message delivered to the application.
+`CallbackDeliverParams` is the first post-auth CCDP message delivered to the application.
 On MessagePort it comes directly from the authenticated callback before the
 endpoint moves. On RTC the callback queues the same message locally and the
 replacement prover forwards it unchanged after the `RTCDataChannel` opens. The
@@ -271,7 +136,7 @@ wallet state, connector, or transport kind enters the request.
 
 The prover validates generic CCDP shape and bounds, then applies the exact
 selected platform/version parser before credential use. The callback and
-transports have no platform configuration and cannot perform that validation.
+transport have no platform configuration and cannot perform that validation.
 The one-shot ceremony and transport prevent duplicate proving; the composition's
 final Job CAS prevents a late result from producing an application effect.
 
@@ -294,7 +159,7 @@ After `AppRequestProof`, the prover sends zero or more bounded progress records
 followed by one proof, unless the run aborts. The closed union uses
 `ProverDeliverProof<unknown>`; CCDP validates only its envelope and passes the
 logical value unchanged. The selected platform/version validator then narrows
-it. Adding a platform does not change CCDP or either transport.
+it. Adding a platform does not change CCDP, the transport, or either carrier.
 
 `PlatformStep.label` is nonempty package-owned display text of at most 96 UTF-8
 bytes without control characters. `PlatformStep.progress` is finite,
@@ -330,6 +195,7 @@ abort. Context or transport loss may produce no message.
 
 ```ts
 type CCDPMessage =
+  | ProverPrefetchingAssets
   | CallbackDeliverParams
   | AppRequestProof
   | AppCancelCeremony
@@ -338,12 +204,9 @@ type CCDPMessage =
   | AbortCeremony
 ```
 
-Prefetch readiness is the pre-transport bootstrap defined above, not a ceremony
-message. Opener authentication, Service Worker controls, SDP, and ICE candidates
-are also outside `CCDPMessage`. The MessagePort transport defines its binding
-controls, the navigation handoff defines its private API, and the RTC document
-defines signaling behavior while its exact service records remain part of later
-server work.
+Opener authentication, Service Worker controls, SDP, and ICE candidates are not
+`CCDPMessage`. The transport and carrier documents define those private
+controls. Exact signaling-service records remain part of later server work.
 
 ## Ceremony sequence
 
@@ -353,15 +216,16 @@ sequenceDiagram
     participant C as Callback document
     participant P as Top-level prover
 
-    Note over A,C: Pre-OAuth readiness retains the popup source and starts prefetch
+    C-->>A: pre-auth / ProverPrefetchingAssets
+    A->>C: Navigate retained popup to provider
     Note over A,C: Provider authorization returns to the cleared callback
     alt Retained opener authenticates
-        Note over A,C: MessagePort transport binds
+        Note over A,C: MessagePort carrier binds
         C-->>A: CallbackDeliverParams
         C->>P: Move transport endpoint and replace popup
     else Opener path unavailable
         C->>P: Move cleared return and replace popup
-        Note over A,P: RTC transport binds through signaling-only service
+        Note over A,P: WebRTC carrier binds through signaling-only service
         P-->>A: CallbackDeliverParams
     end
     alt Application does not proceed
@@ -380,20 +244,21 @@ sequenceDiagram
 ```
 
 The diagram intentionally hides MessagePort transfer, worker receipts, SDP,
-ICE, framing, URL clearing, and callback/prover UI. Those mechanics are transport or
-participant concerns and do not alter the CCDP sequence observed after
-transport binding.
+ICE, framing, URL clearing, and callback/prover UI. Those mechanics are
+transport or participant concerns and do not alter the logical sequence.
 
 ## Shared invariants
 
-- One live ceremony accepts one transport and one first `CallbackDeliverParams`.
-- A transport authenticates and binds before any OAuth return reaches the
-  application or signaling carries data.
-- Transport records cannot carry or invent a CCDP message.
-- Unknown, malformed, replayed, out-of-order, wrong-direction, wrong-transport,
+- One live ceremony accepts one pre-auth readiness, one carrier, and one
+  `CallbackDeliverParams`.
+- A carrier authenticates and binds under the concrete transport before any
+  OAuth return reaches the application or signaling carries data.
+- Carriers cannot carry or invent a CCDP message outside a validated transport
+  frame.
+- Unknown, malformed, replayed, out-of-order, wrong-direction, wrong-phase,
   or post-terminal values change no state.
-- All CCDP messages after binding omit ceremony ID because transport ownership
-  already supplies it.
+- Every post-auth and isolated CCDP message omits ceremony ID because transport
+  ownership already supplies it.
 - Progress remains advisory and cannot authorize, cancel, or complete a
   ceremony.
 - Cancellation and context-loss handling are best effort; closure is never a
@@ -401,15 +266,15 @@ transport binding.
 - No ceremony recovery, durable browser checkpoint, or transport migration
   exists.
 - Callback owns return capture and transition UI; prover owns credentials,
-  workers, visible proving UI, and proof behavior; transports own only binding
-  and delivery.
+  workers, visible proving UI, and proof behavior; the transport owns binding,
+  routing, selection, and navigation while carriers own delivery.
 
 ## Versioning and compatibility
 
 A loaded application client and server browser artifacts must share
-`CCDPVersion`. A compatible release may change internal transport code, worker
+`CCDPVersion`. A compatible release may change internal carrier code, worker
 controls, ICE policy, cache mechanics, or equivalent framing without changing
-the logical transport or messages. A breaking message shape, ordering,
+the logical transport or messages. A breaking message shape, phase, ordering,
 authentication, transport-binding, or validation rule increments `CCDPVersion`.
 
 `PlatformCeremonyVersion` remains independent and versions one platform's
