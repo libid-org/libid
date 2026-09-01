@@ -5,28 +5,12 @@ when provider response policy severs callback opener authentication. It owns
 signaling, peer establishment, and opaque-value delivery over one
 `RTCDataChannel`.
 
-[CCDP.md](CCDP.md) defines ceremony messages. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md)
-defines carrier selection, callback-to-prover navigation, and cleanup.
-The [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) is the preferred
-browser-local path. The signaling service API and deployment configuration
-remain later server work; this document defines the behavior the carrier needs.
-
 ## Why this carrier exists
 
-Authenticated `window.postMessage` followed by one `MessagePort` supplies
-browser-stamped origins and exact target-origin delivery without SDP, ICE,
-STUN, framing, or a network rendezvous.
-
-A provider may return a callback under a Cross-Origin-Opener-Policy which puts
-it in another browsing-context group and severs `window.opener`, its
-`WindowProxy`, and any opener-created `MessagePort`. This protects cross-origin
-window/process boundaries but removes the browser's narrow authenticated return
-channel. See the [WHATWG opener messaging discussion](https://github.com/whatwg/html/issues/6364)
-and [HTML COOP model](https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies).
-
-WebRTC is therefore a compatibility carrier, not a data relay or preferred
-default. A future browser primitive which safely preserves authenticated
-cross-group messaging can replace it without changing CCDP messages.
+The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) is simpler,
+but cannot establish after response isolation severs the callback's opener.
+WebRTC is the opener-independent fallback. Its signaling service establishes
+the peers but never relays application-level messages.
 
 ## Topology
 
@@ -36,11 +20,12 @@ iframe, worker, signaling service, or ceremony server terminates the
 `RTCDataChannel`.
 
 ```text
-Application client transport
-          │
-          │ ordered reliable RTCDataChannel
-          │
-Top-level isolated prover transport
+Application transport       Signaling relay       Isolated prover transport
+        |<--- SDP / ICE --------->|<--- SDP / ICE --------->|
+        |<========== direct RTCDataChannel =================>|
+
+        ---- signaling through relay
+        ==== direct browser-to-browser application data
 ```
 
 The client transport arms one bounded, one-use signaling subscription before
