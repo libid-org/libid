@@ -3,7 +3,7 @@
 This document defines the browser participant emitted as
 `libid-ceremony-callback.js`. The same fixed, non-isolated document runs before
 OAuth and at the configured provider callback. It preserves and authenticates
-the application opener when available and delegates opaque delivery, carrier
+the application opener when available and delegates typed delivery, carrier
 selection, and same-popup promotion to the concrete CCDP transport.
 
 The exact cross-document records and their order are defined by

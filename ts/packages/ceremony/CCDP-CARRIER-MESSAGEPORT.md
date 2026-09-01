@@ -34,7 +34,7 @@ Within that boundary it owns:
   `MessageEvent.origin`;
 - one `MessageChannel`, one transfer of its callback endpoint, and the lifetime
   of both local endpoints; and
-- adaptation of an accepted port to the transport's opaque delivery API.
+- adaptation of an accepted port to the transport's typed delivery API.
 
 The transport owns timeout, carrier selection, navigation continuity, and the
 logical connection. The caller owns every transported value and its meaning.
@@ -89,6 +89,17 @@ OAuth state. It rejects a missing or additional port.
 The request may use an unrestricted target origin because it contains no
 capability or application value. The response targets the exact callback origin.
 Application-level delivery starts only on the authenticated port.
+
+## Message delivery
+
+`messagePortCarrier` passes each logical value directly to
+`MessagePort.postMessage`. Native structured clone preserves arrays, plain
+records, and `Uint8Array`; this carrier adds no JSON encoding, byte tag,
+normalization, or additional copy. Received `MessageEvent.data` remains
+`unknown` until transport applies its injected `Message.decode`. A successful
+decode returns that same received object rather than allocating a replacement.
+A `DataCloneError` or `messageerror` closes the carrier. A failed injected
+decode makes transport close it. None releases a value.
 
 ## API
 

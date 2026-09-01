@@ -2,8 +2,8 @@
 
 This document defines a package-private transport which establishes a
 bidirectional communication channel between two browser documents, moves
-opaque values, selects a carrier, and preserves a transferable native resource
-across document navigation.
+caller-defined values, selects a carrier, and preserves a transferable native
+resource across document navigation.
 
 The topology is an ordinary browser tab running the application and one
 adjacent popup. The two documents may be cross-origin and cross-site.
@@ -45,14 +45,15 @@ Transport owns:
   application version;
 - the popup navigation handle;
 - selection and ownership of one authenticated carrier;
-- ordered opaque delivery and continuity across popup document replacement;
+- ordered delivery and continuity across popup document replacement;
   and
 - one-shot selection, navigation, closure, cleanup, and race resolution.
 
-Carriers own endpoint authentication, establishment, native framing, and
-delivery mechanics. Callers own value types, codecs, protocol direction and
-order, navigation destinations, route meanings, state transitions, and
-outcomes. Transport does not interpret any of them.
+Carriers own endpoint authentication, establishment, physical serialization
+where required, native framing, and delivery mechanics. The injected `Message`
+owns structural decoding. Callers own protocol direction and order, navigation
+destinations, route meanings, state transitions, and outcomes. Transport invokes
+decoding but does not interpret the resulting value.
 
 ## Failure and security rules
 
@@ -62,10 +63,12 @@ outcomes. Transport does not interpret any of them.
 - Application-level messages travel only over the selected end-to-end carrier.
   Establishment, rendezvous, and continuity controls carry none; neither do
   cookies, durable storage, request data, or URLs.
-- A carrier may validate bounds and framing but cannot interpret, classify,
-  synthesize, or alter a logical value.
+- A carrier may validate its generic value domain, bounds, and framing but
+  cannot inspect a message discriminator or interpret, classify, synthesize, or
+  alter its meaning.
 - Wrong, stale, duplicate, replayed, or post-close control messages cannot bind,
-  select, reopen, or mutate transport. Callers validate transported values.
+  select, reopen, or mutate transport. The injected `Message` validates
+  structure; callers validate protocol semantics.
 - Carrier, endpoint, continuity mechanism, or browser-context loss is never
   delivery, success, cancellation, or recovery.
 - Background suspension may delay delivery but is not success, cancellation,
@@ -77,13 +80,23 @@ outcomes. Transport does not interpret any of them.
 ## API
 
 The module has one long-lived application endpoint and a fresh ceremony
-endpoint for each popup document. Factories receive only the browser resources
-available to that endpoint; their records contain no route or protocol-state
-name.
+endpoint for each popup document. Factories receive the browser resources
+available to that endpoint and the same caller-owned message decoder:
 
 ```ts
-const applicationTransport = CCDPTransport.application(applicationResources)
-const ceremonyTransport = await CCDPTransport.ceremony(ceremonyResources)
+interface Message<Value> {
+  decode(value: unknown): Value
+}
+
+const applicationTransport = CCDPTransport.application(
+  applicationResources,
+  CCDPMessage,
+)
+
+const ceremonyTransport = await CCDPTransport.ceremony(
+  ceremonyResources,
+  CCDPMessage,
+)
 ```
 
 `application` installs direct navigation over its retained `WindowProxy` and
@@ -94,8 +107,8 @@ a new carrier. A matching entry restores its native port; no entry leaves the
 fresh endpoint to use its available opener or signaling resources normally.
 
 These are construction-specific implementations of the same API, not a public
-role field or a branch performed for each operation. Callers supply browser
-resources, never a keeper, continuity purpose, route, or phase.
+role field or a branch performed for each operation. Callers never supply a
+keeper, continuity purpose, route, or phase.
 
 Both resource records include the same ceremony ID and numeric
 `applicationVersion`. The ceremony ID is the caller-supplied connection ID;
@@ -124,20 +137,24 @@ carrier, and the candidate remains untrusted caller input.
 Navigation destroys the ceremony endpoint; the application endpoint retains
 its bound source and any idle signaling subscription.
 
-Both endpoints expose the same opaque delivery operations:
+Both endpoints expose the same typed delivery operations:
 
 ```ts
-transport.send(value: unknown): void
-transport.on(handler: (value: unknown) => void): () => void
-transport.navigatePopup(url: string): Promise<void>
-transport.close(): void
+interface Transport<Value> {
+  send(value: Value): void
+  on(handler: (value: Value) => void): () => void
+  navigatePopup(url: string): Promise<void>
+  close(): void
+}
 ```
 
-`send` accepts an opaque value into the current physical path; it is not a
-delivery acknowledgement. `on` exposes an untrusted value to the caller
-and returns an unsubscribe function. Transport does not inspect a discriminator
-or dispatch a protocol handler. `close` is idempotent and sends no delivery
-result.
+`send` accepts a caller-typed value into the current physical path; it is not a
+delivery acknowledgement and transport does not revalidate trusted local
+input. For each inbound carrier value, transport calls `Message.decode`
+exactly once before `on` exposes it and returns an unsubscribe function. The
+decoder may inspect a discriminator, but transport does not and never dispatches
+a protocol handler. A thrown decode closes the transport and delivers no value.
+`close` is idempotent and sends no delivery result.
 
 `navigatePopup` accepts a caller-selected opaque URL. It never parses, builds,
 or branches on that URL:
@@ -328,7 +345,7 @@ carries the port, purpose, or queued value.
 
 Transport has no independently negotiated version. Its caller supplies one
 numeric `applicationVersion`, which transport exact-matches without assigning
-application semantics. Compatible releases may change internal framing, ICE
-policy, worker controls, or equivalent browser mechanics without changing that
-contract. An independently incompatible transport change requires its own
-version; it does not repurpose the application version.
+application semantics. Compatible releases may change internal encoding,
+framing, ICE policy, worker controls, or equivalent browser mechanics without
+changing that behavior. An independently incompatible transport change requires
+its own version; it does not repurpose the application version.

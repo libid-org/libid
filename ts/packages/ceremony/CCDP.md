@@ -4,9 +4,9 @@ This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, callback, and isolated prover. It owns ceremony
 messages, their directions, ordering, and protocol compatibility.
 
-The concrete [CCDP transport](CCDP-TRANSPORT.md) authenticates and delivers
-opaque values, selects a carrier, and navigates the popup. Its browser-local
-[MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and fallback
+The concrete [CCDP transport](CCDP-TRANSPORT.md) authenticates, structurally
+decodes, and delivers messages, selects a carrier, and navigates the popup. Its
+browser-local [MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and fallback
 [WebRTC](CCDP-CARRIER-WEBRTC.md) carriers are defined separately. The package
 API and result lifecycle are defined in [ARCHITECTURE.md](ARCHITECTURE.md),
 callback behavior in [CALLBACK.md](CALLBACK.md), proving in
@@ -29,9 +29,9 @@ contract.
 
 CCDP is transport-neutral. It defines what each message means, which
 participant may send it, and its order. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md)
-owns how opaque values cross browser documents and carriers. Callback, prover,
-and client code decode values received from that transport and enforce CCDP
-direction and order.
+owns how values cross browser documents and carriers and invokes CCDP's injected
+`Message.decode` before delivery. Callback, prover, and client code receive a
+structurally valid `CCDPMessage` and enforce its direction and order.
 
 ## Protocol definition
 
@@ -137,11 +137,12 @@ nonce; only its derived code verifier crosses this boundary. No authorization
 digest, operation field, separate OAuth state, Job revision, composition kind,
 wallet state, connector, or transport kind enters the request.
 
-The prover validates generic CCDP shape and bounds, then applies the exact
-selected platform/version parser before credential use. The callback and
-transport have no platform configuration and cannot perform that validation.
-The one-shot ceremony and transport prevent duplicate proving; the composition's
-final Job CAS prevents a late result from producing an application effect.
+Transport validates generic CCDP shape and bounds. The prover then applies the
+exact selected platform/version parser before credential use. The callback and
+transport have no platform configuration and cannot perform that second
+validation. The one-shot ceremony and transport prevent duplicate proving; the
+composition's final Job CAS prevents a late result from producing an application
+effect.
 
 ### Progress and proof delivery
 
@@ -206,6 +207,79 @@ type CCDPMessage =
   | ProverDeliverProof
   | AbortCeremony
 ```
+
+### Structural decoding
+
+Each message interface has a same-named companion value containing its literal
+discriminator and structural decoder. The shared assertion owns the common
+plain-record, exact-field-set, and `type` checks:
+
+```ts
+declare function assertMessage<
+  const Type extends string,
+  const Fields extends readonly string[],
+>(
+  value: unknown,
+  type: Type,
+  fields: Fields,
+): asserts value is { type: Type } & Record<Fields[number], unknown>
+
+const ProverDeliverProof = {
+  type: 'prover-deliver-proof',
+
+  decode(value: unknown): ProverDeliverProof {
+    assertMessage(value, this.type, ['proof'])
+    return value
+  },
+}
+```
+
+A decoder exact-validates its message-specific fields and bounds, rejects
+unknown fields, and returns the same received object. It never coerces,
+normalizes, supplies defaults, strips fields, or allocates a replacement.
+Nested platform proof remains `unknown` here and is decoded later by the
+selected platform/version module.
+
+The closed companion values form one immutable local registry. There is no
+global registration, import-time self-registration, or plugin API:
+
+```ts
+const messages = [
+  ProverPrefetchingAssets,
+  CallbackDeliverParams,
+  AppRequestProof,
+  AppCancelCeremony,
+  ProverNotifyEvent,
+  ProverDeliverProof,
+  AbortCeremony,
+] as const
+
+const messagesByType: ReadonlyMap<string, Message<CCDPMessage>> = new Map(
+  messages.map(
+    (message): [string, Message<CCDPMessage>] => [message.type, message],
+  ),
+)
+
+if (messagesByType.size !== messages.length) {
+  throw new TypeError('duplicate CCDP message type')
+}
+
+const CCDPMessage: Message<CCDPMessage> = {
+  decode(value: unknown): CCDPMessage {
+    const message = messagesByType.get(readMessageType(value))
+    if (!message) throw new TypeError('unknown CCDP message type')
+    return message.decode(value)
+  },
+}
+```
+
+`readMessageType` accepts only a plain record with a bounded string `type`; the
+selected companion repeats the exact discriminator check so it also works
+independently. Both transport endpoints receive `CCDPMessage` as their
+injected `Message` and invoke its decoder once for each inbound carrier value.
+Successful handlers therefore receive a structurally valid union without an
+unchecked cast. Direction, order, and participant state remain higher-level
+checks.
 
 Opener authentication, Service Worker controls, SDP, and ICE candidates are not
 `CCDPMessage`. The transport and carrier documents define those private

@@ -107,7 +107,7 @@ The circuit proves only that one hidden bearer opens both commitments; PKCE
 binds the token exchange to the Authorization Digest outside the circuit.
 
 The platform delivery-to-output mapping is closed, but CCDP treats `proof` as
-an unknown structured-clone value:
+an unknown logical value:
 
 | Platform | Prover delivery | Ceremony Client additions | OAuth proof |
 |---|---|---|---|

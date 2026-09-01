@@ -2,7 +2,7 @@
 
 This document defines the WebRTC carrier used by the concrete CCDP transport
 when provider response policy severs callback opener authentication. It owns
-signaling, peer establishment, and opaque-value delivery over one
+signaling, peer establishment, and logical-value delivery over one
 `RTCDataChannel`.
 
 ## Why this carrier exists
@@ -139,18 +139,53 @@ new candidates. Changed descriptions, roles, fingerprints, or accepted
 candidates fail. Signaling state is deleted when the channel opens, either side
 fails, MessagePort wins, or the bounded expiry passes.
 
-## Frame delivery
+## Message delivery
 
-The carrier owns binary encoding, bounded framing, fragmentation below the
-browser's permitted message size, reassembly, and send-buffer pressure. It
-preserves every closed value used by CCDP, including `Uint8Array`, without
-changing its logical shape.
+[`RTCDataChannel.send`](https://www.w3.org/TR/webrtc/#dom-rtcdatachannel-send)
+accepts strings and binary buffers, not structured-clone objects. This carrier
+therefore owns one dependency-free wire codec in addition to bounded framing,
+reassembly, and send-buffer pressure. Its logical value domain is `null`,
+booleans, finite numbers, strings, arrays, plain records with own string keys,
+and `Uint8Array`. It rejects `undefined`, `bigint`, nonfinite numbers, functions,
+symbols, cycles, class instances, `Date`, `Map`, `Set`, raw `ArrayBuffer`, and
+other platform objects before sending.
 
-A malformed frame, duplicate or missing chunk, inconsistent length, oversized
-message, decode failure, or buffer overflow aborts the carrier before transport
-delivers the value. The carrier does not inspect that value. Establishment
-returns the native `RTCDataChannel`; transport then wraps it. There is one
-connection, with no reconnection, carrier switch, or message resend.
+The codec recursively replaces each `Uint8Array` with the exact JSON object
+`{"$bytes":"<unpadded-base64url>"}`. `$bytes` is reserved and cannot be an
+ordinary record key. It then uses `JSON.stringify` and `TextEncoder` to produce
+UTF-8 bytes. JSON is selected because it is built into every target browser and
+needs no package; CBOR or MessagePack would reduce byte expansion but add a
+dependency or custom codec without changing the protocol boundary. The JSON
+encoding is not canonical and is never hashed, signed, or otherwise treated as
+proof bytes; only each byte tag's base64url spelling is canonical.
+
+One serialized message is sent completely before the next. The ordered reliable
+channel needs only two frame forms:
+
+```text
+first:         0x01 | uint32be totalLength | payload
+continuation:  0x00 | payload
+```
+
+The first frame may complete the message. Otherwise continuation payloads append
+until exactly `totalLength` bytes have arrived. The carrier fragments below the
+browser's negotiated maximum and pauses its bounded send queue using
+`bufferedAmount` and `bufferedamountlow`. Ordering and the noninterleaving send
+queue remove the need for message IDs, chunk indexes, acknowledgements, or a
+checksum.
+
+On receipt the channel uses `binaryType = 'arraybuffer'`. The carrier exact-checks
+the frame sequence and total length, decodes UTF-8 fatally, parses JSON, restores
+exact canonical byte tags to `Uint8Array`, validates the generic value domain,
+and gives the resulting `unknown` to transport. Transport then calls its
+injected `Message.decode`; the carrier never reads a message discriminator.
+
+An unexpected start or continuation, incomplete or excess body, oversized
+message, invalid UTF-8 or JSON, malformed or noncanonical byte tag, unsupported
+value, decode failure, or send-buffer overflow closes the carrier before any
+value reaches a handler. Establishment returns the native `RTCDataChannel`;
+transport then wraps it. There is one connection, with no reconnection, carrier
+switch, or message resend.
 
 ## Failure and security invariants
 
@@ -160,8 +195,8 @@ connection, with no reconnection, carrier switch, or message resend.
   `Origin`; the prover handshake requires the exact ceremony-server origin.
 - Ceremony ID is fresh, unguessable, one-use, exact-matched to the live client
   transport, and retired when either carrier wins.
-- `RTCDataChannel` framing is bounded and cannot add a value outside its
-  authenticated connection.
+- `RTCDataChannel` message encoding and framing are bounded and cannot add a
+  value outside its authenticated connection.
 - Signaling loss, ICE failure, channel loss, popup closure, or context
   destruction is never a ceremony result or recovery signal.
 - Observable failure clears reachable inputs without selecting another carrier;
@@ -171,7 +206,7 @@ connection, with no reconnection, carrier switch, or message resend.
 
 ```mermaid
 sequenceDiagram
-    participant A as Client transport
+    participant A as Application transport
     participant G as Signaling service
     participant P as Prover transport
 

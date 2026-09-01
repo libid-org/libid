@@ -119,9 +119,9 @@ Launch publishes one `@libid/ceremony` package:
 @libid/ceremony
 ├── ccdp
 │   ├── index                 ceremony records, directional codecs, and wire version
-│   ├── transport             opaque delivery, carrier selection, and navigation
+│   ├── transport             typed delivery, carrier selection, and navigation
 │   ├── carrier-message-port  window authentication and MessagePort delivery
-│   └── carrier-webrtc        signaling, ICE, framing, and RTCDataChannel delivery
+│   └── carrier-webrtc        signaling, ICE, serialization, and RTCDataChannel delivery
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for libid-ceremony-callback.js
 ├── prover
@@ -138,7 +138,7 @@ Launch publishes one `@libid/ceremony` package:
 `ccdp/index` is the pure protocol leaf imported by client, callback, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
 construction, or cryptographic proof verification. `ccdp/transport` is one
-concrete package-private, payload-opaque transport; its carriers contain only
+concrete package-private, message-generic transport; its carriers contain only
 their browser delivery mechanics and never enter the public API.
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
@@ -199,7 +199,7 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, direction/order rules, exact codecs, and concrete payload-opaque `CCDPTransport`; no application export |
+| `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, direction/order rules, exact codecs, and concrete message-generic `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
