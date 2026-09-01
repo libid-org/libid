@@ -112,13 +112,13 @@ Both endpoints expose the same opaque delivery operations:
 
 ```ts
 transport.send(value: unknown): void
-transport.onMessage(handler: (value: unknown) => void): () => void
+transport.on(handler: (value: unknown) => void): () => void
 transport.navigatePopup(url: string): Promise<void>
 transport.close(): void
 ```
 
 `send` accepts an opaque value into the current physical path; it is not a
-delivery acknowledgement. `onMessage` exposes an untrusted value to the caller
+delivery acknowledgement. `on` exposes an untrusted value to the caller
 and returns an unsubscribe function. Transport does not inspect a discriminator
 or dispatch a protocol handler. `close` is idempotent and sends no delivery
 result.
@@ -137,7 +137,7 @@ rejects rather than navigating and losing live state.
 ## Carriers
 
 A carrier is a transport-internal adapter from one native browser communication
-resource to the common `send`, `onMessage`, and `close` operations. It owns
+resource to the common `send`, `on`, and `close` operations. It owns
 endpoint authentication, establishment, and delivery mechanics. Each carrier
 defines the endpoint identities it accepts and returns its native resource only
 after authenticating both sides.
@@ -158,7 +158,7 @@ it to the same transport-internal delivery operations:
 ```ts
 interface Carrier {
   send(value: unknown): void
-  onMessage(handler: (value: unknown) => void): () => void
+  on(handler: (value: unknown) => void): () => void
   close(): void
 }
 ```
