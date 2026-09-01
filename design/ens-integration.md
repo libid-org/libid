@@ -347,8 +347,8 @@ works, the second is what makes a marker label possible.
 
 The transform takes what `HandleNormalizer` produced, never the raw text, so it
 never sees case, padding or a leading at-sign. It returns an ordered list of
-labels, or it refuses. A refusal is not an error — the account keeps its
-id-derived name.
+labels, or it refuses. A refusal means the account has no name: it stays
+reachable by address, and by nothing else.
 
 ```
 <handle labels> . <platform> [ . <chain> ] . handles . link
@@ -394,37 +394,30 @@ label implies. Our email rules also admit `+`, `-` and `_`, which Gmail does not
 issue; an address carrying one is refused rather than mapped, because a mapping
 for characters no account can hold would be untested code on a payment path.
 
-**Workspace** — defined, and not enabled.
+**Workspace** — the domain travels in the labels.
 
 ```
 labels = local split at "." ++ ["_at"] ++ domain split at "."
 ```
 
-**The id-derived name** is what a refusal falls back to, and every account has one:
-
-```
-<idNode as 64 hex characters> . _id [ . <chain> ] . handles . link
-```
-
-`idNode` is what `IdentityNames` already keys on, so the gateway answers this from
-one `byId` call and never rebuilds an account id out of labels. It carries **no
-platform label**, because `idNode` is derived from the platform id already: a
-second statement of the platform could disagree with the first, and there is no
-honest way to resolve that. A chain label narrows it exactly as it narrows a
-handle-derived name.
-
-The `_id` marker cannot collide with a handle: a leading underscore is the only
+The `_at` marker cannot collide with a handle: a leading underscore is the only
 position ENS permits one, and no handle-derived label contains an underscore at
 all — X's are `[a-z0-9-]`, GitHub's are `[a-z0-9-]`, Gmail's are `[a-z0-9]`.
 
-Four properties hold, and each is work the gateway does not have to do:
+**There is no fallback, and an earlier draft was wrong to promise one.** It named
+an id-derived form, `<idNode as 64 hex characters>._id.handles.link`. Sixty-four
+characters is one past the DNS label ceiling of RFC 1035, so no client can encode
+it — ethers' `dnsEncode` refuses above 63. It could not have covered anything.
+Splitting the node across two labels or encoding it in a shorter alphabet would
+both work, but neither is worth a name nobody would use: the accounts it was meant
+to rescue are better served by the Workspace form above.
 
-- **Total** — every account has a name, handle-derived where the transform
-  succeeds and id-derived otherwise. No account is unreachable.
+Three properties hold, and each is work the gateway does not have to do:
+
 - **Injective** — no two accounts reach one name. Across platforms the platform
   label separates them; within one, the substitutions are bijections.
-- **Reversible** — the labels carry the handle, or the id node itself, so the
-  gateway holds no mapping and needs no database.
+- **Reversible** — the labels carry the handle itself, so the gateway holds no
+  mapping and needs no database.
 - **Closed** — it reads no state and calls nothing, so one function serves the
   gateway, a browser and a Rust client alike.
 
@@ -456,24 +449,28 @@ alice.smith@gmail.com    → alice.smith.google.handles.link
 A `+tag` never appears — it is a delivery alias, and the `email` claim carries the
 canonical address.
 
-**Google Workspace — expressible, deliberately not exposed.** A Workspace address
-carries its own domain, and joining the parts with dots is ambiguous
+**Google Workspace — every address whose parts are label-legal.** A Workspace
+address carries its own domain, and joining the parts with dots is ambiguous
 (`a.b@c.com` and `a@b.c.com` both give `a.b.c.com`); the `_at` marker resolves it:
 
 ```
 alice@company.com  → alice._at.company.com.google.handles.link
 ```
 
-Unambiguous and injective, and still wrong to ship: six labels with a marker in
-the middle is a machine string rather than a name; a resolving name publishes
-where someone works and what their work address is; and a work address is not the
-kind of identity anyone puts in a bio. Workspace bindings stay in `IdentityNames`
-and are not projected into ENS. The encoding is recorded so that reversing the
-decision is configuration rather than redesign.
+Six labels with a marker in the middle is closer to a machine string than to a
+name, and a resolving name publishes where someone works. Both were once reason
+enough to leave the form unexposed. They are not, because the alternative turned
+out to be no name at all: without it a Workspace account is unreachable by name,
+and the fallback that was supposed to catch it does not exist. A long name beats
+none. **The privacy consequence stands and is now a product decision rather than
+a technical one**: publishing a Workspace name discloses an employer, so whether
+these names are minted by default belongs in the binding flow, not here.
 
-The id-derived name resolves for every account but is not a name anyone will use.
-It is what remains after the mappings above — a doubled underscore at one position
-on X — and not the mechanism.
+**What still has no name.** An address holding `_` or `+`. Both are legal in a
+Google address as proved, neither is legal in an ENS label, and no substitution is
+available: unlike X, where `_` maps to `-` because X forbids `-`, a Google address
+may hold both, so the map would not be reversible. An irreversible map on a
+payment path is worse than no name. These accounts are reachable by address.
 
 ## The trust model
 
@@ -542,9 +539,10 @@ Because the name is derived rather than registered:
 1. **Gateway policy when chains disagree** — the most consequential, because it
    is where the gateway stops being a pure projection.
 2. **Whether `_` → `-` is surfaced in our own UI** or applied only in the
-   gateway, so a user sees the name they will paste into a bio. The same question
-   applies to leaving Workspace bindings unexposed.
-3. **Name depth.** `jesse.cb.id` is one label under the domain and resolves.
+   gateway, so a user sees the name they will paste into a bio.
+3. **Whether a Workspace name is minted by default**, given that it discloses an
+   employer, or offered as a choice at binding time.
+4. **Name depth.** `jesse.cb.id` is one label under the domain and resolves.
    Gmail names reach three and a chain label adds a fourth. ENSIP-10's walk-up is
    depth-agnostic by specification, but depth is decided by the client, so it is
    the first thing to measure after the import.
