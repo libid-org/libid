@@ -5,43 +5,63 @@ bidirectional communication channel between two browser documents, moves
 opaque values, selects a carrier, and preserves a transferable native resource
 across document navigation.
 
+The launch-optimized shape is an ordinary browser tab running the application
+and one adjacent popup. The two documents may be cross-origin and cross-site.
+
+```text
+Application tab                              Ceremony popup
+https://app.example                          https://ceremony.example
+┌──────────────────────┐   carrier   ┌──────────────────────┐
+│ CCDPTransport.client │<===========>│ CCDPTransport.popup  │
+└──────────────────────┘             └──────────────────────┘
+```
+
 ## Operating constraints
 
 The transport must:
 
 - work when its documents are cross-origin or cross-site;
 - continue when an intervening document or destination isolation policy severs
-  `window.opener`, its retained `WindowProxy`, transferred ports, or the
-  browsing-context group;
+  the documents' initial browsing-context relationship;
 - require no transport route, script, or server endpoint on the client origin;
 - use no additional window beyond the existing popup;
 - preserve ordered bidirectional values across Safari, Firefox, and Chromium
   without browser or user-agent detection;
-- keep the normal MessagePort path browser-local and use the signaling service
-  only to establish the WebRTC fallback;
-- never send transported values through signaling, cookies, durable storage,
-  request data, or URLs; and
+- release no carrier-delivered value until that carrier authenticates both
+  endpoints;
+- never expose transported values through carrier establishment, rendezvous,
+  cookies, durable storage, request data, or URLs; and
 - allow the popup to cross an external document and enter an isolated document
   without requiring another user action or recovering its opener.
-
-The signaling service is a bounded control-plane fallback, not a data relay. It
-may delay or prevent connection establishment but never receives the values
-carried by the resulting channel.
 
 ## Boundary
 
 Transport owns:
 
-- browser-stamped source and origin checks;
 - connection-ID and caller-supplied compatibility-tag binding;
-- the retained popup `WindowProxy`;
+- the retained popup navigation handle;
 - opaque ordered delivery;
-- MessagePort-first selection and WebRTC fallback;
+- selection and ownership of exactly one authenticated carrier;
 - native carrier resources and cross-document continuity; and
 - one-shot closure and race resolution.
 
 Transport does not know value types, codecs, directions, ordering, route
 meanings, or caller state. Callers construct, decode, and handle every value.
+
+## Failure and security rules
+
+- One transport accepts one popup source, one carrier selection, and one
+  cross-document continuation.
+- An unauthenticated carrier cannot be selected or release a transported value.
+- Each carrier exact-checks its native endpoint identity and authentication
+  controls before binding or releasing a value.
+- Carriers cannot inspect, add, remove, or classify transported values.
+- Carrier establishment and rendezvous carry no transported value.
+- Wrong, stale, duplicate, replayed, or post-close values change no state.
+- Carrier, endpoint, continuity mechanism, or browser context loss is never
+  successful delivery or recovery.
+- Observable failure closes reachable transport resources; the caller decides
+  its outcome.
 
 ## API
 
@@ -70,6 +90,9 @@ clientTransport.bindPopup(accept: (value: unknown) => boolean): Promise<void>
 `bindPopup` considers only values from the configured remote origin and commits
 the browser-stamped source of the first value accepted by the caller predicate.
 Transport never interprets the value, and rejected candidates bind nothing.
+This admits a navigation source only; it neither authenticates nor selects a
+carrier, and the candidate remains untrusted caller input.
+
 Navigation destroys the popup endpoint; the client endpoint retains its bound
 source and any idle signaling subscription.
 
@@ -102,9 +125,13 @@ rejects rather than navigating and losing live state.
 ## Carriers
 
 A carrier is a transport-internal adapter from one native browser communication
-resource to the common `send`, `onMessage`, and `close` operations. Transport
-selects and owns the carrier; the carrier owns only establishment and delivery
-mechanics. It does not interpret values, choose another carrier, or navigate a
+resource to the common `send`, `onMessage`, and `close` operations. It owns
+endpoint authentication, establishment, and delivery mechanics. Each carrier
+defines the endpoint identities it accepts and returns its native resource only
+after authenticating both sides.
+
+Transport selects and owns the resulting authenticated carrier. A carrier does
+not interpret transported values, choose another carrier, or navigate a
 document.
 
 The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) and
@@ -274,20 +301,6 @@ post-terminal calls reject and close every reachable port. Worker loss or a
 failed `keep` acknowledgement prevents navigation with live state. No
 `BroadcastChannel`, cookie, IndexedDB record, request, or URL carries the port,
 purpose, or queued value.
-
-## Failure and security rules
-
-- One transport accepts one popup source, one carrier selection, and one kept
-  port.
-- Window controls exact-check browser-stamped source and origin before binding
-  or releasing a value.
-- Carriers cannot inspect, add, remove, or classify transported values.
-- Signaling carries no transported value.
-- Wrong, stale, duplicate, replayed, or post-close values change no state.
-- Carrier, popup, worker, or context loss is never successful delivery or
-  recovery.
-- Observable failure closes reachable transport resources; the caller decides
-  its outcome.
 
 ## Versioning
 
