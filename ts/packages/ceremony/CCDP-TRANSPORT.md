@@ -5,11 +5,8 @@ bidirectional communication channel between two browser documents, moves
 opaque values, selects a carrier, and preserves a transferable native resource
 across document navigation.
 
-The launch-optimized shape is an ordinary browser tab running the application
-and one adjacent popup. The two documents may be cross-origin and cross-site.
-Mobile browsers are a launch-supported environment, not a degraded or optional
-mode. They may present the popup as its own tab; only it may remain visible
-while the application tab is backgrounded or suspended.
+The topology is an ordinary browser tab running the application and one
+adjacent popup. The two documents may be cross-origin and cross-site.
 
 ```text
 Application tab                              Ceremony popup
@@ -35,8 +32,10 @@ The transport must:
   application tab to remain visible or continuously scheduled;
 - carry application-level messages directly between the two browser endpoints;
   no server relays or stores them or terminates their channel; and
-- provide ordered bidirectional delivery across Safari, Firefox, and Chromium
-  without browser-specific protocol branches or user-agent detection.
+- provide ordered bidirectional delivery across WebKit, Gecko, and Chromium on
+  Android, iOS, Linux, macOS, and Windows, including when mobile browsers show
+  only the popup and suspend the application tab, without browser-specific
+  protocol branches or user-agent detection.
 
 ## Boundary
 
@@ -264,7 +263,7 @@ There is no portable browser-specific minimum lifetime. The PoC observed:
 | Firefox | Approximately 60 seconds. |
 | Playwright WebKit | Seven seconds succeeded and eight seconds lost the port. |
 
-These are observations, not guaranteed browser contracts. Launch uses one
+These are observations, not guaranteed browser contracts. Transport uses one
 conservative `CARRIER_CLAIM_TIMEOUT_MS = 5_000` across engines, below the
 observed WebKit boundary. Transport does not sniff the user agent or select a
 browser-specific deadline. Suspension, process loss, memory pressure, or
