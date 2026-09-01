@@ -1,13 +1,9 @@
 # CCDP transport
 
-This document defines the package-private transport used by the Ceremony
-Cross-Document Protocol (CCDP). It establishes a bidirectional communication
-channel between two browser documents, moves opaque values, selects a carrier,
-and preserves a transferable native resource across document navigation.
-
-[CCDP.md](CCDP.md) defines message shapes, directions, ordering, and handling.
-The [MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
-[WebRTC](CCDP-CARRIER-WEBRTC.md) documents define the two carriers.
+This document defines a package-private transport which establishes a
+bidirectional communication channel between two browser documents, moves
+opaque values, selects a carrier, and preserves a transferable native resource
+across document navigation.
 
 ## Operating constraints
 
@@ -79,11 +75,11 @@ transport.navigatePopup(url: string): Promise<void>
 transport.close(): void
 ```
 
-`send` accepts an opaque value into the current physical path;
-it is not a delivery acknowledgement. `onMessage` exposes an untrusted value to
-the participant's CCDP decoder and returns an unsubscribe function. Transport
-does not inspect a discriminator or dispatch a protocol handler. `close` is
-idempotent and sends no delivery result.
+`send` accepts an opaque value into the current physical path; it is not a
+delivery acknowledgement. `onMessage` exposes an untrusted value to the caller
+and returns an unsubscribe function. Transport does not inspect a discriminator
+or dispatch a protocol handler. `close` is idempotent and sends no delivery
+result.
 
 `navigatePopup` accepts a caller-selected opaque URL. It never parses, builds,
 or branches on that URL:
@@ -108,26 +104,19 @@ Navigation destroys that popup endpoint. The client endpoint retains the bound
 source and any idle signaling subscription. No private bootstrap record or
 MessagePort is required for this path.
 
-## Carrier selection
+## Carriers
 
-A fresh popup endpoint chooses one physical path:
+A carrier is a transport-internal adapter from one native browser communication
+resource to the common `send`, `onMessage`, and `close` operations. Transport
+selects and owns the carrier; the carrier owns only establishment and delivery
+mechanics. It does not interpret values, choose another carrier, or navigate a
+document.
 
-1. A usable retained opener completes the MessagePort carrier's exact
-   source/origin authentication. Its native result is a `MessagePort`.
-2. An absent, severed, invalid, or timed-out opener commits WebRTC fallback.
-   There is no WebRTC carrier yet because the next document navigation would
-   destroy it. Transport creates a local `MessageChannel` and queues the first
-   opaque outbound value on one endpoint.
+The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) and
+opener-independent [WebRTC carrier](CCDP-CARRIER-WEBRTC.md) are the two
+implementations.
 
-MessagePort has priority until fallback commits. The client accepts the first
-valid selection; late authentication, signaling, or values from another path
-are inert. A selected path never migrates after failure.
-
-In the MessagePort path, `send` uses the selected native port. In fallback, it
-queues one value on the transport-owned local port. Transport neither identifies
-nor parses that value.
-
-## Native carrier resources
+### Native resources
 
 Carrier setup returns its natural browser resource:
 
@@ -151,6 +140,25 @@ webRTCCarrier(channel: RTCDataChannel): Carrier
 
 The adapters do not own navigation policy. Transport retains each native
 resource and invalidates its adapter when ownership moves or closes.
+
+### Selection
+
+A fresh popup endpoint chooses one physical path:
+
+1. A usable retained opener completes the MessagePort carrier's exact
+   source/origin authentication. Its native result is a `MessagePort`.
+2. An absent, severed, invalid, or timed-out opener commits WebRTC fallback.
+   There is no WebRTC carrier yet because the next document navigation would
+   destroy it. Transport creates a local `MessageChannel` and queues the first
+   opaque outbound value on one endpoint.
+
+MessagePort has priority until fallback commits. The client accepts the first
+valid selection; late authentication, signaling, or values from another path
+are inert. A selected path never migrates after failure.
+
+In the MessagePort path, `send` uses the selected native port. In fallback, it
+queues one value on the transport-owned local port. Transport neither identifies
+nor parses that value.
 
 Only MessagePort is transferable:
 
