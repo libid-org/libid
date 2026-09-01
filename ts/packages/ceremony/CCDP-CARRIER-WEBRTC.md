@@ -9,8 +9,14 @@ signaling, peer establishment, and opaque-value delivery over one
 
 The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) is simpler,
 but cannot establish after response isolation severs the callback's opener.
-WebRTC is the opener-independent fallback. Its signaling service establishes
-the peers but never relays application-level messages.
+This follows the [HTML COOP model](https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies)
+and its unresolved [cross-group opener-messaging limitation](https://github.com/whatwg/html/issues/6364).
+No known alternative to WebRTC satisfies the transport constraints after that
+severance: cross-site operation, current-engine support, mobile suspension, no
+application-origin endpoint, no additional window, and direct browser-local
+application messages. WebRTC is therefore the opener-independent fallback. Its
+signaling service establishes the peers but never relays application-level
+messages.
 
 ## Topology
 
@@ -58,9 +64,19 @@ the ceremony but cannot read DTLS-protected framed values. The configured
 server already supplies browser code, so signaling adds no second signature
 system.
 
-No cookie, polling iframe, `BroadcastChannel`, TURN data relay, application
-backend endpoint, or frontend-origin callback page participates. The signaling
-path therefore works when application and ceremony server are cross-site.
+The signaling service is selected over the available establishment mechanisms:
+
+| Mechanism | Tradeoff |
+| --- | --- |
+| Signaling service | Works cross-site, is event-driven, and needs no application-origin endpoint or additional iframe. It carries only bounded SDP and ICE metadata; application messages remain browser-local. |
+| Cookie or storage polling | Requires an additional ceremony-server iframe under the application and works only when application and ceremony server are same-site. Browser throttling made PoC signaling take more than one second, comparable to a service round trip, while still not covering cross-site deployments. |
+| `BroadcastChannel` or shared worker | Cannot reliably cross the origin and storage-partition boundary between application and ceremony server. |
+| Application endpoint or frontend-origin callback page | Can rendezvous the peers, but adds application-specific server or hosting integration that the deployment model excludes. |
+| TURN | Solves peer reachability rather than signaling and relays application messages, violating the browser-local transport constraint. |
+
+The selected path therefore works when application and ceremony server are
+cross-site without turning the signaling service into an application-message
+relay.
 
 ## Peer establishment
 
@@ -79,10 +95,6 @@ Duplicate signaling records are idempotent; candidate records append only exact
 new candidates. Changed descriptions, roles, fingerprints, or accepted
 candidates fail. Signaling state is deleted when the channel opens, either side
 fails, MessagePort wins, or the bounded expiry passes.
-
-TURN is not required for launch because it would relay ceremony traffic. It may
-be added only if real connectivity measurements show material direct-pair
-failure; that does not change CCDP messages.
 
 ## Frame delivery
 
