@@ -7,6 +7,8 @@ across document navigation.
 
 The launch-optimized shape is an ordinary browser tab running the application
 and one adjacent popup. The two documents may be cross-origin and cross-site.
+On mobile, the browser may present that popup as its own tab; only it may remain
+visible while the application tab is backgrounded or suspended.
 
 ```text
 Application tab                              Ceremony popup
@@ -27,7 +29,9 @@ The transport must:
 - require no transport-owned route, standalone script, or server endpoint on
   the application origin;
 - require no additional top-level browsing context beyond the existing popup
-  and no second user action; and
+  and no second user action;
+- keep active ceremony work in the visible popup without requiring the
+  application tab to remain visible or continuously scheduled; and
 - provide ordered bidirectional delivery across Safari, Firefox, and Chromium
   without browser-specific protocol branches or user-agent detection.
 
@@ -61,6 +65,9 @@ outcomes. Transport does not interpret any of them.
   select, reopen, or mutate transport. Callers validate transported values.
 - Carrier, endpoint, continuity mechanism, or browser-context loss is never
   delivery, success, cancellation, or recovery.
+- Background suspension may delay delivery but is not success, cancellation,
+  or a reason to select another carrier; delivery after resumption preserves
+  order.
 - An observed failure closes reachable resources and releases no later value;
   the caller determines the outcome.
 
