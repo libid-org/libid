@@ -55,14 +55,14 @@ The same root evaluated as a Service Worker installs only its cache and
 short-lived `PortKeeper` handlers; it does not enter CCDP or a platform
 pipeline.
 
-The prover awaits the isolated popup transport factory. The factory privately
-claims the preserved carrier port and exact-validates its opaque purpose before
-returning. It either resumes the already application-bound MessagePort carrier
-or consumes the single queued `CallbackDeliverParams`, opens WebRTC, and
-forwards that message unchanged. Prover logic never constructs or calls
-`PortKeeper`. It then consumes one exact `AppRequestProof` and returns only
-bounded platform steps, one exact platform proof delivery, or a sanitized
-technical failure.
+The prover awaits the isolated ceremony transport factory. The factory
+privately claims the preserved carrier port and exact-validates its opaque
+purpose before returning. It either resumes the already application-bound
+MessagePort carrier or consumes the single queued `CallbackDeliverParams`,
+opens WebRTC, and forwards that message unchanged. Prover logic never
+constructs or calls `PortKeeper`. It then consumes one exact `AppRequestProof`
+and returns only bounded platform steps, one exact platform proof delivery, or
+a sanitized technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the

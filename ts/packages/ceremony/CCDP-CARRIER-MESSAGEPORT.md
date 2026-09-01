@@ -92,11 +92,11 @@ Application-level delivery starts only on the authenticated port.
 
 ## API
 
-The endpoints have different operations because the client is armed before
-provider navigation while the returned callback exists only afterward:
+The application starts connecting before provider navigation while the
+ceremony endpoint exists only afterward:
 
 ```ts
-declare function armClientMessagePort(options: {
+declare function connectApplicationMessagePort(options: {
   popup: WindowProxy
   callbackOrigin: string
   applicationVersion: number
@@ -104,7 +104,7 @@ declare function armClientMessagePort(options: {
   signal: AbortSignal
 }): Promise<MessagePort>
 
-declare function bindCallbackMessagePort(options: {
+declare function connectCeremonyMessagePort(options: {
   opener: WindowProxy
   allowedAppOrigins: readonly string[]
   applicationVersion: number
@@ -115,22 +115,22 @@ declare function bindCallbackMessagePort(options: {
 declare function messagePortCarrier(port: MessagePort): Carrier
 ```
 
-`armClientMessagePort` installs the exact source/origin listener synchronously
-and returns a pending port promise without sending anything. The application
-keeps that promise, starts provider navigation, and awaits it only when it needs
-the carrier:
+`connectApplicationMessagePort` installs the exact source/origin listener
+synchronously and returns a pending port promise without sending anything. The
+application keeps that promise, starts provider navigation, and awaits it only
+when it needs the carrier:
 
 ```ts
-const portPromise = armClientMessagePort(options)
+const portPromise = connectApplicationMessagePort(options)
 navigateToProvider()
 const port = await portPromise
 ```
 
 After returning from the provider and clearing its URL, the callback calls and
-awaits `bindCallbackMessagePort`. It sends the handshake request; the armed
-client handler validates it, creates the channel, sends the response, and
-resolves `portPromise` with its retained endpoint. The callback validates that
-response and resolves with the transferred endpoint.
+awaits `connectCeremonyMessagePort`. It sends the handshake request; the pending
+application operation validates it, creates the channel, sends the response,
+and resolves `portPromise` with its retained endpoint. The callback validates
+that response and resolves with the transferred endpoint.
 
 Each operation resolves once with its local endpoint. A handshake attempt from
 the bound source that fails authentication rejects immediately; abort also

@@ -67,12 +67,12 @@ fetches, and emits readiness after registration and dispatch settle. It does
 not wait for downloads.
 
 The callback accepts the message only from its exact child at the configured
-server origin and passes it unchanged to its popup transport. The transport
+server origin and passes it unchanged to its ceremony transport. The transport
 sends it over `WindowProxy` using each configured allowed application origin as
 an exact `targetOrigin`. The application exact-matches version, ceremony,
 profile, callback origin, and browser-stamped popup source. A real-anchor launch
-binds the observed source here. The client transport then navigates that popup
-to the frozen provider URL.
+binds the observed source here. The application transport then navigates that
+popup to the frozen provider URL.
 
 The top-level callback visit places the child, Service Worker, and caches in the
 ceremony server's first-party partition, which the later top-level prover

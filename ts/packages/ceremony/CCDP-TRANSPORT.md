@@ -11,9 +11,9 @@ adjacent popup. The two documents may be cross-origin and cross-site.
 ```text
 Application tab                              Ceremony popup
 https://app.example                          https://ceremony.example
-┌──────────────────────┐   carrier   ┌──────────────────────┐
-│ CCDPTransport.client │<===========>│ CCDPTransport.popup  │
-└──────────────────────┘             └──────────────────────┘
+┌───────────────────────────┐ carrier ┌────────────────────────┐
+│ CCDPTransport.application │<=======>│ CCDPTransport.ceremony │
+└───────────────────────────┘         └────────────────────────┘
 ```
 
 ## Operating constraints
@@ -76,21 +76,22 @@ outcomes. Transport does not interpret any of them.
 
 ## API
 
-The module has one long-lived client endpoint and a fresh popup endpoint for
-each popup document. Factories receive only the browser resources available
-to that endpoint; their records contain no route or protocol-state name.
+The module has one long-lived application endpoint and a fresh ceremony
+endpoint for each popup document. Factories receive only the browser resources
+available to that endpoint; their records contain no route or protocol-state
+name.
 
 ```ts
-const clientTransport = CCDPTransport.client(clientResources)
-const popupTransport = await CCDPTransport.popup(popupResources)
+const applicationTransport = CCDPTransport.application(applicationResources)
+const ceremonyTransport = await CCDPTransport.ceremony(ceremonyResources)
 ```
 
-`client` installs direct navigation over its retained `WindowProxy` and never
-constructs a `PortKeeper`. `popup` is asynchronous. When its browser resources
-include an active Service Worker registration, it privately constructs a
-keeper and attempts `claim` for the connection ID before selecting a new
-carrier. A matching entry restores its native port; no entry leaves the fresh
-endpoint to use its available opener or signaling resources normally.
+`application` installs direct navigation over its retained `WindowProxy` and
+never constructs a `PortKeeper`. `ceremony` is asynchronous. When its browser
+resources include an active Service Worker registration, it privately
+constructs a keeper and attempts `claim` for the connection ID before selecting
+a new carrier. A matching entry restores its native port; no entry leaves the
+fresh endpoint to use its available opener or signaling resources normally.
 
 These are construction-specific implementations of the same API, not a public
 role field or a branch performed for each operation. Callers supply browser
@@ -103,13 +104,15 @@ recovering it from transported values. The application version identifies the
 caller's application protocol. Transport exact-matches both in private carrier
 and navigation controls but never interprets either.
 
-A popup endpoint constructed from `window.opener` and an immutable target-origin
-set can send an opaque value over `WindowProxy`. A caller-supplied popup handle
-is bound by the client factory. Without one, the client explicitly binds a
-source:
+A ceremony endpoint constructed from `window.opener` and an immutable
+target-origin set can send an opaque value over `WindowProxy`. A caller-supplied
+popup handle is bound by the application factory. Without one, the application
+explicitly binds a source:
 
 ```ts
-clientTransport.bindPopup(accept: (value: unknown) => boolean): Promise<void>
+applicationTransport.bindPopup(
+  accept: (value: unknown) => boolean,
+): Promise<void>
 ```
 
 `bindPopup` considers only values from the configured remote origin and commits
@@ -118,8 +121,8 @@ Transport never interprets the value, and rejected candidates bind nothing.
 This admits a navigation source only; it neither authenticates nor selects a
 carrier, and the candidate remains untrusted caller input.
 
-Navigation destroys the popup endpoint; the client endpoint retains its bound
-source and any idle signaling subscription.
+Navigation destroys the ceremony endpoint; the application endpoint retains
+its bound source and any idle signaling subscription.
 
 Both endpoints expose the same opaque delivery operations:
 
@@ -139,14 +142,15 @@ result.
 `navigatePopup` accepts a caller-selected opaque URL. It never parses, builds,
 or branches on that URL:
 
-- the client endpoint navigates its exact retained `WindowProxy` directly; or
-- the popup endpoint internally calls `keep` for its carrier port, awaits worker
-  ownership, and then replaces its current document.
+- the application endpoint navigates its exact retained `WindowProxy` directly;
+  or
+- the ceremony endpoint internally calls `keep` for its carrier port, awaits
+  worker ownership, and then replaces its current document.
 
 The factory installs the appropriate operation from the native resource it
-owns, never from the URL. A popup endpoint without the required carrier port
-rejects rather than navigating and losing live state. The client has no keeper,
-including a no-op implementation.
+owns, never from the URL. A ceremony endpoint without the required carrier port
+rejects rather than navigating and losing live state. The application endpoint
+has no keeper, including a no-op implementation.
 
 ## Carriers
 
@@ -182,7 +186,7 @@ resource and invalidates its adapter when ownership moves or closes.
 
 ### Selection
 
-A fresh popup endpoint chooses one physical path:
+A fresh ceremony endpoint chooses one physical path:
 
 1. A usable retained opener completes the MessagePort carrier's exact
    source/origin authentication. Its native result is a `MessagePort`.
@@ -191,9 +195,9 @@ A fresh popup endpoint chooses one physical path:
    destroy it. Transport creates a local `MessageChannel` and queues the first
    opaque outbound value on one endpoint.
 
-MessagePort has priority until fallback commits. The client accepts the first
-valid selection; late authentication, signaling, or values from another path
-are inert. A selected path never migrates after failure.
+MessagePort has priority until fallback commits. The application endpoint
+accepts the first valid selection; late authentication, signaling, or values
+from another path are inert. A selected path never migrates after failure.
 
 In the MessagePort path, `send` uses the selected native port. In fallback, it
 queues one value on the transport-owned local port. Transport neither identifies
@@ -207,7 +211,7 @@ Only MessagePort is transferable:
 - an established `RTCDataChannel` is never handed across navigation.
 
 The destination endpoint consumes the fallback value, establishes WebRTC
-through the pre-armed signaling subscription, adapts the resulting
+through the already-started signaling subscription, adapts the resulting
 `RTCDataChannel`, and forwards that unchanged value first.
 
 ## Carrier continuity across document navigation

@@ -98,8 +98,8 @@ no state.
 
 | Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
-| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct popup transport over the opener, bind one `/prover#prefetch(...)` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
-| Provider return | one OAuth state and `CallbackDeliverParams` | construct a fresh popup transport; it exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
+| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct the ceremony transport over the opener, bind one `/prover#prefetch(...)` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
+| Provider return | one OAuth state and `CallbackDeliverParams` | construct a fresh ceremony transport; it exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
 | Prover transition | carrier port is preserved | transport replaces this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
