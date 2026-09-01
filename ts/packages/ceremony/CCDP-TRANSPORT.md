@@ -7,9 +7,7 @@ cleanup. It does not own ceremony message semantics.
 
 [CCDP.md](CCDP.md) defines the messages and their valid phases. The
 [MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
-[WebRTC](CCDP-CARRIER-WEBRTC.md) documents define the two carriers. The shared
-[navigation handoff](NAVIGATION-HANDOFF.md) moves an opaque port across the
-callback-to-prover navigation.
+[WebRTC](CCDP-CARRIER-WEBRTC.md) documents define the two carriers.
 
 ## Boundary
 
@@ -172,6 +170,53 @@ The application then sends isolated proof or cancellation traffic. The prover
 sends isolated progress, proof delivery, or technical abort traffic. No later
 opener, navigation, carrier selection, or reconnection exists.
 
+## Navigation port handoff
+
+The transport moves one opaque `MessagePort` across the callback-to-prover
+navigation through the already-active prover Service Worker:
+
+```ts
+async function holdNavigationPort(
+  ceremonyId: string,
+  purpose: string,
+  port: MessagePort,
+): Promise<void>
+
+async function claimNavigationPort(ceremonyId: string): Promise<{
+  purpose: string
+  port: MessagePort
+}>
+```
+
+`purpose` is an opaque bounded string chosen and exact-validated by the
+transport. The handoff defines no purpose registry or carrier enum and never
+interprets the port.
+
+`holdNavigationPort` transfers the supplied port and a fresh receipt port to
+the worker. It resolves only after the worker accepts one holder for the exact
+ceremony ID into its short-lived in-memory map. The callback navigates only
+after that acknowledgement.
+
+The clearing top-level prover calls `claimNavigationPort` before package import
+or network use. The worker atomically removes the holder and returns its
+unchanged purpose and port. Both receipt ports close after their replies. The
+worker extends each handling event through its reply, keeps no durable record,
+and never reads queued port messages.
+
+The callback obtains the registration with
+`navigator.serviceWorker.getRegistration('/api/v1/ceremony/')`, not
+`navigator.serviceWorker.ready`: a developer-configurable callback alias need
+not be controlled by that scope. The prover bundle emits the worker handlers.
+
+The two acknowledged calls are necessary because the worker must own the port
+before the callback destroys itself and the destination prover does not yet
+exist. Ceremony ID, purpose bounds, transferable count, duplicate ownership,
+expiry, and one-use claim are checked before ownership changes. Wrong, missing,
+expired, duplicate, replayed, or post-terminal calls reject and close every
+reachable port. Worker loss or a failed acknowledgement prevents navigation
+with live state. No `BroadcastChannel`, cookie, IndexedDB record, request, or
+URL carries the port, purpose, or queued payload.
+
 ## Carrier contract
 
 Each carrier supplies ordered, nonduplicated opaque-frame delivery and
@@ -231,7 +276,6 @@ that physical difference invisible to CCDP.
 
 `CCDPVersion` covers phase names, frame semantics, endpoint binding, carrier
 selection, and navigation continuity as well as logical messages. Carriers and
-the same-release navigation handoff have no separately negotiated version. A
-compatible implementation may change internal framing, ICE policy, worker
-controls, or equivalent browser mechanics without changing the transport
-contract.
+same-release worker controls have no separately negotiated version. A compatible
+implementation may change internal framing, ICE policy, worker controls, or
+equivalent browser mechanics without changing the transport contract.

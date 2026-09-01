@@ -454,8 +454,9 @@ the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
-addition to the transport's short-lived port holder defined by
-[the navigation handoff](NAVIGATION-HANDOFF.md), it owns each selected
+addition to the
+[short-lived transport port holder](CCDP-TRANSPORT.md#navigation-port-handoff),
+it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single
