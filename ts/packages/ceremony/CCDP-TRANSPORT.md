@@ -168,8 +168,6 @@ through the pre-armed signaling subscription, adapts the resulting
 
 ## Carrier continuity across document navigation
 
-### Purpose
-
 Carrier continuity means that the logical transport remains usable after the
 popup replaces one document with another. It does not preserve the old
 JavaScript heap or an `RTCDataChannel`.
@@ -200,6 +198,34 @@ another popup, user action, or data relay.
 This is a short in-memory continuity bridge, not persistence or recovery.
 Worker loss breaks continuity; no later document can reconstruct or resume the
 channel.
+
+### Timing assumptions and browser limits
+
+The bridge covers only the immediate callback-to-prover replacement. After the
+worker acknowledges preservation, the source starts navigation immediately and
+the destination claims in its clearing bootstrap before package import or
+network use. It never holds a port across OAuth, user interaction, wallet
+confirmation, or an intentional background wait.
+
+The preserve handler uses `event.waitUntil()` to keep its message event active
+until the continuation is claimed or its short deadline expires. A preserve
+acknowledgement therefore confirms worker ownership but does not end the event.
+Claim atomically transfers the continuation and settles that event. The Service
+Worker lifetime model remains event-based: registrations persist, but a worker
+heap may be terminated when no event is pending or under abnormal resource
+pressure.
+
+There is no portable browser-specific minimum lifetime:
+
+| Browser family | Launch assumption |
+|---|---|
+| Chromium and Firefox | The immediate preserve, navigate, and claim sequence is qualified. Any longer observed survival is outside the contract. |
+| WebKit and Safari | Only the same immediate sequence is supported. The PoC lost a port held across an OAuth-length navigation, so no pre-OAuth or idle retention is assumed. |
+| All engines | Suspension, process loss, memory pressure, or expiry may still break continuity. Failure is terminal and never selects a weaker path. |
+
+One conservative claim deadline applies across engines; transport does not
+sniff the user agent or choose browser-specific timing. Its exact value is an
+implementation and real-device qualification choice, not a protocol guarantee.
 
 ### Payload
 
@@ -255,9 +281,10 @@ async function claimCarrierPort(
 ```
 
 The worker atomically removes the continuation and returns the unchanged
-purpose and port. Receipt ports close after their replies. The worker extends
-each handling event through its reply, keeps no durable record, and never reads
-queued port values.
+purpose and port. Receipt ports close after their replies. The preserve event
+stays extended until this claim or expiry; the claim event stays extended
+through its reply. The worker keeps no durable record and never reads queued
+port values.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
