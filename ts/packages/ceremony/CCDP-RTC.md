@@ -71,9 +71,12 @@ request, or another URL. The Service Worker cannot read it.
 
 The signaling service is a bounded rendezvous, not a CCDP transport. The
 application subscribes as answerer and the prover publishes as offerer under
-the same fresh, one-use ceremony ID. That ID is already a cryptographically
-random UUIDv4 OAuth state and is sufficient as the rendezvous capability; the
-transport adds no second ceremony nonce.
+the same fresh, one-use ceremony ID. That cryptographically random UUIDv4 OAuth
+state correlates the two requests and excludes unrelated callers; it does not by
+itself authenticate either role. The signaling service exact-checks the
+application and ceremony-server origins below, while the signaled DTLS
+fingerprints bind the resulting channel. The transport adds no second ceremony
+nonce.
 
 The eventual signaling contract must accept only:
 

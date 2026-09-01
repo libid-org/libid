@@ -57,7 +57,7 @@ cannot change during the ceremony.
 | Always promote the callback to the top-level prover | one common path avoids prover-placement negotiation and keeps proving foregrounded | costs one same-origin navigation; a [Document Isolation Policy](https://github.com/WICG/document-isolation-policy) iframe may become an internal optimization after broader browser adoption or measured need |
 | Prefer MessagePort and fall back to WebRTC only when opener authentication is unavailable | keeps the ordinary path browser-local while surviving adversarial provider opener policy | WebRTC requires an idle signaling subscription, STUN, framing, and ICE only for the fallback |
 | Expose one transport-neutral interface | protocol code should not branch on browser transport | transports must preserve ordered one-shot delivery and report only observable failures |
-| Signal selected-profile prefetch readiness before OAuth | consent time can overlap public downloads without waiting for them | the MessagePort transport owns this separate pre-transport bootstrap |
+| Signal selected-profile prefetch readiness before OAuth | consent time can overlap public downloads without waiting for them | CCDP owns this transport-independent bootstrap; it waits only for worker activation and dispatch |
 | Keep ceremonies memory-only and one-shot | recovery would add credential storage, replay, migration, and cleanup state | interruption before Identity delivery repeats OAuth |
 | Use one `CCDPVersion` | messages and transport semantics are one package-owned browser protocol | a breaking protocol or binding change increments it; no per-message negotiation |
 
@@ -95,6 +95,49 @@ The caller's scripted-open and real-anchor launch paths are defined by the
 [client lifecycle](ARCHITECTURE.md#client-lifecycle). Both use the same popup,
 prefetch, OAuth, transport selection, proving, and cleanup. Window versus tab is
 presentation, not a protocol or transport mode.
+
+## Pre-transport bootstrap
+
+`ProverPrefetchingAssets` is the application-facing readiness message sent before
+a `CCDPTransport` exists:
+
+```ts
+interface ProverPrefetchingAssets {
+  ccdpVersion: CCDPVersion
+  type: 'prover-prefetching-assets'
+  ceremonyId: string
+  platformId: PlatformId
+  platformCeremonyVersion: PlatformCeremonyVersion
+}
+```
+
+On initial launch, the top-level callback exact-validates and clears its
+ceremony-ID, platform-ID, and ceremony-version fragment, then loads the
+same-origin `/api/v1/ceremony/prover#prefetch(ceremonyId, platformId,
+platformCeremonyVersion)` child. The child clears that fragment, resolves the
+exact profile, activates the prover Service Worker, starts only the selected
+profile's public fetches, and emits `ProverPrefetchingAssets` after registration
+and dispatch settle. It does not wait for downloads.
+
+The callback accepts the record only from its exact child at the configured
+server origin in the active prefetch phase and forwards it unchanged to each
+embedded allowed application origin. The application exact-matches protocol
+version, ceremony, profile, server origin, and source. A scripted launch already
+knows the expected `WindowProxy`; a real-anchor launch atomically binds the
+matching source. The application then navigates that source to the frozen
+provider URL without replying.
+
+The top-level callback visit is required even though prefetch itself runs in an
+iframe. It places the child, Service Worker, and caches in the ceremony server's
+first-party partition—the same partition later used by the top-level prover—and
+binds the actual popup source before OAuth. An iframe embedded directly by the
+application may occupy another storage partition, so its worker and cached work
+cannot be a launch dependency.
+
+Missing profile, document load, registration, or activation fails before OAuth.
+An ordinary artifact-fetch failure continues on the same cold proving path. This
+bootstrap neither authenticates nor selects the eventual transport and is not a
+member of `CCDPMessage`.
 
 ## Transport contract
 
@@ -164,11 +207,11 @@ part of `CCDPMessage`, `CCDPVersion`, or either transport.
 type CCDPVersion = 1
 ```
 
-`CCDPVersion` covers `CCDPMessage`, its ordering and validation, and the common
-transport-binding semantics. Each transport verifies it before exposing a
-transport. The Service Worker's same-release navigation controls need no independent wire
-version. RTC signaling carries the version only to reject incompatible peers;
-it cannot negotiate another version.
+`CCDPVersion` covers the pre-transport bootstrap, `CCDPMessage`, its ordering and
+validation, and the common transport-binding semantics. Each transport verifies
+it before exposing a transport. The Service Worker's same-release navigation
+controls need no independent wire version. RTC signaling carries the version
+only to reject incompatible peers; it cannot negotiate another version.
 
 ### OAuth-return delivery
 
@@ -295,11 +338,12 @@ type CCDPMessage =
   | AbortCeremony
 ```
 
-Prefetch readiness, opener authentication, Service Worker controls, SDP, and
-ICE candidates are not ceremony messages. The MessagePort transport defines its
-bootstrap controls, the navigation handoff defines its private API, and the RTC
-document defines signaling behavior while its exact service records remain part
-of later server work.
+Prefetch readiness is the pre-transport bootstrap defined above, not a ceremony
+message. Opener authentication, Service Worker controls, SDP, and ICE candidates
+are also outside `CCDPMessage`. The MessagePort transport defines its binding
+controls, the navigation handoff defines its private API, and the RTC document
+defines signaling behavior while its exact service records remain part of later
+server work.
 
 ## Ceremony sequence
 

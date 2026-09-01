@@ -116,7 +116,7 @@ Launch publishes one `@libid/ceremony` package:
 @libid/ceremony
 ├── ccdp
 │   ├── index         ceremony records, codecs, validation, transport contract, and wire version
-│   ├── message-port  prefetch readiness, window authentication, and MessagePort adapter
+│   ├── message-port  window authentication and MessagePort adapter
 │   └── rtc           signaling, ICE, framing, and RTCDataChannel adapter
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for libid-ceremony-callback.js

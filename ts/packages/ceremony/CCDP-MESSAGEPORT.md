@@ -1,8 +1,8 @@
 # CCDP MessagePort transport
 
 This document defines the browser-local transport used by the Ceremony
-Cross-Document Protocol (CCDP): pre-OAuth callback readiness, callback opener
-authentication, and `MessageChannel` binding.
+Cross-Document Protocol (CCDP): callback opener authentication and
+`MessageChannel` binding.
 
 The transport-neutral contract, ceremony messages, ordering, and transport
 selection are defined in [CCDP.md](CCDP.md). The WebRTC fallback is defined in
@@ -18,7 +18,6 @@ ceremony state.
 
 The MessagePort transport owns:
 
-- pre-OAuth readiness over authenticated `window.postMessage` routing;
 - callback authentication from browser-stamped source and origin;
 - creation of one ceremony-bound `MessageChannel`;
 - adaptation of its endpoints to `CCDPTransport`;
@@ -28,39 +27,9 @@ It does not parse a platform OAuth result, select proof semantics, inspect CCDP
 payloads after binding, persist credentials, recover a ceremony, or send data
 through the ceremony server. Transport selection and the shared
 callback-to-prover navigation requirement are defined in [CCDP.md](CCDP.md);
-[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md) defines its implementation.
-
-## Pre-OAuth readiness
-
-```ts
-interface ProverPrefetchingAssets {
-  ccdpVersion: CCDPVersion
-  type: 'prover-prefetching-assets'
-  ceremonyId: string
-  platformId: PlatformId
-  platformCeremonyVersion: PlatformCeremonyVersion
-}
-```
-
-On initial launch, the callback exact-validates and clears its fragment's ceremony
-ID, platform ID, and ceremony version, then loads
-`/api/v1/ceremony/prover#prefetch(ceremonyId, platformId,
-platformCeremonyVersion)`. The child clears that fragment, resolves the exact
-profile, activates the prover Service Worker, and starts selected-profile
-prefetch. It returns `ProverPrefetchingAssets` after registration and dispatch
-settle; it does not wait for downloads.
-
-The callback accepts the record only from its exact child at the configured server
-origin in the active prefetch phase and forwards it unchanged to each embedded
-allowed application origin. The application exact-matches version, ceremony,
-profile, server origin, and retained source. A scripted launch already knows
-the expected `WindowProxy`; a real-anchor launch atomically binds the matching
-source. The application then navigates that source to the frozen provider URL.
-
-Prefetch handles public assets and requires no application reply or transport.
-Provider navigation would destroy any early callback endpoint. Missing profile,
-document load, registration, or activation fails before OAuth; an ordinary
-artifact fetch failure continues on the same cold proving path.
+[NAVIGATION-HANDOFF.md](NAVIGATION-HANDOFF.md) defines its implementation. CCDP's
+[pre-transport bootstrap](CCDP.md#pre-transport-bootstrap) owns pre-OAuth
+readiness.
 
 ## Callback authentication
 
