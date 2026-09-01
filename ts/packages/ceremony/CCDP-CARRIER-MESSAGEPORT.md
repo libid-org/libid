@@ -24,17 +24,21 @@ public APIs, extension points, or durable state.
 
 ## Boundary
 
-The carrier owns:
+The carrier begins with caller-supplied browser handles, expected origins,
+compatibility tag, ceremony ID, and cancellation signal. It ends with one
+authenticated local `MessagePort` at each endpoint.
 
-- exact popup/application authentication from browser-stamped source and
-  origin;
-- creation and one-use transfer of one `MessageChannel` endpoint;
-- adaptation of the resulting port to opaque ordered delivery; and
-- cleanup when binding fails or is cancelled.
+Within that boundary it owns:
 
-It does not inspect transported values, select another carrier, navigate a
-document, persist data, or recover a connection. Navigation continuity belongs
-to the CCDP transport.
+- validation of browser-stamped `MessageEvent.source` and
+  `MessageEvent.origin`;
+- one `MessageChannel`, one transfer of its callback endpoint, and the lifetime
+  of both local endpoints; and
+- adaptation of an accepted port to the transport's opaque delivery API.
+
+The transport owns timeout, carrier selection, navigation continuity, and the
+logical connection. The caller owns every transported value and its meaning.
+The carrier neither interprets those values nor persists or recovers them.
 
 ## Authentication
 
@@ -104,12 +108,21 @@ and closes idempotently.
 
 ## Failure and security invariants
 
-- Both handshake directions exact-check source, origin, record shape, and
-  compatibility tag against the current binding.
-- The popup also exact-checks the one-use ceremony ID and transferred-port
-  count before accepting ownership.
-- Wrong, missing, duplicate, replayed, late, or aborted handshakes release no
-  application-level value and leave no carrier.
-- Port delivery preserves ordered nonduplicated values without decoding them.
-- Port closure or context destruction may be silent; neither is a ceremony
-  outcome or recovery signal.
+- Window messages are untrusted until their browser-stamped source and origin,
+  exact record shape, direction, and compatibility tag match the current
+  binding. The callback additionally requires its one-use ceremony ID and
+  exactly one transferred port.
+- The wildcard-targeted request contains no capability or application-level
+  value. The response uses the exact callback origin, transfers only the new
+  callback endpoint, and never exposes the client's retained endpoint.
+- An accepted handshake removes its window listener. Wrong, missing,
+  duplicate, replayed, late, or post-abort messages are inert; any received port
+  and its reachable local peer are closed.
+- After binding, possession of the entangled port authenticates the peer.
+  Application-level values travel only over that port; the carrier preserves
+  their order and shape without interpreting them.
+- Abort, timeout, `messageerror`, port closure, or browser-context destruction
+  closes reachable resources and releases no later value. There is no
+  reconnect, resend, or recovery inside this carrier.
+- Port loss may be silent. It is a transport failure, never delivery, success,
+  denial, cancellation, or any other ceremony outcome.
