@@ -177,8 +177,8 @@ checksum.
 On receipt the channel uses `binaryType = 'arraybuffer'`. The carrier exact-checks
 the frame sequence and total length, decodes UTF-8 fatally, parses JSON, restores
 exact canonical byte tags to `Uint8Array`, validates the generic value domain,
-and gives the resulting `unknown` to transport. Transport then calls its
-injected `Message.decode`; the carrier never reads a message discriminator.
+and gives the resulting `unknown` to transport. Transport then selects and calls
+its registered `Decoder`; the carrier never reads a message discriminator.
 
 An unexpected start or continuation, incomplete or excess body, oversized
 message, invalid UTF-8 or JSON, malformed or noncanonical byte tag, unsupported

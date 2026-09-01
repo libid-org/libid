@@ -50,10 +50,11 @@ Transport owns:
 - one-shot selection, navigation, closure, cleanup, and race resolution.
 
 Carriers own endpoint authentication, establishment, physical serialization
-where required, native framing, and delivery mechanics. The injected `Message`
-owns structural decoding. Callers own protocol direction and order, navigation
-destinations, route meanings, state transitions, and outcomes. Transport invokes
-decoding but does not interpret the resulting value.
+where required, native framing, and delivery mechanics. Each caller-registered
+`Decoder` owns one message's structural decoding and routing discriminator.
+Callers own the permitted decoder set, protocol order, navigation destinations,
+route meanings, state transitions, and outcomes. Transport invokes decoding and
+dispatch but does not interpret the resulting message.
 
 ## Failure and security rules
 
@@ -67,8 +68,8 @@ decoding but does not interpret the resulting value.
   cannot inspect a message discriminator or interpret, classify, synthesize, or
   alter its meaning.
 - Wrong, stale, duplicate, replayed, or post-close control messages cannot bind,
-  select, reopen, or mutate transport. The injected `Message` validates
-  structure; callers validate protocol semantics.
+  select, reopen, or mutate transport. The registered `Decoder` validates
+  structure; callers validate protocol state and order.
 - Carrier, endpoint, continuity mechanism, or browser-context loss is never
   delivery, success, cancellation, or recovery.
 - Background suspension may delay delivery but is not success, cancellation,
@@ -80,22 +81,16 @@ decoding but does not interpret the resulting value.
 ## API
 
 The module has one long-lived application endpoint and a fresh ceremony
-endpoint for each popup document. Factories receive the browser resources
-available to that endpoint and the same caller-owned message decoder:
+endpoint for each popup document. Factories receive only the browser resources
+available to that endpoint:
 
 ```ts
-interface Message<Value> {
-  decode(value: unknown): Value
-}
-
-const applicationTransport = CCDPTransport.application(
+const applicationTransport = CCDPTransport.application<Message>(
   applicationResources,
-  CCDPMessage,
 )
 
-const ceremonyTransport = await CCDPTransport.ceremony(
+const ceremonyTransport = await CCDPTransport.ceremony<Message>(
   ceremonyResources,
-  CCDPMessage,
 )
 ```
 
@@ -137,23 +132,38 @@ carrier, and the candidate remains untrusted caller input.
 Navigation destroys the ceremony endpoint; the application endpoint retains
 its bound source and any idle signaling subscription.
 
-Both endpoints expose the same typed delivery operations:
+Both endpoints expose the same typed delivery and dispatch operations:
 
 ```ts
-interface Transport<Value> {
-  send(value: Value): void
-  on(handler: (value: Value) => void): () => void
+interface Decoder<M> {
+  readonly type: string
+  decode(value: unknown): M
+}
+
+interface Transport<M> {
+  send(message: M): void
+  on<N extends M>(
+    decoder: Decoder<N>,
+    handler: (message: N) => void,
+  ): () => void
   navigatePopup(url: string): Promise<void>
   close(): void
 }
 ```
 
-`send` accepts a caller-typed value into the current physical path; it is not a
-delivery acknowledgement and transport does not revalidate trusted local
-input. For each inbound carrier value, transport calls `Message.decode`
-exactly once before `on` exposes it and returns an unsubscribe function. The
-decoder may inspect a discriminator, but transport does not and never dispatches
-a protocol handler. A thrown decode closes the transport and delivers no value.
+`send` accepts a message from the transport's closed caller-owned type and is
+not a delivery acknowledgement. Transport does not revalidate trusted local
+input.
+
+`on` registers one decoder and handler by `decoder.type` and returns an
+unsubscribe function. Duplicate registrations reject. For each inbound carrier
+value, transport reads only a bounded string `type` from a plain record, selects
+the registered decoder, calls it exactly once, and invokes that handler. An
+unknown or unregistered type, malformed routing discriminator, or thrown decode
+closes the transport and delivers no message. The registered set therefore
+enforces participant direction without hardcoding protocol types in transport;
+the handler still enforces state and order.
+
 `close` is idempotent and sends no delivery result.
 
 `navigatePopup` accepts a caller-selected opaque URL. It never parses, builds,

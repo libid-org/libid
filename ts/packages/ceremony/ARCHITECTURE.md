@@ -199,7 +199,7 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, direction/order rules, exact codecs, and concrete message-generic `CCDPTransport`; no application export |
+| `@libid/ceremony/ccdp` | internal `Message`, `Decoder`, `CCDPVersion`, direction/order rules, and concrete message-generic `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |

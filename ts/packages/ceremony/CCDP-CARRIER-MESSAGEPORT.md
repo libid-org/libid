@@ -96,9 +96,9 @@ Application-level delivery starts only on the authenticated port.
 `MessagePort.postMessage`. Native structured clone preserves arrays, plain
 records, and `Uint8Array`; this carrier adds no JSON encoding, byte tag,
 normalization, or additional copy. Received `MessageEvent.data` remains
-`unknown` until transport applies its injected `Message.decode`. A successful
-decode returns that same received object rather than allocating a replacement.
-A `DataCloneError` or `messageerror` closes the carrier. A failed injected
+`unknown` until transport selects and applies its registered `Decoder`. A
+successful decode returns that same received object rather than allocating a
+replacement. A `DataCloneError` or `messageerror` closes the carrier. A failed
 decode makes transport close it. None releases a value.
 
 ## API

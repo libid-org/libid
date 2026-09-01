@@ -29,9 +29,9 @@ contract.
 
 CCDP is transport-neutral. It defines what each message means, which
 participant may send it, and its order. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md)
-owns how values cross browser documents and carriers and invokes CCDP's injected
-`Message.decode` before delivery. Callback, prover, and client code receive a
-structurally valid `CCDPMessage` and enforce its direction and order.
+owns how values cross browser documents and carriers and invokes CCDP's
+registered per-message `Decoder` before delivery. Callback, prover, and client
+code register only their permitted inbound messages and enforce state and order.
 
 ## Protocol definition
 
@@ -41,7 +41,7 @@ structurally valid `CCDPMessage` and enforce its direction and order.
 type CCDPVersion = 1
 ```
 
-`CCDPVersion` covers `CCDPMessage`, its direction, ordering, validation, and
+`CCDPVersion` covers `Message`, its direction, ordering, validation, and
 transport-binding semantics. Ceremony code supplies it as the transport's
 `applicationVersion`; transport exact-matches but does not interpret it.
 Same-release carrier and navigation controls have no independent negotiated
@@ -198,7 +198,7 @@ abort. Context or transport loss may produce no message.
 ### Closed message union
 
 ```ts
-type CCDPMessage =
+type Message =
   | ProverPrefetchingAssets
   | CallbackDeliverParams
   | AppRequestProof
@@ -210,9 +210,9 @@ type CCDPMessage =
 
 ### Structural decoding
 
-Each message interface has a same-named companion value containing its literal
-discriminator and structural decoder. The shared assertion owns the common
-plain-record, exact-field-set, and `type` checks:
+Each message interface has a same-named `Decoder` companion containing its
+literal discriminator and structural decoder. The shared assertion owns the
+common plain-record, exact-field-set, and `type` checks:
 
 ```ts
 declare function assertMessage<
@@ -231,7 +231,7 @@ const ProverDeliverProof = {
     assertMessage(value, this.type, ['proof'])
     return value
   },
-}
+} as const satisfies Decoder<ProverDeliverProof>
 ```
 
 A decoder exact-validates its message-specific fields and bounds, rejects
@@ -240,49 +240,22 @@ normalizes, supplies defaults, strips fields, or allocates a replacement.
 Nested platform proof remains `unknown` here and is decoded later by the
 selected platform/version module.
 
-The closed companion values form one immutable local registry. There is no
-global registration, import-time self-registration, or plugin API:
+Participants register only their permitted inbound companions with transport:
 
 ```ts
-const messages = [
-  ProverPrefetchingAssets,
-  CallbackDeliverParams,
-  AppRequestProof,
-  AppCancelCeremony,
-  ProverNotifyEvent,
-  ProverDeliverProof,
-  AbortCeremony,
-] as const
-
-const messagesByType: ReadonlyMap<string, Message<CCDPMessage>> = new Map(
-  messages.map(
-    (message): [string, Message<CCDPMessage>] => [message.type, message],
-  ),
-)
-
-if (messagesByType.size !== messages.length) {
-  throw new TypeError('duplicate CCDP message type')
-}
-
-const CCDPMessage: Message<CCDPMessage> = {
-  decode(value: unknown): CCDPMessage {
-    const message = messagesByType.get(readMessageType(value))
-    if (!message) throw new TypeError('unknown CCDP message type')
-    return message.decode(value)
-  },
-}
+transport.on(AppRequestProof, handleProofRequest)
+transport.on(AppCancelCeremony, handleCancellation)
 ```
 
-`readMessageType` accepts only a plain record with a bounded string `type`; the
-selected companion repeats the exact discriminator check so it also works
-independently. Both transport endpoints receive `CCDPMessage` as their
-injected `Message` and invoke its decoder once for each inbound carrier value.
-Successful handlers therefore receive a structurally valid union without an
-unchecked cast. Direction, order, and participant state remain higher-level
-checks.
+Transport uses the companion's `type` only as a generic dispatch key, invokes
+its decoder exactly once, and gives the handler its concrete message type.
+Unknown, duplicate, or unregistered discriminators fail closed. There is no
+aggregate decoder, raw discriminator constant, large union handler, global
+registration, import-time self-registration, or plugin API. Direction is the
+registered decoder set; order and participant state remain handler checks.
 
 Opener authentication, Service Worker controls, SDP, and ICE candidates are not
-`CCDPMessage`. The transport and carrier documents define those private
+`Message`. The transport and carrier documents define those private
 controls. Exact signaling-service records remain part of later server work.
 
 ## Ceremony sequence
