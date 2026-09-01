@@ -23,7 +23,7 @@ The carrier owns:
 
 It does not parse OAuth, inspect a value, select a carrier, navigate the popup,
 persist credentials, or recover a ceremony. The transport moves the callback
-endpoint across navigation through its carrier-continuity bridge.
+endpoint across navigation through its `PortKeeper`.
 
 ## Callback authentication
 
@@ -57,7 +57,7 @@ rejects a missing or additional port.
 The authentication operation returns the native `MessagePort`; transport wraps
 it only after these checks. No ceremony payload crosses the WindowProxy
 authentication exchange. Transport sends the opaque callback value and moves
-the popup endpoint through the continuity bridge.
+the popup endpoint through `PortKeeper`.
 
 An absent, severed, wrong-source, wrong-origin, malformed, or timed-out binding
 produces no carrier. The coordinator may commit RTC; a late local reply cannot

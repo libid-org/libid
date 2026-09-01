@@ -181,7 +181,7 @@ the port a temporary same-origin owner across that gap:
 ```text
 source document          Service Worker          destination document
       |                         |                           |
-      |--- preserve(port) ----->|                           |
+      |--- keep(port) --------->|                           |
       |<-- ownership accepted --|                           |
       |--- navigate --------------------------------------->|
       |                         |<-------- claim(port) ------|
@@ -207,13 +207,12 @@ the destination claims in its clearing bootstrap before package import or
 network use. It never holds a port across OAuth, user interaction, wallet
 confirmation, or an intentional background wait.
 
-The preserve handler uses `event.waitUntil()` to keep its message event active
-until the continuation is claimed or its short deadline expires. A preserve
-acknowledgement therefore confirms worker ownership but does not end the event.
-Claim atomically transfers the continuation and settles that event. The Service
-Worker lifetime model remains event-based: registrations persist, but a worker
-heap may be terminated when no event is pending or under abnormal resource
-pressure.
+The `keep` handler uses `event.waitUntil()` to keep its message event active
+until the port is claimed or its short deadline expires. Its acknowledgement
+therefore confirms worker ownership but does not end the event. `claim`
+atomically transfers the port and settles that event. The Service Worker
+lifetime model remains event-based: registrations persist, but a worker heap
+may be terminated when no event is pending or under abnormal resource pressure.
 
 There is no portable browser-specific minimum lifetime. The PoC observed:
 
@@ -230,79 +229,56 @@ browser-specific deadline. Suspension, process loss, memory pressure, or
 expiry may still break continuity; failure is terminal and never selects a
 weaker path.
 
-### Payload
+### PortKeeper API
 
-Transport records exactly one popup-side carrier continuation after selection:
+`PortKeeper` is the transport's package-private continuity component. It
+encapsulates Service Worker communication, temporary ownership, event lifetime,
+the claim deadline, one-use transfer, and cleanup. It neither reads the port nor
+interprets its purpose.
 
 ```ts
-interface CarrierContinuation {
-  purpose: string
-  port: MessagePort
+declare class PortKeeper {
+  constructor(
+    registration: ServiceWorkerRegistration,
+    compatibilityTag: number,
+  )
+
+  keep(
+    ceremonyId: string,
+    purpose: string,
+    port: MessagePort,
+  ): Promise<void>
+
+  claim(ceremonyId: string): Promise<{
+    purpose: string
+    port: MessagePort
+  }>
 }
 ```
 
-For MessagePort, this is the selected popup endpoint. For WebRTC fallback, it
-is the peer endpoint of the local channel containing the queued value.
-The exact purpose literals and contents remain transport-private; the worker
-bridge treats both as opaque.
-
-An active `RTCDataChannel` cannot be transferred. The WebRTC path therefore
-preserves only the local `MessagePort` containing its queued first value; the
-destination establishes the data channel after claiming it.
-
-### Preserve and claim
-
-The caller resolves the active `ServiceWorkerRegistration` and supplies it as a
-browser resource. Transport contains no worker scope or route constant.
-`navigatePopup` performs:
-
-```ts
-async function preserveCarrierPort(
-  registration: ServiceWorkerRegistration,
-  compatibilityTag: number,
-  ceremonyId: string,
-  purpose: string,
-  port: MessagePort,
-): Promise<void>
-```
-
-The preserve operation transfers the continuation and a fresh receipt port to
-the worker. It resolves only after the worker accepts one continuation for the
-exact ceremony ID in its short-lived in-memory map. Transport clears its local
-ownership only after transfer and replaces the source document only after
-acknowledgement.
-
-The destination document resolves the same registration and claims before
-package import or network use:
-
-```ts
-async function claimCarrierPort(
-  registration: ServiceWorkerRegistration,
-  compatibilityTag: number,
-  ceremonyId: string,
-): Promise<CarrierContinuation>
-```
-
-The worker atomically removes the continuation and returns the unchanged
-purpose and port. Receipt ports close after their replies. The preserve event
-stays extended until this claim or expiry; the claim event stays extended
-through its reply. The worker keeps no durable record and never reads queued
-port values.
+The constructor fixes the active registration and caller-owned compatibility
+tag for both operations. `keep` resolves only after the worker owns the exact
+port, after which transport may replace the source document. `claim` atomically
+returns and removes the unchanged purpose and port before the destination loads
+caller code or uses the network. For MessagePort, the returned port is the
+selected carrier endpoint. For WebRTC fallback, it contains the one queued
+value used before the destination establishes its data channel.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
-not yet exist. Compatibility tag, ceremony ID, purpose bounds, transferable
-count, duplicate ownership, expiry, and one-use claim are checked before
-ownership changes. Wrong, missing, expired, duplicate, replayed, or
+not yet exist. The Service Worker record and control-message encoding are
+implementation details. Compatibility tag, ceremony ID, purpose bounds,
+transferable count, duplicate ownership, expiry, and one-use claim are checked
+before ownership changes. Wrong, missing, expired, duplicate, replayed, or
 post-terminal calls reject and close every reachable port. Worker loss or a
-failed acknowledgement prevents navigation with live state. No
+failed `keep` acknowledgement prevents navigation with live state. No
 `BroadcastChannel`, cookie, IndexedDB record, request, or URL carries the port,
 purpose, or queued value.
 
 ## Failure and security rules
 
-- One transport accepts one popup source, one carrier selection, and one
-  carrier continuation.
+- One transport accepts one popup source, one carrier selection, and one kept
+  port.
 - Window controls exact-check browser-stamped source and origin before binding
   or releasing a value.
 - Carriers cannot inspect, add, remove, or classify transported values.

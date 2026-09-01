@@ -157,7 +157,7 @@ package release. The prover artifact runs in both Window and Service Worker
 contexts: its Window branch runs iframe prefetch or the one active top-level
 prover, while its Service Worker branch owns shared asset single flights,
 cache, and the worker handlers used by the transport's short-lived
-carrier-continuity bridge.
+`PortKeeper`.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
@@ -202,7 +202,7 @@ The package-facing API surface is:
 | `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, direction/order rules, exact codecs, and concrete payload-opaque `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and carrier-continuity handlers |
+| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.
