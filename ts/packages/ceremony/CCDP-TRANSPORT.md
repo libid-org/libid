@@ -1,212 +1,208 @@
 # CCDP transport
 
-This document defines the package-private transport coordinator used by the
-Ceremony Cross-Document Protocol (CCDP). It owns browser-phase routing,
-application/popup endpoint lifecycles, carrier selection, navigation, and
-cleanup. It does not own ceremony message semantics.
+This document defines the package-private transport used by the Ceremony
+Cross-Document Protocol (CCDP). It authenticates one ceremony, moves opaque
+values, selects a carrier after OAuth, and preserves the popup-side native
+resource across callback-to-prover navigation.
 
-[CCDP.md](CCDP.md) defines the messages and their valid phases. The
-[MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
-[WebRTC](CCDP-CARRIER-WEBRTC.md) documents define the two carriers.
+[CCDP.md](CCDP.md) defines message shapes, directions, ordering, and handling.
+The [MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
+[WebRTC](CCDP-CARRIER-WEBRTC.md) documents define the two post-OAuth carriers.
 
 ## Boundary
 
-`CCDPTransport` is one concrete package component, not an interface implemented
-by each carrier. It owns:
+Transport owns:
 
-- the application endpoint and each short-lived popup-document endpoint;
-- exact source, origin, ceremony, version, and phase binding;
-- phase-stamped delivery to CCDP handlers;
-- MessagePort-first carrier selection and WebRTC fallback;
-- callback-to-prover navigation and port handoff; and
+- browser-stamped source and origin checks;
+- ceremony and CCDP-version binding;
+- the retained popup `WindowProxy`;
+- opaque ordered delivery;
+- MessagePort-first selection and WebRTC fallback;
+- native carrier resources and navigation handoff; and
 - one-shot closure and race resolution.
 
-It does not parse OAuth, inspect proof values, know platform steps, persist a
-ceremony, or hardcode CCDP message types. Message codecs registered by CCDP own
-message-specific validation. Carriers move opaque transport frames and cannot
-select a handler.
+Transport does not know CCDP message types, codecs, directions, ordering,
+platforms, OAuth fields, prefetch behavior, or route meanings. Callback,
+prover, and client logic construct, decode, and handle every value outside
+transport.
 
-## Concrete endpoints
+## API
 
-The module has two named constructors:
-
-```ts
-const clientTransport = CCDPTransport.client({
-  ceremonyId,
-  ccdpVersion,
-  callbackOrigin,
-  expectedPopup,
-  signaling,
-})
-
-const popupTransport = CCDPTransport.popup({
-  ceremonyId,
-  ccdpVersion,
-  phase,
-  allowedAppOrigins,
-  signaling,
-})
-```
-
-The application creates one client endpoint for the live ceremony. It survives
-the entire attempt and owns the retained popup source, the idle signaling
-subscription, carrier selection, handlers, and cleanup.
-
-Each package document inside the popup creates a fresh popup endpoint after
-classifying and clearing its trusted bootstrap input:
-
-| Document lifetime | Phase |
-|---|---|
-| Initial callback before provider navigation | `pre-auth` |
-| Returned callback after provider authorization | `post-auth` |
-| Top-level isolated prover | `isolated` |
-
-Here `auth` means provider authorization. The phase does not claim that a
-transport or identity has already been authenticated.
-
-Both endpoints expose the same package-private operations:
+The application constructs one client transport for the ceremony. Each
+callback or prover document constructs a fresh popup transport from the browser
+resources available in that document. Their package-private resource records
+contain no semantic phase or route name.
 
 ```ts
-type TransportPhase = 'pre-auth' | 'post-auth' | 'isolated'
-
-transport.on(phase, codec, handler)
-transport.send(phase, message)
-transport.navigatePopup(url)
-transport.close()
+const clientTransport = CCDPTransport.client(clientResources)
+const popupTransport = CCDPTransport.popup(popupResources)
 ```
 
-`codec` supplies the message discriminator and exact decoder. `on` returns an
-unsubscribe function. The transport uses only the phase and discriminator to
-dispatch; it does not contain a switch over CCDP message names. `send` queues an
-already validated value and is not a delivery acknowledgement. `close` is
-idempotent and sends no ceremony result.
-
-`navigatePopup` is available only to package control flow. On the client side it
-navigates the exact retained popup to the frozen provider URL. On the popup side
-it performs the required acknowledged handoff before replacing the callback
-with the prover. It accepts no caller-selected transport, carrier, phase, or
-handoff purpose.
-
-## Frames and phase routing
-
-The transport wraps each logical value in an internal frame:
+Before real-anchor launch supplies a source, the client uses one generic
+admission operation:
 
 ```ts
-interface TransportFrame {
-  phase: TransportPhase
-  message: unknown
-}
+clientTransport.bindPopup(accept: (value: unknown) => boolean): Promise<void>
 ```
 
-Once a carrier is selected, its transport instance already binds ceremony ID
-and CCDP version, so post-binding frames repeat neither. The pre-auth
-`ProverPrefetchingAssets` message carries its ceremony ID and version because it
-also binds the real-anchor popup source before a carrier exists.
+It considers only values from the configured callback origin and commits the
+browser-stamped source of the first value accepted by the participant callback.
+With a caller-supplied popup handle, that source must also equal the expected
+handle. Transport never interprets the value. Rejected candidates bind nothing.
 
-The transport exact-validates the frame and current phase before invoking the
-registered codec. CCDP owns the message-to-phase rules:
+Both endpoints expose the same opaque delivery operations:
 
-| Phase | CCDP traffic |
-|---|---|
-| `pre-auth` | selected-profile `ProverPrefetchingAssets` readiness |
-| `post-auth` | one `CallbackDeliverParams` or observable callback `AbortCeremony` |
-| `isolated` | proof request, cancellation, prover progress, proof delivery, and technical abort |
+```ts
+transport.send(value: unknown): void
+transport.onMessage(handler: (value: unknown) => void): () => void
+transport.navigatePopup(url: string): Promise<void>
+transport.close(): void
+```
 
-The phase records the logical protocol lane, not necessarily the document which
-physically forwards it. In the RTC path the callback creates the `post-auth`
-frame, the navigation handoff preserves it locally, and the isolated prover
-forwards it after RTC opens. The application still dispatches it to the
-`post-auth` handler.
+`send` accepts an already validated CCDP value into the current physical path;
+it is not a delivery acknowledgement. `onMessage` exposes an untrusted value to
+the participant's CCDP decoder and returns an unsubscribe function. Transport
+does not inspect a message discriminator or dispatch a protocol handler.
+`close` is idempotent and sends no ceremony result.
 
-Private carrier controls—opener authentication, SDP, ICE, and navigation-port
-receipts—are not transport frames or CCDP messages.
+`navigatePopup` accepts a caller-selected opaque URL. It never parses, builds,
+or branches on that URL:
 
-## Lifecycle
+- the client endpoint navigates its exact retained `WindowProxy` directly; or
+- the popup endpoint first hands off its owned navigation port, awaits worker
+  ownership, and then replaces its current document.
 
-### Pre-auth
+The transport decides between those operations from the native resource it
+owns, not from a phase or URL. A popup endpoint without the required navigation
+port rejects rather than navigating and losing live state.
 
-The client endpoint retains the expected popup when scripted opening succeeds
-and arms one idle RTC signaling subscription. The initial callback endpoint
-loads the same-origin prover prefetch child. Its matching
-`ProverPrefetchingAssets` is delivered through the `pre-auth` WindowProxy path.
+## Initial callback
 
-The client exact-checks callback origin, source when already known, ceremony,
-version, and selected profile. A real-anchor launch binds the observed source at
-this point. Its CCDP handler then calls `navigatePopup` with the already frozen
-provider URL. This phase does not choose MessagePort or RTC.
+The initial callback constructs its popup transport from `window.opener` and
+the immutable allowed application origins. Its selected-profile prover child
+starts prefetch. Once dispatch settles, callback logic constructs
+`ProverPrefetchingAssets` and calls `send`; transport delivers that opaque value
+over `WindowProxy` with exact configured target origins. Transport neither
+executes prefetch nor identifies the value.
 
-### Post-auth
+The client transport accepts a candidate only from the configured callback
+origin. `bindPopup` delegates exact `ProverPrefetchingAssets` validation to the
+Ceremony Client and commits the browser-stamped source only when that predicate
+accepts the live ceremony's record. A supplied scripted-open handle must already
+equal that source; real-anchor launch learns the source here. The client then
+asks transport to navigate the retained popup to the frozen provider URL.
 
-Provider navigation destroys the initial popup endpoint. The returned callback
-clears its URL, extracts the one ceremony ID from OAuth state, and creates a
-`post-auth` popup endpoint. The transport chooses one path:
+Provider navigation destroys the initial popup transport. The client transport
+retains the bound popup source and its idle WebRTC signaling subscription.
+There is no private bootstrap record or pre-OAuth MessagePort.
+
+## Carrier selection after OAuth
+
+The returned callback clears its URL, extracts only the ceremony ID needed for
+routing, and constructs `CallbackDeliverParams` outside transport. Transport
+then chooses one physical path:
 
 1. A usable retained opener completes the MessagePort carrier's exact
-   source/origin authentication. The callback sends one post-auth
-   `CallbackDeliverParams` frame through that carrier.
-2. An absent, severed, invalid, or timed-out opener commits the RTC path. The
-   callback queues the same frame on a local port without sending it through
-   signaling.
+   source/origin authentication. Its native result is a `MessagePort`.
+2. An absent, severed, invalid, or timed-out opener commits WebRTC fallback.
+   There is no WebRTC carrier yet because callback-to-prover navigation would
+   destroy it. Transport creates a local `MessageChannel` and queues the opaque
+   callback value on one endpoint.
 
-MessagePort has priority until the callback commits the RTC path. The client
-atomically accepts the first valid selection; late authentication, signaling,
-or messages from another path are inert. A selected path never migrates to the
-other carrier after failure.
+MessagePort has priority until fallback commits. The client accepts the first
+valid selection; late authentication, signaling, or values from another path
+are inert. A selected path never migrates after failure.
 
-### Isolated
+In the MessagePort path, `send(CallbackDeliverParams)` uses the selected native
+port. In fallback, the same call queues the value on the transport-owned local
+port. Transport neither identifies nor parses that value.
 
-The callback endpoint passes either the application-bound MessagePort endpoint
-or the local queued-return port to the navigation handoff, waits for its
-acknowledgement, and replaces itself with the top-level prover. The prover's new
-`isolated` popup endpoint claims the port before package import or network use.
+## Native carrier resources
 
-- A MessagePort holder resumes the already selected carrier; queued isolated
-  frames remain ordered while ownership moves.
-- An RTC-bootstrap holder yields the post-auth callback frame. The prover opens
-  the RTC carrier through the pre-armed signaling subscription and forwards
-  that frame first.
+Carrier setup returns its natural browser resource:
 
-The application then sends isolated proof or cancellation traffic. The prover
-sends isolated progress, proof delivery, or technical abort traffic. No later
-opener, navigation, carrier selection, or reconnection exists.
+```ts
+authenticateMessagePort(/* binding inputs */): Promise<MessagePort>
+establishWebRTC(/* signaling inputs */): Promise<RTCDataChannel>
+```
+
+Transport adapts either resource to the same internal delivery operations:
+
+```ts
+interface Carrier {
+  send(value: unknown): void
+  onMessage(handler: (value: unknown) => void): () => void
+  close(): void
+}
+
+messagePortCarrier(port: MessagePort): Carrier
+webRTCCarrier(channel: RTCDataChannel): Carrier
+```
+
+The adapters do not own navigation policy. Transport retains each native
+resource and invalidates its adapter when ownership moves or closes.
+
+Only MessagePort is transferable:
+
+- a selected MessagePort is both the active carrier resource and the
+  callback-to-prover navigation payload;
+- WebRTC fallback uses a transport-created `MessageChannel` only to carry the
+  queued callback value to the future prover; and
+- an established `RTCDataChannel` is never handed across navigation.
+
+The final prover consumes the fallback value, establishes WebRTC through the
+pre-armed signaling subscription, adapts the resulting `RTCDataChannel`, and
+forwards that unchanged value first.
 
 ## Navigation port handoff
 
-The transport moves one opaque `MessagePort` across the callback-to-prover
-navigation through the already-active prover Service Worker:
+Transport records exactly one popup-side navigation payload after carrier
+selection:
+
+```ts
+interface NavigationPayload {
+  purpose: string
+  port: MessagePort
+}
+```
+
+For MessagePort, this is the selected popup endpoint. For WebRTC fallback, it
+is the peer endpoint of the local channel containing the queued callback value.
+The exact purpose literals and contents remain transport-private; the worker
+handoff treats both as opaque.
+
+The callback participant resolves the active prover
+`ServiceWorkerRegistration` and supplies it as a browser resource. Transport
+contains no worker scope or route constant. `navigatePopup` performs:
 
 ```ts
 async function holdNavigationPort(
+  registration: ServiceWorkerRegistration,
   ceremonyId: string,
   purpose: string,
   port: MessagePort,
 ): Promise<void>
-
-async function claimNavigationPort(ceremonyId: string): Promise<{
-  purpose: string
-  port: MessagePort
-}>
 ```
 
-`purpose` is an opaque bounded string chosen and exact-validated by the
-transport. The handoff defines no purpose registry or carrier enum and never
-interprets the port.
+The hold transfers the payload and a fresh receipt port to the worker. It
+resolves only after the worker accepts one holder for the exact ceremony ID in
+its short-lived in-memory map. Transport clears its local ownership only after
+transfer and replaces the callback only after acknowledgement.
 
-`holdNavigationPort` transfers the supplied port and a fresh receipt port to
-the worker. It resolves only after the worker accepts one holder for the exact
-ceremony ID into its short-lived in-memory map. The callback navigates only
-after that acknowledgement.
+The clearing top-level prover bootstrap resolves the same registration and
+claims before package import or network use:
 
-The clearing top-level prover calls `claimNavigationPort` before package import
-or network use. The worker atomically removes the holder and returns its
-unchanged purpose and port. Both receipt ports close after their replies. The
-worker extends each handling event through its reply, keeps no durable record,
-and never reads queued port messages.
+```ts
+async function claimNavigationPort(
+  registration: ServiceWorkerRegistration,
+  ceremonyId: string,
+): Promise<NavigationPayload>
+```
 
-The callback obtains the registration with
-`navigator.serviceWorker.getRegistration('/api/v1/ceremony/')`, not
-`navigator.serviceWorker.ready`: a developer-configurable callback alias need
-not be controlled by that scope. The prover bundle emits the worker handlers.
+The worker atomically removes the holder and returns the unchanged purpose and
+port. Receipt ports close after their replies. The worker extends each handling
+event through its reply, keeps no durable record, and never reads queued port
+values.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the callback destroys itself and the destination prover does not yet
@@ -215,29 +211,17 @@ expiry, and one-use claim are checked before ownership changes. Wrong, missing,
 expired, duplicate, replayed, or post-terminal calls reject and close every
 reachable port. Worker loss or a failed acknowledgement prevents navigation
 with live state. No `BroadcastChannel`, cookie, IndexedDB record, request, or
-URL carries the port, purpose, or queued payload.
+URL carries the port, purpose, or queued value.
 
-## Carrier contract
+## Failure and security rules
 
-Each carrier supplies ordered, nonduplicated opaque-frame delivery and
-idempotent local closure. MessagePort adapts a browser `MessagePort`; WebRTC
-adapts one ordered reliable `RTCDataChannel` and privately owns encoding,
-framing, and buffering.
-
-Carriers expose no ceremony message, platform, phase transition, popup
-navigation, recovery, or application API. Remote context loss may be silent,
-so the coordinator promises no remote-close notification under either carrier.
-
-## Race and failure rules
-
-- Every window exchange exact-checks browser-stamped source and origin before
-  binding or releasing a value.
-- One live ceremony accepts one popup source, one carrier, one callback return,
-  and one isolated proof attempt.
-- Wrong, stale, duplicate, replayed, out-of-phase, or post-terminal frames
-  change no state.
-- Signaling carries no transport frame or ceremony payload.
-- Handoff failure prevents callback-to-prover navigation with live state.
+- One live ceremony accepts one popup source, one carrier selection, one
+  callback value, and one proof attempt.
+- Window controls exact-check browser-stamped source and origin before binding
+  or releasing a value.
+- Carriers cannot inspect, add, remove, or classify CCDP values.
+- Signaling carries no CCDP value.
+- Wrong, stale, duplicate, replayed, or post-terminal values change no state.
 - Carrier, popup, worker, or context loss is never success, denial,
   cancellation, or recovery.
 - Observable failure rejects the live ceremony and clears reachable inputs;
@@ -248,34 +232,32 @@ so the coordinator promises no remote-close notification under either carrier.
 ```mermaid
 sequenceDiagram
     participant A as Client transport
-    participant C0 as Initial callback transport
+    participant C0 as Initial callback
     participant O as OAuth provider
     participant C1 as Returned callback transport
     participant P as Prover transport
 
-    C0-->>A: pre-auth / ProverPrefetchingAssets
+    C0-->>A: ProverPrefetchingAssets through popup transport
+    Note over A: CCDP handler validates; client transport binds source
     A->>C0: navigatePopup(provider URL)
     C0->>O: Replace popup
     O-->>C1: Return authorization result
     alt MessagePort carrier
-        C1-->>A: post-auth / CallbackDeliverParams
-        C1->>P: Hold carrier port and replace popup
-    else WebRTC carrier
-        C1->>P: Hold queued-return port and replace popup
-        P-->>A: post-auth / CallbackDeliverParams after RTC opens
+        C1-->>A: Opaque CallbackDeliverParams
+        C1->>P: Hand off native MessagePort and replace popup
+    else WebRTC fallback
+        C1->>P: Hand off queued-value port and replace popup
+        Note over A,P: Establish WebRTC carrier
+        P-->>A: Opaque CallbackDeliverParams
     end
-    A-->>P: isolated / AppRequestProof or AppCancelCeremony
-    P-->>A: isolated / progress, proof, or abort
+    A-->>P: Opaque AppRequestProof or AppCancelCeremony
+    P-->>A: Opaque progress, proof, or abort
 ```
-
-The MessagePort carrier may deliver the post-auth frame before navigation;
-the RTC carrier delivers it after the prover opens RTC. Phase dispatch makes
-that physical difference invisible to CCDP.
 
 ## Versioning
 
-`CCDPVersion` covers phase names, frame semantics, endpoint binding, carrier
-selection, and navigation continuity as well as logical messages. Carriers and
-same-release worker controls have no separately negotiated version. A compatible
-implementation may change internal framing, ICE policy, worker controls, or
-equivalent browser mechanics without changing the transport contract.
+`CCDPVersion` covers initial source binding, carrier authentication, navigation
+continuity, and CCDP values. Carriers and same-release worker controls have no
+separately negotiated version. Compatible releases may change internal framing,
+ICE policy, worker controls, or equivalent browser mechanics without changing
+the opaque transport contract.

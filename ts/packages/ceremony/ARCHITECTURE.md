@@ -107,7 +107,7 @@ resumable independently.
 
 [CCDP.md](CCDP.md) defines the package-owned protocol between the application,
 callback, and isolated prover; [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md) defines its
-browser routing; and [CALLBACK.md](CALLBACK.md) defines the callback's local
+browser transport; and [CALLBACK.md](CALLBACK.md) defines the callback's local
 state and UI. This document owns only the package and public client contracts
 around them.
 
@@ -118,8 +118,8 @@ Launch publishes one `@libid/ceremony` package:
 ```text
 @libid/ceremony
 ├── ccdp
-│   ├── index                 ceremony records, codecs, phase rules, and wire version
-│   ├── transport             endpoint lifecycle, routing, carrier selection, and navigation
+│   ├── index                 ceremony records, directional codecs, and wire version
+│   ├── transport             opaque delivery, carrier selection, and navigation
 │   ├── carrier-message-port  window authentication and MessagePort delivery
 │   └── carrier-webrtc        signaling, ICE, framing, and RTCDataChannel delivery
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
@@ -138,8 +138,8 @@ Launch publishes one `@libid/ceremony` package:
 `ccdp/index` is the pure protocol leaf imported by client, callback, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
 construction, or cryptographic proof verification. `ccdp/transport` is one
-concrete package-private coordinator; its carriers contain only their browser
-delivery mechanics and never enter the public API.
+concrete package-private, payload-opaque transport; its carriers contain only
+their browser delivery mechanics and never enter the public API.
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
@@ -198,7 +198,7 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, phase rules, exact codecs, and concrete `CCDPTransport`; no application export |
+| `@libid/ceremony/ccdp` | internal `CCDPMessage`, `CCDPVersion`, direction/order rules, exact codecs, and concrete payload-opaque `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and transport port-handoff handlers |

@@ -3,7 +3,7 @@
 This document defines the browser participant emitted as
 `libid-ceremony-callback.js`. The same fixed, non-isolated document runs before
 OAuth and at the configured provider callback. It preserves and authenticates
-the application opener when available and delegates phase routing, carrier
+the application opener when available and delegates opaque delivery, carrier
 selection, and same-popup promotion to the concrete CCDP transport.
 
 The exact cross-document records and their order are defined by
@@ -23,7 +23,7 @@ The callback owns:
 - classifying its already-cleared input as an initial launch or provider
   callback;
 - starting selected-profile prefetch before OAuth;
-- supplying its phase-local CCDP handlers to the concrete transport; and
+- constructing, decoding, and handling its CCDP values; and
 - script-owned native transition UI and one-shot cleanup.
 
 The concrete transport owns opener authentication, carrier selection, the
@@ -80,7 +80,7 @@ initial launch
 
 provider callback
   validate OAuth state
-    -> create the post-auth transport endpoint
+    -> create the returned transport endpoint
     -> let it choose MessagePort or WebRTC
     -> let it hand off state and navigate the same popup to /prover
 ```
@@ -96,10 +96,10 @@ no state.
 
 ## Local transitions
 
-| Phase | Accepts and emits | Callback side effect |
+| Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
-| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| Post-auth transport | one OAuth state and `CallbackDeliverParams` | create the popup endpoint; the transport exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
+| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct popup transport over the opener, bind one `/prover#prefetch(...)` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
+| Provider return | one OAuth state and `CallbackDeliverParams` | construct a fresh popup transport; it exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
 | Prover transition | transport handoff resolves | transport replaces this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
@@ -113,8 +113,8 @@ of navigating.
 
 The callback has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
-the platform-aware checks. Exact phase routing, carrier selection, and
-navigation are defined in [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md). Execution and
+the platform-aware checks. Opaque delivery, carrier selection, and navigation
+are defined in [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md). Execution and
 visible proving UI remain in [PROVER.md](PROVER.md).
 
 ### Script-owned presentation
@@ -143,9 +143,9 @@ recovery record is written.
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, embedded allowlist, and response policy | server bootstrap and response |
-| MessagePort bootstrap shape, order, application source/origin, ceremony continuity, carrier selection, and exact port count | concrete transport and MessagePort carrier |
+| MessagePort bootstrap shape, application source/origin, ceremony continuity, carrier selection, and exact port count | concrete transport and MessagePort carrier |
 | RTC signaling origin, role, one-use ceremony binding, and ICE/DTLS continuity | concrete transport, WebRTC carrier, and signaling service |
-| Popup `WindowProxy` source or RTC ceremony binding, CCDP version, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client |
+| CCDP shape, direction, order, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client and callback/prover participants |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
 | Job authority and use of the returned Identity | application composition |
 

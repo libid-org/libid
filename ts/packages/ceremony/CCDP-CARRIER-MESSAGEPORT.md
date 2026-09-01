@@ -2,11 +2,11 @@
 
 This document defines the browser-local carrier used by the concrete CCDP
 transport when the returned callback retains its application opener. It owns
-callback opener authentication, one `MessageChannel`, and opaque transport-frame
+callback opener authentication, one `MessageChannel`, and opaque-value
 delivery.
 
 [CCDP.md](CCDP.md) defines ceremony messages. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md)
-defines phases, carrier selection, navigation, and cleanup. The
+defines carrier selection, navigation, and cleanup. The
 [WebRTC carrier](CCDP-CARRIER-WEBRTC.md) is the opener-severed fallback.
 
 These controls are package-private. They are not CCDP messages, application
@@ -18,13 +18,12 @@ The carrier owns:
 
 - callback authentication from browser-stamped source and origin;
 - creation of one ceremony-bound `MessageChannel`;
-- ordered opaque-frame delivery over its two ports; and
+- ordered opaque-value delivery over its two ports; and
 - exact local cleanup when binding fails.
 
-It does not parse OAuth, inspect a transport frame's message, select a phase or
-carrier, navigate the popup, persist credentials, or recover a ceremony. The
-transport coordinator moves the callback endpoint across navigation through
-the shared handoff.
+It does not parse OAuth, inspect a value, select a carrier, navigate the popup,
+persist credentials, or recover a ceremony. The transport moves the callback
+endpoint across navigation through the shared handoff.
 
 ## Callback authentication
 
@@ -53,10 +52,10 @@ The callback accepts it only from `window.opener`, requires a browser-stamped
 origin in its immutable server-provided allowlist, exact-matches the supplied
 ceremony ID to OAuth state, and rejects a missing or additional port.
 
-The two endpoints become the MessagePort carrier under their existing concrete
-transports. No ceremony payload crosses the WindowProxy authentication exchange.
-The transport coordinator sends the post-auth callback frame and moves the
-popup endpoint through the navigation handoff.
+The authentication operation returns the native `MessagePort`; transport wraps
+it only after these checks. No ceremony payload crosses the WindowProxy
+authentication exchange. Transport sends the opaque callback value and moves
+the popup endpoint through the navigation handoff.
 
 An absent, severed, wrong-source, wrong-origin, malformed, or timed-out binding
 produces no carrier. The coordinator may commit RTC; a late local reply cannot
@@ -64,14 +63,14 @@ replace that selection.
 
 ## Failure and security invariants
 
-- Every window control exact-checks browser-stamped source, origin, shape,
-  version, and current transport phase.
+- Every window control exact-checks browser-stamped source, origin, shape, and
+  version against the current binding.
 - A transferred application port is accepted exactly once and only after the
   ceremony ID matches cleared OAuth state.
 - Wrong, missing, duplicate, replayed, or post-terminal controls fail closed
   without releasing the OAuth return.
-- The carrier preserves ordered, nonduplicated structured-clone frames and does
-  not decode their CCDP payloads.
+- The carrier preserves ordered, nonduplicated structured-clone values and does
+  not decode them.
 - `MessagePort` closure or context destruction may be silent; neither is a
   ceremony result or recovery signal.
 - No `BroadcastChannel`, cookie, IndexedDB record, request body, or URL carries

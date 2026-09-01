@@ -2,11 +2,11 @@
 
 This document defines the WebRTC carrier used by the concrete CCDP transport
 when provider response policy severs callback opener authentication. It owns
-signaling, peer establishment, and opaque transport-frame delivery over one
+signaling, peer establishment, and opaque-value delivery over one
 `RTCDataChannel`.
 
 [CCDP.md](CCDP.md) defines ceremony messages. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md)
-defines phases, carrier selection, callback-to-prover navigation, and cleanup.
+defines carrier selection, callback-to-prover navigation, and cleanup.
 The [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) is the preferred
 browser-local path. The signaling service API and deployment configuration
 remain later server work; this document defines the behavior the carrier needs.
@@ -66,10 +66,10 @@ The signaling contract accepts only:
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
-Records exact-match CCDP version, ceremony ID, role, phase, and one live
+Records exact-match CCDP version, ceremony ID, role, and one live
 generation. They expire quickly, are consumed once, and never enter URLs, logs,
 analytics, or durable storage. The service may delay or deny the ceremony but
-cannot read DTLS-protected transport frames. The configured server already
+cannot read DTLS-protected framed values. The configured server already
 supplies browser code, so signaling adds no second signature system.
 
 No cookie, polling iframe, `BroadcastChannel`, TURN data relay, application
@@ -106,21 +106,21 @@ preserves every closed value used by CCDP, including `Uint8Array`, without
 changing its logical shape.
 
 A malformed frame, duplicate or missing chunk, inconsistent length, oversized
-message, decode failure, or buffer overflow aborts the carrier before the value
-reaches transport phase dispatch. The carrier does not inspect the nested CCDP
-message. There is one connection, with no reconnection, carrier switch, or
-message resend.
+message, decode failure, or buffer overflow aborts the carrier before transport
+delivers the value. The carrier does not inspect that value. Establishment
+returns the native `RTCDataChannel`; transport then wraps it. There is one
+connection, with no reconnection, carrier switch, or message resend.
 
 ## Failure and security invariants
 
 - Signaling carries no OAuth return, proof request, progress, proof, witness,
-  attestation, cancellation, or other transport frame.
+  attestation, cancellation, or other transported value.
 - The application signaling handshake requires an allowed browser-stamped
   `Origin`; the prover handshake requires the exact ceremony-server origin.
 - Ceremony ID is fresh, unguessable, one-use, exact-matched to the live client
   transport, and retired when either carrier wins.
-- `RTCDataChannel` framing is bounded and cannot add a CCDP message outside the
-  transport's registered codecs.
+- `RTCDataChannel` framing is bounded and cannot add a value outside its
+  authenticated connection.
 - Signaling loss, ICE failure, channel loss, popup closure, or context
   destruction is never a ceremony result or recovery signal.
 - Observable failure clears reachable inputs without selecting another carrier;
