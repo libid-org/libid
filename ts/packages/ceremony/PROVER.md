@@ -6,9 +6,11 @@ progress steps, release assets, proving toolchain, service-worker prefetch and
 port handoff, cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
-[ARCHITECTURE.md](ARCHITECTURE.md). Cross-document handoff and messages are
-defined by [CCDP.md](CCDP.md). The integrating server's prover route, embedded
-`ProverAssets`, and response headers are defined in [SERVER.md](SERVER.md).
+[ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
+[CCDP.md](CCDP.md), with [MessagePort](CCDP-MESSAGEPORT.md) and
+[WebRTC](CCDP-RTC.md) transport mechanics defined separately. The integrating
+server's prover route, embedded `ProverAssets`, and response
+headers are defined in [SERVER.md](SERVER.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
@@ -31,7 +33,9 @@ Before OAuth
 After OAuth
 └── /api/v1/ceremony/prover#<ceremonyId>
     same popup navigates here as a top-level document
-      └── claims the CCDP port, joins the same fetches, and proves
+      ├── claims the navigation port
+      ├── adopts its bound CCDP transport or opens RTC from its queued return
+      └── joins the same fetches and proves
 
 Shared Service Worker
 ├── immutable-asset and CRS single flights survive document replacement
@@ -49,9 +53,12 @@ The same root evaluated as a Service Worker installs only its cache and
 short-lived port-handoff handlers; it does not enter CCDP or a platform
 pipeline.
 
-The prover consumes one exact `AppRequestProof` after CCDP has authenticated
-the live ceremony and transferred its port. It returns only bounded platform
-steps, one exact platform proof delivery, or a sanitized technical failure.
+The prover claims one `NavigationPortPurpose`. For `ccdp`, its port is
+already the application-bound transport endpoint. For `rtc-bootstrap`, it consumes the
+single locally queued `PopupDeliverParams`, establishes the application RTC
+transport, and forwards that message unchanged. It then consumes one exact
+`AppRequestProof`. It returns only bounded platform steps, one exact platform
+proof delivery, or a sanitized technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
@@ -425,7 +432,7 @@ There is no separate prefetch route, artifact, or mode flag.
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
 without waiting for downloads. Worker activation is required because the same
-worker later carries the CCDP port; ordinary artifact fetching remains a
+worker later carries the navigation port; ordinary artifact fetching remains a
 best-effort latency optimization. A worker which receives the prefetch request
 exact-validates it and attaches the fetch work to the message event with
 `event.waitUntil`.
@@ -444,7 +451,8 @@ the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
-addition to the short-lived port holder defined by CCDP, it owns each selected
+addition to the short-lived port holder defined by
+[the MessagePort transport](CCDP-MESSAGEPORT.md#navigation-port-courier), it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single

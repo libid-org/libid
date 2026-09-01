@@ -3,11 +3,13 @@
 This document defines the browser participant emitted as
 `libid-ceremony-popup.js`. The same fixed, non-isolated document runs before
 OAuth and at the configured provider callback. It preserves and authenticates
-the application opener, transfers one CCDP port, and promotes the same popup to
-the isolated prover without storing a ceremony.
+the application opener when available, selects the matching CCDP transport, and
+promotes the same popup to the isolated prover without storing a ceremony.
 
 The exact cross-document records and their order are defined by
-[CCDP](CCDP.md). The server-owned HTML bootstrap, callback alias, embedded
+[CCDP](CCDP.md), with browser-local controls in
+[CCDP-MESSAGEPORT.md](CCDP-MESSAGEPORT.md) and opener-severed fallback in
+[CCDP-RTC.md](CCDP-RTC.md). The server-owned HTML bootstrap, callback alias, embedded
 allowlist, and response headers are defined by the
 [server contract](SERVER.md#popup-document-and-callback-alias). Prover
 execution is defined in [PROVER.md](PROVER.md). This document
@@ -19,18 +21,18 @@ The popup owns:
 
 - classifying its already-cleared input as an initial launch or provider
   callback;
-- retaining `window.opener` until exact callback authentication;
+- using `window.opener` for exact callback authentication when it survives;
 - starting selected-profile prefetch before OAuth;
-- authenticating a returned callback before releasing its parameters;
-- handing one application `MessagePort` through the prover Service Worker; and
+- selecting MessagePort or RTC without releasing parameters to signaling;
+- handing one in-memory port through the prover Service Worker; and
 - script-owned native transition UI, one-shot cleanup, and navigation.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
 Job, persist a checkpoint, or submit any downstream operation. Provider
 navigation replaces the initial document, so the callback starts in a fresh
-JavaScript heap. Continuity comes from the retained application `WindowProxy`
-and CCDP authentication, not popup storage.
+JavaScript heap. Continuity comes from either the authenticated retained
+`WindowProxy` or the live ceremony's RTC rendezvous, not popup storage.
 
 ## Entrypoint and trusted inputs
 
@@ -75,8 +77,10 @@ initial launch
   validate launch -> start prover prefetch -> report readiness -> OAuth navigation
 
 provider callback
-  authenticate opener -> bind port -> release OAuth return
-    -> hand port to the Service Worker -> navigate the same popup to /prover
+  validate OAuth state
+    -> authenticate opener and bind MessagePort, or choose RTC fallback
+    -> hand the bound transport endpoint or queued return to the Service Worker
+    -> navigate the same popup to /prover
 ```
 
 OAuth navigation destroys all initial-launch memory. No in-memory transition,
@@ -93,21 +97,23 @@ no state.
 | Phase | Accepts and emits | Popup side effect |
 |---|---|---|
 | Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | bind one `/prover#prefetch(...)` child and forward readiness to the embedded allowed origins; missing profile or child load fails, ordinary fetch failure continues cold |
-| Callback authentication | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` with one port → `PopupDeliverParams` | validate exact opener/source/origin/ID, bind the port, and release the unchanged return through it |
-| Prover handoff | `HoldProverPort` → `ProverPortHeld` | transfer the bound port to the active worker before replacing this document with `/api/v1/ceremony/prover#ceremonyId` |
+| MessagePort transport | one OAuth state; `PopupRequestAuthentication` → `AppAuthenticateOrigin` with one port → `PopupDeliverParams` | validate exact opener/source/origin/ID, bind MessagePort, deliver the unchanged return, and select `ccdp` handoff |
+| RTC transport | local authentication is unavailable or expires | queue the unchanged return on a fresh local port and select `rtc-bootstrap` handoff; send nothing to signaling |
+| Prover handoff | `HoldNavigationPort` and one receipt acknowledgement | transfer the selected port to the active worker before replacing this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 popup never constructs the provider URL. After callback it releases no value
-until authentication succeeds. The `REDIRECT_OPENER_TIMEOUT_MS = 30_000`
-deadline clears the return, severs the opener, and renders the fixed
-unapproved-application result when valid authentication does not arrive.
-Failure to hand the bound port to the worker renders the fixed prover-load
-failure instead of navigating.
+to the application until one transport binds. An absent or severed opener selects
+RTC immediately; an otherwise usable opener receives the bounded
+`REDIRECT_OPENER_TIMEOUT_MS = 30_000` local-authentication deadline before RTC
+selection. A late local reply is inert. Failure to hand the selected port to
+the worker clears the return and renders the fixed prover-load failure instead
+of navigating.
 
 The popup has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
-the platform-aware checks. Exact port binding and handoff remain in
-[CCDP](CCDP.md); execution and visible proving UI remain in
+the platform-aware checks. Exact transport binding and navigation handoff remain
+in the two CCDP transport documents; execution and visible proving UI remain in
 [PROVER.md](PROVER.md).
 
 ### Script-owned presentation
@@ -136,8 +142,9 @@ recovery record is written.
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, embedded allowlist, and response policy | server bootstrap and response |
-| CCDP bootstrap shape, order, application source/origin, ceremony continuity, and exact port count | popup |
-| Popup source, server origin, CCDP version, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client |
+| MessagePort bootstrap shape, order, application source/origin, ceremony continuity, transport selection, and exact port count | popup and MessagePort transport |
+| RTC signaling origin, role, one-use ceremony binding, and ICE/DTLS continuity | RTC transport and signaling service |
+| Popup source or RTC ceremony binding, CCDP version, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
 | Job authority and use of the returned Identity | application composition |
 
@@ -148,8 +155,8 @@ to configuration.
 
 ## Compatibility and acceptance
 
-The client checks the returned popup's `CCDPVersion` before releasing its
-ceremony ID; an unsupported document restarts with fresh OAuth. Version axes
-are defined in [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
+Both transport bindings exact-check `CCDPVersion` before delivering the OAuth
+return. An unsupported document restarts with fresh OAuth. Version axes are
+defined in [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
 
 Popup acceptance is covered by [TEST_PLAN.md](TEST_PLAN.md).

@@ -8,8 +8,10 @@ to verify.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md), the popup participant in [POPUP.md](POPUP.md), and the
-prover subsystem in [PROVER.md](PROVER.md). Browser TLSNotary sessions and
+in [CCDP.md](CCDP.md), with its [MessagePort](CCDP-MESSAGEPORT.md) and
+[WebRTC](CCDP-RTC.md) transports defined separately. The popup participant is
+defined in [POPUP.md](POPUP.md), and the prover subsystem in
+[PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The integrating server's routes, deployment inputs, and response policy are
 defined in [SERVER.md](SERVER.md). These documents are implementation
@@ -54,17 +56,20 @@ sequenceDiagram
     P->>O: Navigate through platform authorization
     U->>O: Approve or deny
     O-->>P: Return to callback alias
-    P-->>C: Request opener authentication
-    C->>P: Authenticate and transfer MessagePort
-    P-->>C: Deliver OAuth return through port
-    P->>R: Hand off port and navigate same popup to isolated prover
+    alt Retained opener authenticates
+        P-->>C: Bind MessagePort transport and deliver OAuth return
+        P->>R: Hand off transport endpoint and navigate same popup
+    else Opener path unavailable
+        P->>R: Hand off OAuth return and navigate same popup
+        R-->>C: Bind RTC transport and deliver OAuth return
+    end
     alt User denied
-        C-->>R: Cancel through port
+        C-->>R: Cancel through transport
         C-->>A: IdentityResult denied
     else User approved
         C->>C: Validate platform return
-        C->>R: Request proof through port
-        R-->>C: Progress and generated proof through port
+        C->>R: Request proof through transport
+        R-->>C: Progress and generated proof through transport
         C->>C: Validate evidence and assemble OAuthProof
         C-->>A: IdentityResult accepted with Identity
         A->>A: Commit Job successor before downstream use
@@ -91,7 +96,7 @@ application origin is an authority boundary: it supplies the operation domain
 and transaction data, so compromising it already permits authorizing a
 different operation. The ceremony does not attempt to hide its transient OAuth
 result from other scripts executing in that origin. If the application does
-not assemble and commit the delivered result before the live channel is lost,
+not assemble and commit the delivered result before the live transport is lost,
 the ceremony restarts with fresh OAuth. Downstream application work may remain
 resumable independently.
 
@@ -108,7 +113,10 @@ Launch publishes one `@libid/ceremony` package:
 
 ```text
 @libid/ceremony
-├── ccdp        cross-document records, codecs, validation, and wire version
+├── ccdp
+│   ├── index         ceremony records, codecs, validation, transport contract, and wire version
+│   ├── message-port  window authentication and Service Worker port courier
+│   └── rtc           signaling, ICE, framing, and RTCDataChannel adapter
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── popup       source entrypoint for libid-ceremony-popup.js
 ├── prover
@@ -122,9 +130,11 @@ Launch publishes one `@libid/ceremony` package:
     └── github/<version>/{client,types,prover}
 ```
 
-`ccdp` is the pure browser-message leaf imported by client, popup, and prover.
+`ccdp/index` is the pure protocol leaf imported by client, popup, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
-construction, or cryptographic proof verification. `platforms/authorization`
+construction, or cryptographic proof verification. Its transport leaves implement
+the same internal `CCDPTransport` and never enter the public API.
+`platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
 ceremony. Its `client` leaf owns OAuth and final assembly and re-exports its
@@ -179,7 +189,7 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation |
+| `@libid/ceremony/ccdp` | internal `CCDPTransport`, `CCDPMessage`, `CCDPVersion`, exact message codecs, and direction/order/envelope validation; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/popup` | [browser entrypoint](POPUP.md) which emits `libid-ceremony-popup.js` and exposes `startPopup(oauthReturn, allowedAppOrigins)` to the cleared popup document |
 | `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch owns package-private asset-prefetch single flights and the immediate callback-to-prover port handoff |
@@ -306,7 +316,10 @@ lowercase UUIDv4. A composition normally generates one value and calls it
 composition invariant, not a shared branded type. The identifier is not chain
 authorization, but its unpredictability and one-use handling provide browser
 continuity: the initial popup discloses it to the initiating app, the
-post-OAuth popup withholds it, and `AppAuthenticateOrigin` must return it.
+post-OAuth popup withholds it from window messages, and
+`AppAuthenticateOrigin` must return it on the MessagePort path. On the RTC
+path, the same one-use value selects the live application's signaling
+subscription; it is not a second authorization secret.
 
 `new` chooses the platform ceremony version, generates the fresh authorization
 nonce, derives the code verifier from it and the Authorization Digest by the
@@ -346,7 +359,7 @@ did not reject it. The real anchor is a hedge against an unqualified browser or
 embedding policy returning `null`, not a claim that a launch target is known to
 require it.
 
-`expectedPopup` is a channel-authority input, not UI configuration. When
+`expectedPopup` is a transport-authority input, not UI configuration. When
 present, `proveUserIdentity()` immediately navigates that `WindowProxy` to
 `navigation.href` and exact-matches the first popup message against it. When
 absent, the package opens or navigates nothing; the real anchor reaches the
@@ -611,7 +624,7 @@ errors.
 `CeremonyEvent` is advisory. The application may project it into broader Job
 progress, but confirmation, submission, and finality remain outside this
 package. [CCDP](CCDP.md#progress-and-proof-delivery) defines authenticated
-channel and delivery ordering.
+transport and delivery ordering.
 
 ## Versioning and compatibility
 
