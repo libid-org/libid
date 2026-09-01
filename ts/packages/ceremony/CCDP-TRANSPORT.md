@@ -78,13 +78,24 @@ outcomes. Transport does not interpret any of them.
 ## API
 
 The module has one long-lived client endpoint and a fresh popup endpoint for
-each popup document. Constructors receive only the browser resources available
+each popup document. Factories receive only the browser resources available
 to that endpoint; their records contain no route or protocol-state name.
 
 ```ts
 const clientTransport = CCDPTransport.client(clientResources)
-const popupTransport = CCDPTransport.popup(popupResources)
+const popupTransport = await CCDPTransport.popup(popupResources)
 ```
+
+`client` installs direct navigation over its retained `WindowProxy` and never
+constructs a `PortKeeper`. `popup` is asynchronous. When its browser resources
+include an active Service Worker registration, it privately constructs a
+keeper and attempts `claim` for the connection ID before selecting a new
+carrier. A matching entry restores its native port; no entry leaves the fresh
+endpoint to use its available opener or signaling resources normally.
+
+These are construction-specific implementations of the same API, not a public
+role field or a branch performed for each operation. Callers supply browser
+resources, never a keeper, continuity purpose, route, or phase.
 
 Both resource records include the same numeric `applicationVersion`. It
 identifies the caller's application protocol. Transport exact-matches it in
@@ -92,7 +103,7 @@ private carrier and navigation controls but never interprets it.
 
 A popup endpoint constructed from `window.opener` and an immutable target-origin
 set can send an opaque value over `WindowProxy`. A caller-supplied popup handle
-is bound by the client constructor. Without one, the client explicitly binds a
+is bound by the client factory. Without one, the client explicitly binds a
 source:
 
 ```ts
@@ -127,12 +138,13 @@ result.
 or branches on that URL:
 
 - the client endpoint navigates its exact retained `WindowProxy` directly; or
-- the popup endpoint first preserves its carrier port, awaits worker ownership,
-  and then replaces its current document.
+- the popup endpoint internally calls `keep` for its carrier port, awaits worker
+  ownership, and then replaces its current document.
 
-The transport decides between those operations from the native resource it
+The factory installs the appropriate operation from the native resource it
 owns, never from the URL. A popup endpoint without the required carrier port
-rejects rather than navigating and losing live state.
+rejects rather than navigating and losing live state. The client has no keeper,
+including a no-op implementation.
 
 ## Carriers
 
@@ -259,7 +271,7 @@ browser-specific deadline. Suspension, process loss, memory pressure, or
 expiry may still break continuity; failure is terminal and never selects a
 weaker path.
 
-### PortKeeper API
+### Internal PortKeeper API
 
 `PortKeeper` is the transport's package-private continuity component. It
 encapsulates Service Worker communication, temporary ownership, event lifetime,
@@ -282,28 +294,29 @@ declare class PortKeeper {
   claim(ceremonyId: string): Promise<{
     purpose: string
     port: MessagePort
-  }>
+  } | null>
 }
 ```
 
 The constructor fixes the active registration and caller-owned application
 version for both operations. `keep` resolves only after the worker owns the exact
 port, after which transport may replace the source document. `claim` atomically
-returns and removes the unchanged purpose and port before the destination loads
-caller code or uses the network. For MessagePort, the returned port is the
-selected carrier endpoint. For WebRTC fallback, it contains the one queued
-value used before the destination establishes its data channel.
+returns and removes the unchanged purpose and port, or returns `null` when no
+entry exists. `null` authenticates and selects nothing; popup construction
+continues with its available browser resources. For MessagePort, a returned port
+is the selected carrier endpoint. For WebRTC fallback, it contains the one
+queued value used before the destination establishes its data channel.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
 not yet exist. The Service Worker record and control-message encoding are
 implementation details. Application version, ceremony ID, purpose bounds,
 transferable count, duplicate ownership, expiry, and one-use claim are checked
-before ownership changes. Wrong, missing, expired, duplicate, replayed, or
-post-terminal calls reject and close every reachable port. Worker loss or a
-failed `keep` acknowledgement prevents navigation with live state. No
-`BroadcastChannel`, cookie, IndexedDB record, request, or URL carries the port,
-purpose, or queued value.
+before ownership changes. A malformed, mismatched, duplicate, or post-terminal
+record rejects and closes every reachable port; absence is the sole `null`
+result. Worker loss or a failed `keep` acknowledgement prevents navigation with
+live state. No `BroadcastChannel`, cookie, IndexedDB record, request, or URL
+carries the port, purpose, or queued value.
 
 ## Versioning
 

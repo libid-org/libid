@@ -55,13 +55,14 @@ The same root evaluated as a Service Worker installs only its cache and
 short-lived `PortKeeper` handlers; it does not enter CCDP or a platform
 pipeline.
 
-The prover creates the isolated popup transport endpoint, which claims the
-preserved carrier port and exact-validates its opaque purpose. It either resumes the
-already application-bound MessagePort carrier or consumes the single queued
-`CallbackDeliverParams`, opens WebRTC, and forwards that message unchanged. The
-prover then consumes one exact `AppRequestProof` and returns only bounded
-platform steps, one exact platform proof delivery, or a sanitized technical
-failure.
+The prover awaits the isolated popup transport factory. The factory privately
+claims the preserved carrier port and exact-validates its opaque purpose before
+returning. It either resumes the already application-bound MessagePort carrier
+or consumes the single queued `CallbackDeliverParams`, opens WebRTC, and
+forwards that message unchanged. Prover logic never constructs or calls
+`PortKeeper`. It then consumes one exact `AppRequestProof` and returns only
+bounded platform steps, one exact platform proof delivery, or a sanitized
+technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
@@ -455,7 +456,7 @@ can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
 addition to the
-[`PortKeeper`](CCDP-TRANSPORT.md#portkeeper-api),
+[`PortKeeper`](CCDP-TRANSPORT.md#internal-portkeeper-api),
 it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
