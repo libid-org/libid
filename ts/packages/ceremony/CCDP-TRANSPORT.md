@@ -174,6 +174,37 @@ through the pre-armed signaling subscription, adapts the resulting
 
 ## Navigation port handoff
 
+### Purpose
+
+Replacing a popup document destroys its JavaScript heap. Any live
+`MessagePort` owned only by that document becomes unreachable, while the
+destination document does not exist yet and therefore cannot receive the port
+directly. The handoff gives the port a temporary same-origin owner across that
+gap:
+
+```text
+source document          Service Worker          destination document
+      |                         |                           |
+      |--- hold(port) --------->|                           |
+      |<-- ownership accepted --|                           |
+      |--- navigate --------------------------------------->|
+      |                         |<-------- claim(port) ------|
+      |                         |-------- port ------------->|
+```
+
+The source navigates only after the worker acknowledges ownership. The
+destination claims before loading caller code or using the network. For the
+MessagePort carrier, this preserves the already authenticated channel without
+repeating its handshake. For WebRTC fallback, it preserves the single queued
+value until the destination establishes the data channel. Both paths avoid
+another popup, user action, or data relay.
+
+The handoff is a short in-memory navigation bridge, not persistence or
+recovery. Worker loss fails the handoff; no later document can reconstruct or
+resume the channel.
+
+### Payload
+
 Transport records exactly one popup-side navigation payload after carrier
 selection:
 
@@ -188,6 +219,12 @@ For MessagePort, this is the selected popup endpoint. For WebRTC fallback, it
 is the peer endpoint of the local channel containing the queued value.
 The exact purpose literals and contents remain transport-private; the worker
 handoff treats both as opaque.
+
+An active `RTCDataChannel` cannot be transferred. The WebRTC path therefore
+hands off only the local `MessagePort` containing its queued first value; the
+destination establishes the data channel after claiming it.
+
+### Hold and claim
 
 The caller resolves the active `ServiceWorkerRegistration` and supplies it as a
 browser resource. Transport contains no worker scope or route constant.
@@ -225,11 +262,11 @@ values.
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
 not yet exist. Ceremony ID, purpose bounds, transferable count, duplicate
-ownership, expiry, and one-use claim are checked before ownership changes. Wrong, missing,
-expired, duplicate, replayed, or post-terminal calls reject and close every
-reachable port. Worker loss or a failed acknowledgement prevents navigation
-with live state. No `BroadcastChannel`, cookie, IndexedDB record, request, or
-URL carries the port, purpose, or queued value.
+ownership, expiry, and one-use claim are checked before ownership changes.
+Wrong, missing, expired, duplicate, replayed, or post-terminal calls reject and
+close every reachable port. Worker loss or a failed acknowledgement prevents
+navigation with live state. No `BroadcastChannel`, cookie, IndexedDB record,
+request, or URL carries the port, purpose, or queued value.
 
 ## Failure and security rules
 
