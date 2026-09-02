@@ -35,7 +35,10 @@ terminates the `RTCDataChannel`.
 
 Every participating popup document must use an origin accepted by the signaling
 service. Unrelated external navigations are non-participating: they create no
-peer and provide no connection continuity.
+peer and preserve no current carrier. A later participating document may select
+the still-unused initial fallback as its first RTC carrier. Once RTC has been
+selected, an unmanaged navigation has no prepared next round and terminates the
+logical connection.
 
 ```text
 Application connection      Signaling service      Destination popup connection

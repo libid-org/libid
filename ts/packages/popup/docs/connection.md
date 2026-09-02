@@ -414,9 +414,11 @@ rejects popup construction before carrier selection; preparation failure closes
 the connection without navigation.
 
 The first form may cross an arbitrary external document and wait for user
-interaction because no native carrier is retained across that gap. The next
-participating document establishes a new carrier. The connected form may
-preserve a transferable port across the bounded replacements defined below.
+interaction. No current carrier survives that gap, but an initial fallback
+which has not yet been selected remains armed. The next participating document
+may use it to establish the first RTC carrier without navigation-round metadata.
+The connected form may preserve a transferable port across the bounded
+replacements defined below.
 
 The factory installs the appropriate operation from the native resource it
 owns, never from the URL. A popup endpoint without the required carrier port
@@ -528,6 +530,14 @@ Carrier continuity means that the logical connection can preserve one active
 carrier while the popup replaces one participating document with another. It
 does not preserve the old JavaScript heap or an `RTCDataChannel`. A current
 carrier which cannot survive a document change is replaced transparently.
+
+Only a direct `PopupConnection.navigate()` between participating documents
+performs managed carrier preservation or replacement. Any navigation outside
+that API, including an external document's redirect, loses the current carrier.
+Before RTC has been selected, the pre-armed initial fallback may still establish
+the first RTC carrier in a later participating document; this is establishment,
+not preservation. After RTC is active, an unmanaged navigation cannot prepare
+or identify the next signaling round and terminates the logical connection.
 
 A transferable carrier may preserve its authenticated native resource across
 an immediate participating-document replacement. A nontransferable carrier
