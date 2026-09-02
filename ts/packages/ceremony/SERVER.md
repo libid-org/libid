@@ -41,7 +41,7 @@ One deployment has these server-owned inputs:
 | Input | Contract |
 |---|---|
 | Server origin | Canonical HTTPS origin used by every ceremony route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
-| `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned callback |
+| `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate callback and prover popup connections |
 | Callback alias path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback and prover roots | The closed maps and immutable filenames defined by [CCDP](CCDP.md#browser-shells), plus exact package-owned stylesheet hashes and deployment-fixed CSP sources |
@@ -49,9 +49,9 @@ One deployment has these server-owned inputs:
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
 `allowedAppOrigins` uses set semantics and has no protocol maximum. The same
-value drives configuration CORS and is embedded into the callback document. It is
-deployment data, never inferred from a request's `Origin`, `Referer`, query,
-fragment, or body.
+value drives configuration CORS and is embedded into the callback and prover
+documents. It is deployment data, never inferred from a request's `Origin`,
+`Referer`, query, fragment, or body.
 
 One deployment platform configuration generates both the public
 `CeremonyConfig` entries and the embedded prover profiles. They are projections
@@ -71,9 +71,9 @@ An integrating server exposes:
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
 | `GET` | `/api/v1/ceremony/config` | always | public platform-ceremony configuration | server exact-checks request `Origin` against `allowedAppOrigins` and returns exact noncredentialed CORS |
-| `GET` | `/ccdp/callback` | always | callback shell for initial launch | none at HTTP ingress; loaded callback exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
-| `GET` | configured callback alias, default `/auth/v1/callback` | always | byte-identical callback shell and registered OAuth `redirect_uri` | none at HTTP ingress; its inline bootstrap clears input and selects CCDP by OAuth `state` |
-| `GET` | `/ccdp/prover` | always | shared prefetch and isolated-prover shell | none at HTTP ingress; the fixed public document binds through the transferred CCDP port after loading |
+| `GET` | `/ccdp/callback` | always | callback shell for initial launch | none at HTTP ingress; the loaded callback accepts its popup connection against embedded `allowedAppOrigins` |
+| `GET` | configured callback alias, default `/auth/v1/callback` | always | byte-identical callback shell and registered OAuth `redirect_uri` | none at HTTP ingress; its inline bootstrap clears input and selects CCDP by OAuth `state`, then the loaded callback accepts its popup connection against embedded `allowedAppOrigins` |
+| `GET` | `/ccdp/prover` | always | shared prefetch and isolated-prover shell | none at HTTP ingress; the fixed public document accepts its popup connection against embedded `allowedAppOrigins` after loading |
 | `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | server requires `Origin` to equal the configured ceremony server origin and rejects cross-origin preflight |
 
 Server-side request-origin enforcement is used only where the browser reliably
@@ -184,9 +184,10 @@ The shared callback response uses:
 `GET /ccdp/prover` serves one deployment-generated, request-invariant response
 for all platforms. [CCDP](CCDP.md#prover-shell) owns its exact fragment modes,
 clearing and version-selection algorithm, root filename, context checks, and
-package entrypoint. The server embeds only the closed root map, stylesheet hash,
-CSP sources, and `ProverAssets` required by that definition. No server request
-parameter selects platform, role, asset, or CSP.
+package entrypoint. The server embeds only the closed root map,
+`allowedAppOrigins`, stylesheet hash, CSP sources, and `ProverAssets` required
+by that definition. No server request parameter selects platform, role, asset,
+or CSP.
 
 ### Embedded prover assets
 

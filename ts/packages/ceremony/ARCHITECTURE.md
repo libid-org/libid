@@ -59,13 +59,8 @@ sequenceDiagram
     P->>O: Navigate through platform authorization
     U->>O: Approve or deny
     O-->>P: Return to callback alias
-    alt Retained opener authenticates
-        P-->>C: Select MessagePort carrier and deliver OAuth return
-        P->>R: Continue popup connection and navigate same popup
-    else Opener path unavailable
-        P->>R: Hand off OAuth return and navigate same popup
-        R-->>C: Select WebRTC carrier and deliver OAuth return
-    end
+    P-->>C: Deliver OAuth return through popup connection
+    P->>R: Continue popup connection and navigate same popup
     alt User denied
         C-->>R: Cancel through connection
         C-->>A: IdentityResult denied
@@ -113,8 +108,8 @@ an isolated cross-origin iframe while the non-isolated ceremony popup retains
 its ordinary opener communication. That would remove the top-level
 callback-to-prover replacement and its popup-connection continuity machinery. It
 would not protect against an OAuth provider response that itself severs the
-opener with COOP; the fallback carrier remains necessary for that independent
-case.
+opener with COOP; an opener-independent popup connection remains necessary for
+that independent case.
 
 DIP is an evolution path, not a launch dependency. Status checked 2026-09-02:
 

@@ -220,7 +220,6 @@ One terminal outcome contains only:
 - subsystem and stable package error code;
 - last active diagnostic span code and elapsed duration;
 - whether a fresh OAuth attempt is required;
-- selected carrier class and relevant capability facts; and
 - whether cleanup completed.
 
 Raw exceptions and stacks may be inspected in a debugger during development.
@@ -239,7 +238,7 @@ Diagnostics must never contain:
 - request/response headers or bodies;
 - attestations, transcripts, commitments, openings, witnesses, public inputs,
   proofs, or keys;
-- SDP, ICE addresses, cookies, MessagePorts, or message values; or
+- raw connection internals or transported message values; or
 - raw exceptions, stacks, browser-generated error strings, or arbitrary caller
   labels.
 
@@ -267,7 +266,7 @@ Qualification compares at least:
 - prefetch enabled and deliberately unavailable;
 - normal and private mode;
 - foreground and backgrounded popup;
-- MessagePort continuity through callback-to-prover navigation;
+- popup-connection continuity through callback-to-prover navigation;
 - one and multiple simultaneous ceremonies; and
 - Chromium, Firefox, WebKit, and real iOS Safari.
 

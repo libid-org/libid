@@ -3,14 +3,12 @@
 This document defines the prover subsystem emitted by
 `@libid/ceremony/prover`: its input/output boundary, closed platform pipelines,
 progress steps, release assets, proving toolchain, service-worker prefetch and
-use of `PortKeeper`, cache behavior, and worker graph.
+cache behavior, and worker graph.
 
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
-[CCDP.md](CCDP.md), transport lifecycle by
-[TRANSPORT.md](TRANSPORT.md), and carrier mechanics by
-[TRANSPORT-MESSAGEPORT.md](TRANSPORT-MESSAGEPORT.md) and
-[TRANSPORT-WEBRTC.md](TRANSPORT-WEBRTC.md). The integrating server's
+[CCDP.md](CCDP.md), while popup connection lifecycle and continuity are defined
+by [`@libid/popup`](../popup/README.md). The integrating server's
 prover route, embedded `ProverAssets`, and response
 headers are defined in [SERVER.md](SERVER.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
@@ -31,13 +29,12 @@ Before OAuth: ephemeral child starts selected-profile fetches
                        └── OAuth navigation destroys it
 
 After OAuth: same popup becomes the isolated top-level prover
-             ├── claims the preserved carrier port
-             ├── resumes MessagePort or opens WebRTC from its queued return
+             ├── accepts the continuing popup connection
+             ├── receives the proof request
              └── joins the same fetches and proves
 
 Shared Service Worker
-├── immutable-asset and CRS single flights survive document replacement
-└── one in-memory PortKeeper entry spans only callback-to-prover navigation
+└── immutable-asset and CRS single flights survive document replacement
 ```
 
 OAuth navigation prevents reuse of the first iframe; the worker and browser
@@ -46,17 +43,15 @@ caches preserve its fetch work.
 After the CCDP shell clears the URL, the Window branch starts through its single
 internal entrypoint.
 The same root evaluated as a Service Worker installs only its cache and
-short-lived `PortKeeper` handlers; it does not enter CCDP or a platform
+prefetch handlers; it does not enter CCDP, popup connection, or a platform
 pipeline.
 
-The prover awaits the isolated ceremony transport factory. The factory
-privately claims the preserved carrier port and exact-validates its opaque
-purpose before returning. It either resumes the already application-bound
-MessagePort carrier or consumes the single queued `CallbackDeliverParams`,
-opens WebRTC, and forwards that message unchanged. Prover logic never
-constructs or calls `PortKeeper`. It then consumes one exact `AppRequestProof`
-and returns only bounded platform steps, one exact platform proof delivery, or
-a sanitized technical failure.
+The prover calls `PopupConnection.accept` after isolation and URL clearing.
+`@libid/popup` privately restores continuity or selects a fresh carrier before
+returning the same logical connection. Prover logic sees no carrier, worker
+handoff, or fallback configuration. It then consumes one exact
+`AppRequestProof` and returns only bounded platform steps, one exact platform
+proof delivery, or a sanitized technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
@@ -332,9 +327,9 @@ CCDP event, or change a timeout. Terminal cleanup removes the timer and notice.
 
 The UI is package-owned and accepts no application markup or renderer.
 
-Terminal cleanup clears prover inputs, workers, connections, and timers. It
-never closes or navigates the popup; the application composition may retain it
-for a larger wallet flow.
+Terminal cleanup clears prover inputs, workers, timers, and registered ceremony
+handlers. It never closes or navigates the supplied popup connection; the
+application composition may retain it for a larger wallet flow.
 
 ## Shared toolchain and assets
 
@@ -430,11 +425,10 @@ There is no separate prefetch route, artifact, or mode flag.
 
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
-without waiting for downloads. Worker activation is required because the same
-worker later preserves the carrier port; ordinary artifact fetching remains a
-best-effort latency optimization. A worker which receives the prefetch request
-exact-validates it and attaches the fetch work to the message event with
-`event.waitUntil`.
+without waiting for downloads. The worker owns only the selected immutable
+asset and CRS single flights; popup continuity uses the independent popup
+package worker. A worker which receives the prefetch request exact-validates it
+and attaches the fetch work to the message event with `event.waitUntil`.
 
 The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
@@ -449,12 +443,10 @@ closed platform implementation requires it, and combines those entries with
 the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
-The Service Worker branch contains no durable OAuth or application state. In
-addition to the
-[`PortKeeper`](TRANSPORT.md#internal-portkeeper-api),
-it owns each selected
-immutable asset fetch from the first byte, keys ordinary artifact
-single flights by canonical URL, starts the fixed launch bb.js CRS loaders—
+The Service Worker branch contains no OAuth, application, or popup-connection
+state. It owns each selected immutable asset fetch from the first byte, keys
+ordinary artifact single flights by canonical URL, starts the fixed launch
+bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single
 flights, rejects a manifest conflict, and extends the initiating worker event
 through completion. Those loaders use bb.js's fixed CRS endpoints and IndexedDB
@@ -476,9 +468,9 @@ cached, rewritten, or synthesized by this worker.
 
 As soon as active-worker selection and the prefetch request settle, without
 waiting for download completion, the child emits `ProverPrefetchingAssets`.
-Registration or activation failure is terminal before OAuth because no later
-carrier preservation would be possible; artifact fetch failure records no weaker mode
-and leaves proving on the identical cold path. The active prover resolves
+Registration or activation failure is terminal under the package's fixed
+prefetch/cache contract; artifact fetch failure records no weaker mode and
+leaves proving on the identical cold path. The active prover resolves
 the same profile using the exact `AppRequestProof` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
 asks the service worker to finish or restart the fixed CRS single flights;
@@ -497,8 +489,8 @@ harmless because ordinary responses live in Cache Storage and completed CRS
 data lives in bb.js's IndexedDB cache; no separate durable completion marker
 exists.
 
-Registration, activation, and `PortKeeper` failure are terminal. A missing or
-malformed selected profile also fails before OAuth. Fetch, eviction, or quota
+Registration and activation failure are terminal. A missing or malformed
+selected profile also fails before OAuth. Fetch, eviction, or quota
 failure follows the identical selected-profile cold fetch path and changes
 latency only; it never weakens isolation, worker count, or verification. Warm
 state is never a ceremony checkpoint.
