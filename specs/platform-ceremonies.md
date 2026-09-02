@@ -23,10 +23,11 @@ Terms are imported from
 ## 2. Ceremony profiles
 
 Each platform ceremony has an independently versioned immutable profile. Its
-Platform Ceremony Version is carried in its Authorization Digest and
-Submission. Each platform section defines its own launch version. A version
-covers the digest, OAuth construction, and platform-specific proof statement,
-not any Consumer Chain's verifier implementation.
+Platform Ceremony Version is carried in its Authorization Digest and in the
+Submission Payload. Each platform section defines its own launch version. A
+version covers the digest, OAuth construction, and platform-specific proof
+statement, not any Consumer Chain's verifier implementation. A Consumer Chain
+routes on its own Verifier Version (common §5.1).
 
 A profile is selected by the pair `(identityPlatform,
 platformCeremonyVersion)`. Each platform section defines its exact canonical
@@ -57,8 +58,9 @@ REQ-COMMON-15A.
   The Canonical Runtime MUST identify a profile with the exact
   `(identityPlatform, platformCeremonyVersion)` pair its platform section
   defines. It MUST NOT append the version to `identityPlatform` or accept a
-  presentation alias in its place. Necessity: every component must dispatch on
-  one canonical pair.
+  presentation alias in its place. Necessity: every component that selects a
+  profile must do so on one canonical pair. A Consumer Chain's Verifier
+  Version selects an implementation of a profile, not the profile.
 - REQ-PLAT-02:
   The Canonical Runtime MUST treat a profile as ineligible until the
   application's authenticated profile lists it and the generated deployment
