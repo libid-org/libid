@@ -3,8 +3,9 @@
 This document defines the popup connection architecture. A `PopupWindow`
 owns one popup from creation through closure. A `PopupConnection` composes over it,
 establishes a bidirectional channel to an application page, moves caller-defined
-values, selects a carrier, and preserves a transferable native resource while
-the popup replaces one document with another. It is not a generic
+values, selects one carrier for each participating popup document, and preserves
+a transferable native resource across an immediate participating-document
+replacement. It is not a generic
 document-to-document abstraction.
 
 ```ts
@@ -64,8 +65,8 @@ The connection must:
 - selection and ownership of one authenticated carrier;
 - ordered delivery and continuity across popup document replacement;
   and
-- one-shot selection, navigation, connection closure, cleanup, and race
-  resolution.
+- one active carrier at a time, carrier replacement after external navigation,
+  navigation, connection closure, cleanup, and race resolution.
 
 Carriers own endpoint authentication, establishment, physical serialization
 where required, native framing, resource cleanup, and delivery mechanics. Each
@@ -78,12 +79,11 @@ message.
 ## Failure and security rules
 
 - A carrier is selectable only after it authenticates both endpoints.
-- One connection admits at most one popup source, one carrier, and one
-  cross-document continuation; losing races are inert.
-- Before carrier selection, authenticated WindowProxy delivery wraps an opaque
-  caller value in a private control exact-bound to the connection ID and
-  connection version. After selection, application-level messages
-  travel only over the selected end-to-end carrier. Rendezvous and continuity
+- One connection admits at most one popup browsing context and one active
+  carrier. Each participating popup document authenticates and selects its own
+  carrier; stale carriers and losing races are inert.
+- Application-level messages travel only over the active end-to-end carrier.
+  Rendezvous and continuity
   controls carry none; neither do cookies, durable storage, request data, or
   URLs.
 - A carrier may validate its generic value domain, bounds, and framing but
@@ -167,8 +167,11 @@ connection. `bind` is package-internal and never accepts or interprets a caller
 message. `PopupWindow.opened` is initially true only when scripted creation
 returned a handle and becomes true after successful fallback binding.
 
-Navigation destroys the popup endpoint; the application endpoint retains
-its bound source and any idle signaling subscription.
+External navigation destroys the popup endpoint and its carrier. Before direct
+navigation, the application endpoint closes that carrier, synchronously arms a
+fresh MessagePort handshake, and retains its bound popup browsing context and
+any idle fallback subscription. The next participating popup document calls
+`accept` and installs a fresh carrier under the same logical connection.
 
 ### Popup creation and native-anchor fallback
 
@@ -185,11 +188,8 @@ function activate(event: MouseEvent) {
     popupOrigin,
   })
 
-  if (popupWindow.opened) {
-    event.preventDefault()
-    void connection.navigate(anchor.href)
-  }
-  // Otherwise the same activation's native anchor navigation proceeds.
+  void connection.navigate(anchor.href)
+  if (popupWindow.opened) event.preventDefault()
 }
 ```
 
@@ -199,7 +199,8 @@ When the browser returns a usable handle, `PopupWindow` retains the exact
 `WindowProxy` and the caller prevents native anchor navigation; only a later
 `navigate(url)` chooses
 the destination. When creation returns `null`, the caller leaves the same
-activation's native anchor navigation untouched. The application connection
+activation's native anchor navigation untouched and `navigate` performs no
+browser operation while that binding is pending. The application connection
 binds only the popup whose initial private control authenticates for this
 connection ID and configured origin.
 
@@ -284,9 +285,10 @@ declare const PopupConnection: {
 }
 ```
 
-`PopupConnection` owns an internal `AbortController`. Carrier selection, pending
-handshakes, signaling, and race losers use its signal; `close()` aborts that
-work. Cancellation machinery is not part of the public API.
+`PopupConnection` owns internal cancellation for each carrier attempt and for
+the whole logical connection. Carrier selection, pending handshakes, signaling,
+and race losers use those signals; `close()` aborts all of that work.
+Cancellation machinery is not part of the public API.
 
 `fallback` constructs one ordinary `Carrier` and is not another connection
 abstraction. `connect` invokes a supplied constructor immediately so an
@@ -294,7 +296,10 @@ opener-independent carrier can arm signaling before navigation; it retains the
 promise without producing an unhandled rejection. `accept` invokes its supplied
 constructor only after MessagePort becomes unavailable. Connection passes only
 its internal abort signal; the constructor closes over every carrier-specific
-option. MessagePort selection or connection closure aborts pending construction.
+option. MessagePort selection aborts the current attempt's pending fallback.
+Before direct external navigation starts the next carrier attempt, the
+application invokes the supplied constructor again so opener-independent
+signaling is armed before the provider visit. Connection closure aborts it.
 If no constructor was supplied when fallback becomes necessary, connection
 records stable code `fallback-unavailable` and closes.
 
@@ -347,12 +352,19 @@ resources without invoking this operation or controlling popup lifetime.
 `navigate` accepts a caller-selected opaque URL. It never parses or builds
 that URL:
 
-- while direct control remains available, the application endpoint navigates
-  its exact retained `WindowProxy`;
+- while direct control remains available, the application endpoint closes the
+  current carrier, arms the next carrier attempt, and navigates its exact
+  retained `WindowProxy`;
 - after isolation severs direct control, the application endpoint sends
   `Navigate`; and
 - the receiving popup calls `keep` for its carrier port, awaits worker
   ownership, and replaces its current document.
+
+The first form may cross an arbitrary external document and wait for user
+interaction because no native carrier is retained across that gap. The next
+participating document establishes a new carrier. The connected form can
+preserve a transferable port only across the immediate bounded replacement
+defined below.
 
 The factory installs the appropriate operation from the native resource it
 owns, never from the URL. A popup endpoint without the required carrier port
@@ -367,9 +379,9 @@ authentication, establishment, delivery mechanics, and its nontransferable
 native resources. Each carrier defines the endpoint identities it accepts and
 returns an adapter only after authenticating both sides.
 
-Connection selects and owns the resulting authenticated carrier. A carrier does
-not interpret transported values, choose another carrier, or navigate a
-document.
+Connection selects and owns the resulting authenticated carrier for the current
+popup document. A carrier does not interpret transported values, choose another
+carrier, or navigate a document.
 
 The browser-local [MessagePort carrier](CONNECTION-MESSAGEPORT.md) is built in.
 An explicitly supplied [WebRTC carrier](CONNECTION-WEBRTC.md) constructor
@@ -403,7 +415,7 @@ and closes its own peer and channel.
 
 ### Selection
 
-A fresh popup endpoint chooses one physical path:
+A fresh popup endpoint chooses one physical path for that document:
 
 1. A usable retained opener completes the MessagePort carrier's exact
    source/origin authentication. Its native result is a `MessagePort`.
@@ -415,8 +427,10 @@ A fresh popup endpoint chooses one physical path:
 
 Connection first attempts MessagePort. If the opener path is unavailable, it
 commits the configured fallback. The application endpoint accepts the first
-valid selection; late authentication, signaling, or values from another path
-are inert. A selected path never migrates after failure.
+valid selection for that popup document; late authentication, signaling, or
+values from another path are inert. A failed active carrier never migrates, but
+a later participating document selects a fresh carrier under the same logical
+connection.
 
 In the MessagePort path, `send` uses the selected native port. In fallback, it
 queues one value on the connection-owned local port. Connection neither identifies
@@ -435,9 +449,10 @@ unchanged value first.
 
 ## Carrier continuity across document navigation
 
-Carrier continuity means that the logical connection remains usable after the
-popup replaces one document with another. It does not preserve the old
-JavaScript heap or an `RTCDataChannel`.
+Carrier continuity means that the logical connection can preserve one active
+carrier while the popup immediately replaces one participating document with
+another. It does not preserve the old JavaScript heap or an `RTCDataChannel`,
+and it is not used across an external OAuth navigation.
 
 Replacing a popup document normally destroys its side of the communication
 channel together with its JavaScript heap. Any live `MessagePort` owned only by

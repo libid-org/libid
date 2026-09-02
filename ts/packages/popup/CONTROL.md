@@ -49,8 +49,10 @@ owns the generic message bound.
 The application-facing operations are `PopupConnection.navigate(url)` and
 `PopupConnection.close()`.
 
-While direct control is available, `navigate` uses the exact retained
-`WindowProxy`. After isolation severs it, the application endpoint sends
+While native-anchor binding is pending, `navigate` performs no browser
+operation and leaves that same activation's default navigation intact. While
+direct control is available, it uses the exact retained `WindowProxy`. After
+isolation severs it, the application endpoint sends
 `Navigate` over the selected connection; the receiving popup stops
 accepting controls and calls `location.replace(url)`. Replacement avoids adding
 the current document to popup history. It creates no browsing context and does
@@ -76,7 +78,9 @@ connection performs no browser operation. A caller protocol may reject later
 values while retaining the connection solely for this one control; popup control
 never revives or changes its result.
 
-Neither control message has a remote acknowledgement. Navigation can destroy
+Neither control message has a remote acknowledgement. A pending native-anchor
+call resolves after the connection accepts that the same activation owns the
+navigation; it does not claim that navigation was observed. Navigation can destroy
 the receiver and COOP prevents the application from reliably observing either
 browser action. Each promise therefore means only that the direct browser
 operation was invoked or the local connection accepted its control for ordered
