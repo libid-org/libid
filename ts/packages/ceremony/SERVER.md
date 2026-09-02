@@ -288,12 +288,12 @@ declare function startProver(
 ```
 
 For a bare ceremony ID, the clearing bootstrap requires
-`window.top === window`, claims the matching port from the already-active worker
-before importing the root, and supplies it as `port`. Prefetch requires
-`window.top !== window` and supplies no port. Any other combination fails
-before package code or network use. The Service Worker branch installs its package-private cache and
-`PortKeeper` handlers when the same root is evaluated in a worker and exports
-no protocol entrypoint.
+`window.top === window`, obtains the transport-preserved port before importing
+the root, and supplies it as `port`. Prefetch requires `window.top !== window`
+and supplies no port. Any other combination fails before package code or
+network use. The Service Worker branch installs its package-private cache and
+transport-continuity handlers when the same root is evaluated in a worker and
+exports no protocol entrypoint.
 The prover root is also the module service-worker registration URL and permits
 a scope covering `/api/v1/ceremony/`; its response sets
 `Service-Worker-Allowed: /api/v1/ceremony/` when the script URL's default scope
