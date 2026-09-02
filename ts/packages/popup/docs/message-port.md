@@ -49,19 +49,24 @@ The carrier neither interprets those values nor persists or recovers them.
 
 ## Failure and security invariants
 
-- Events from another `WindowProxy` are ignored after binding. Before native
-  fallback binding, every matching-origin event is a handshake attempt and must exact-match its
-  browser-stamped origin, `message-port` discriminator, record shape, direction,
-  connection version, and connection ID. The popup additionally requires
-  exactly one transferred port.
+- The application selects handshake attempts by connection ID before native
+  fallback binding and by bound `WindowProxy` afterwards. Any other event,
+  including a valid handshake for another connection ID, is not an attempt and
+  is ignored, so concurrent connections on one page never reject each other.
+  An attempt must exact-match its browser-stamped origin, `message-port`
+  discriminator, record shape, direction, connection version, and connection
+  ID. The popup additionally requires exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
   value. The response uses the exact popup origin, transfers only the new popup
   endpoint, and never exposes the application's retained endpoint. After
   validating that response, the popup echoes the same handshake record over the
   transferred port; the application does not select the port before that echo.
 - Any handshake attempt which fails those checks rejects the binding and closes
-  every reachable port. An accepted handshake removes its window listener;
-  later window traffic is inert.
+  every reachable port. The application's window listener lives for the
+  connection; an accepted handshake discards only that attempt's state, and a
+  later handshake from the bound source starts a new attempt. The popup removes
+  its own window listener after acceptance; later window traffic there is
+  inert.
 - After binding, possession of the entangled port authenticates the peer.
   Application-level values travel only over that port; the carrier preserves
   their order and shape without interpreting them.
@@ -188,13 +193,16 @@ encapsulates Service Worker communication, temporary ownership, event lifetime,
 the claim deadline, one-use transfer, and cleanup. It neither reads the port nor
 knows what it carries.
 
-The worker itself is host-owned: a Service Worker script must be served from
-the popup origin, so the host registers one for its popup documents and calls
-the public `installPortKeeper(scope)` from that script. The package registers
-nothing and `PopupWindow.current()` resolves the registration controlling the
-current document.
+The worker itself is host-owned. The host is the deployment serving the popup
+documents. A Service Worker script must be served from that origin, so the host
+registers one for its popup documents and calls `installPortKeeper(scope)`
+from that script. The handler is exported from the `@libid/popup/worker`
+subpath only, so worker-global types never enter the main package
+declaration. The package registers nothing and `PopupWindow.current()`
+resolves the registration controlling the current document.
 
 ```ts
+// @libid/popup/worker
 declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
 
 declare class PortKeeper {
