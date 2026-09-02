@@ -304,9 +304,13 @@ Cancellation machinery is not part of the public API.
 abstraction. `connect` invokes a supplied constructor immediately so an
 opener-independent carrier can arm signaling before navigation; it retains the
 promise without producing an unhandled rejection. `accept` invokes its supplied
-constructor only after MessagePort becomes unavailable. Connection passes only
-its internal abort signal; the constructor closes over every carrier-specific
-option. MessagePort selection aborts the current attempt's pending fallback.
+constructor only after MessagePort becomes unavailable. A carrier module may
+perform synchronous, networkless destination bootstrap while producing that
+constructor; in particular, the popup-side WebRTC factory consumes its private
+navigation metadata before `accept` begins carrier selection. Connection passes
+only its internal abort signal; the constructor closes over every
+carrier-specific option. MessagePort selection aborts the current attempt's
+pending fallback.
 Before direct external navigation, the application starts a fresh fallback
 attempt. Before popup-side navigation destroys an active WebRTC carrier, that
 carrier privately requests and awaits the same preparation from the application
@@ -376,9 +380,11 @@ interpret caller-owned fields:
 For WebRTC replacement, connection gives the caller-selected target unchanged
 to the carrier's package-private preparation hook and navigates only to the
 prepared target returned by that hook. Connection does not inspect or construct
-the carrier's private navigation metadata. The destination WebRTC carrier
-copies and clears that metadata before fallback construction. Invalid metadata
-or preparation failure closes the connection without navigation.
+the carrier's private navigation metadata. The destination's popup-side WebRTC
+factory copies, validates, and clears that metadata before `accept` races its
+returned constructor against MessagePort. Invalid metadata or preparation
+rejects popup construction before carrier selection; preparation failure closes
+the connection without navigation.
 
 The first form may cross an arbitrary external document and wait for user
 interaction because no native carrier is retained across that gap. The next
@@ -446,11 +452,12 @@ registers one `onReplacement` handler and retains the authenticated carrier
 promise it receives. On the popup carrier, connection calls
 `prepareNavigation` with the caller-selected target and navigates only to the
 prepared target it resolves. The RTC carrier internally starts and authenticates
-the exact next signaling round, adds and consumes its private navigation
-metadata, and reports the resulting replacement carrier without exposing any of
-those mechanics to connection. Each endpoint installs the resolved carrier for
-the same logical connection. Any hook, constructor, timeout, metadata, or
-replacement failure closes without navigation or caller delivery.
+the exact next signaling round, adds its private navigation metadata, and
+reports the resulting replacement carrier without exposing any of those
+mechanics to connection. The fresh popup-side WebRTC factory consumes that
+metadata before selection. Each endpoint installs the resolved carrier for the
+same logical connection. Any hook, constructor, timeout, metadata, or replacement
+failure closes without navigation or caller delivery.
 
 Only a carrier implementing both exact symbol-keyed functions supports this
 path. MessagePort implements neither and uses `PortKeeper`. Callers cannot

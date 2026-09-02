@@ -27,10 +27,15 @@ can fail on restrictive networks.
 
 ## Topology
 
-The application page and final top-level popup document are the only RTC peers.
-A transient popup document never creates an `RTCPeerConnection` when its next
-navigation would destroy it. No iframe, worker, or signaling service terminates
-the `RTCDataChannel`.
+The application page and each participating top-level popup document are the
+only RTC peers. A participating popup selected for WebRTC creates its peer and,
+before replacing itself with another participating popup document, uses the
+private rearm procedure below. No iframe, worker, or signaling service
+terminates the `RTCDataChannel`.
+
+Every participating popup document must use an origin accepted by the signaling
+service. Unrelated external navigations are non-participating: they create no
+peer and provide no connection continuity.
 
 ```text
 Application connection      Signaling service      Destination popup connection
@@ -91,11 +96,44 @@ hook with the caller-selected target. The application carrier internally
 increments the round, starts a fresh one-use answerer subscription, reports its
 pending authenticated carrier through `onReplacement`, and replies with
 package-private `NavigationReady` carrying the exact next round only after the
-subscription is armed. The popup carrier adds that round to its private fragment
-field and resolves the prepared target. The destination carrier copies and
-immediately clears the field before constructing its fresh offer. Failure,
-timeout, malformed round, or unsigned 32-bit overflow closes the logical
-connection without navigating.
+subscription is armed. The popup carrier adds that round to its reserved private
+fragment field and resolves the prepared target.
+
+The reserved raw fragment field is:
+
+```text
+__libid_popup=rtc1.<round>.<had-fragment>
+```
+
+`round` is canonical unsigned 32-bit decimal: zero is `0`, and every other value
+has no leading zero. `had-fragment` is exactly `0` when the caller target had no
+`#` delimiter and `1` when it did. The field name and value are literal ASCII
+and are never percent-encoded. They carry no connection ID, capability, caller
+value, or destination.
+
+The carrier treats the caller fragment as an opaque serialized prefix rather
+than parsing or reserializing it. It appends the reserved field as the final raw
+fragment component, adding `#` when the target had no fragment delimiter and
+`&` when it had a nonempty fragment. An empty existing fragment needs no
+separator. A caller target whose fragment already contains a raw component
+named `__libid_popup`, in any position, rejects before navigation.
+
+The destination constructs its popup-side WebRTC fallback factory before
+calling `PopupConnection.accept`. That factory synchronously finds exactly one
+final canonical reserved field, copies its round, and uses
+`history.replaceState` to remove only the package-added delimiter and field.
+The `had-fragment` bit therefore restores the caller URL exactly, including
+absence or presence of an empty fragment; a nonempty caller fragment retains
+its byte spelling, order, duplicates, escapes, and separators. The factory
+returns a `CarrierConstructor` which retains the copied round and starts the
+fresh offer only if fallback is later selected. Thus MessagePort may win
+without leaving package metadata in the address bar or starting RTC.
+
+No reserved field means initial round zero. A reserved name that is duplicate,
+misplaced, malformed, noncanonical, or inconsistent with the serialized prefix
+is cleared with the fragment and rejects synchronously before carrier selection,
+signaling, or caller delivery. Failure, timeout, a stale round, or unsigned
+32-bit overflow closes the logical connection without navigating.
 
 These controls exist only in the WebRTC carrier. They are consumed before the
 generic carrier value stream and never enter `PopupControl`, the caller message
@@ -155,6 +193,8 @@ interface PopupWebRTCOptions {
   signal: AbortSignal
 }
 
+type PopupWebRTCFallbackOptions = Omit<PopupWebRTCOptions, 'signal'>
+
 declare function connectApplicationWebRTC(
   options: ApplicationWebRTCOptions,
 ): Promise<Carrier>
@@ -162,6 +202,10 @@ declare function connectApplicationWebRTC(
 declare function connectPopupWebRTC(
   options: PopupWebRTCOptions,
 ): Promise<Carrier>
+
+declare function createPopupWebRTCFallback(
+  options: PopupWebRTCFallbackOptions,
+): CarrierConstructor
 ```
 
 Each endpoint closes over its WebRTC options in the optional constructor passed
@@ -176,8 +220,11 @@ fallback: signal => connectApplicationWebRTC({
 })
 ```
 
-The popup supplies `connectPopupWebRTC` in the same form with its immutable
-allowed application origins. Each initial `connectApplicationWebRTC` call
+The popup calls `createPopupWebRTCFallback` with its immutable allowed
+application origins before `PopupConnection.accept` and supplies the returned
+constructor as `fallback`. The factory performs only the eager fragment
+bootstrap described above; it starts no signaling or peer work. Each initial
+`connectApplicationWebRTC` call
 synchronously starts bounded answerer round zero and returns its pending carrier
 promise. It creates the answering peer only after a valid fresh offer arrives.
 `connectPopupWebRTC` creates the offering peer and data channel, publishes its
@@ -293,8 +340,9 @@ logical connection; unexpected carrier failure closes the connection.
   capability.
 - A private navigation control cannot reach caller code or another carrier, and
   cannot navigate until the application has armed the exact next round. The
-  destination clears its package-owned round fragment before code or network
-  use. Stale, missing, malformed, noncanonical, or overflowing rounds fail.
+  destination's popup WebRTC factory clears its package-owned round fragment
+  before carrier selection, signaling, or caller delivery. Stale, duplicate,
+  misplaced, malformed, noncanonical, or overflowing rounds fail.
 - `RTCDataChannel` message encoding and framing are bounded and cannot add a
   value outside its authenticated connection.
 - Signaling loss, ICE failure, channel loss, popup closure, or context
@@ -333,7 +381,8 @@ sequenceDiagram
     A->>G: Arm subscription (connectionId, round N+1)
     A-->>P: Private NavigationReady(round N+1)
     P->>N: Navigate with round N+1 fragment
-    N->>N: Copy and clear round fragment
+    N->>N: Factory copies round and exactly restores caller fragment
+    N->>N: PopupConnection.accept selects fallback
     N->>G: Fresh offer + ICE (connectionId, round N+1)
     G-->>A: Deliver offer and candidates
     A->>G: Fresh answer + trickled ICE candidates
