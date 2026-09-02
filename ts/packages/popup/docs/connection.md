@@ -156,6 +156,11 @@ or caller message type.
 
 `PopupWindow.open(target)` creates the application-side lifecycle object and
 synchronously attempts `window.open('about:blank', target)`.
+It rejects an empty target and every name beginning with `_` before invoking
+the browser, matching the HTML
+[valid navigable target name](https://html.spec.whatwg.org/multipage/document-sequences.html#valid-navigable-target-name-or-keyword)
+rule and excluding reserved keywords such as `_blank`, `_self`, `_parent`, and
+`_top`.
 `PopupConnection.connect` composes over that exact object, synchronously arms
 fallback binding, and never accepts a caller-supplied `WindowProxy`. It never
 constructs a `PortKeeper`. `PopupWindow.current()` captures the popup document,
@@ -186,7 +191,8 @@ authenticated endpoint origin and role; the ID alone grants no authority. The
 application endpoint validates and consumes the control without exposing it to
 caller code.
 
-`PopupWindow.open(target)` binds a returned handle privately. When the browser
+`PopupWindow.open(target)` throws `TypeError` for an invalid target and otherwise
+binds a returned handle privately. When the browser
 returns no handle, `PopupConnection.connect` listens for the popup created by the
 native anchor. It considers only the expected initial private control with the exact
 connection ID and connection version from the configured popup origin. After
@@ -208,7 +214,7 @@ connection. These mechanics are transparent to the caller.
 ### Popup creation and native-anchor fallback
 
 The caller renders an action-specific anchor with the destination URL and a
-unique nonreserved target. On activation it lets the package attempt popup
+unique valid target. On activation it lets the package attempt popup
 creation and synchronously arms fallback binding before the handler returns:
 
 ```ts
@@ -236,7 +242,7 @@ browser operation while that binding is pending. The application connection
 binds only the popup whose initial private control authenticates for this
 connection ID and configured origin.
 
-The anchor must use that same unique nonreserved target rather than `_blank` and
+The anchor must use that same valid, unique target and
 must not request `noopener` or `noreferrer`: the MessagePort fallback needs its
 opener relationship long enough to authenticate and transfer the carrier port.
 
@@ -244,9 +250,9 @@ The anchor is a compatibility hedge for an environment or embedding policy
 which rejects scripted popup creation, not a second user flow. It must exist
 before activation so the fallback proceeds in the same tap. Both paths use the
 same target and create one script-closable top-level traversable. The scripted
-path exposes `popup.closed` as an advisory signal; before fallback binding no
-handle exists to observe. Closure is never delivery, cancellation, or another
-caller-protocol outcome.
+path exposes `popup.closed` only to decide whether a no-carrier direct operation
+can be attempted; before fallback binding no handle exists to observe. Closure
+is never delivery, cancellation, or another caller-protocol outcome.
 
 The application lifecycle object and both connection endpoints expose:
 
@@ -260,14 +266,17 @@ interface MessageType<M extends Message> {
   decode(value: unknown): M
 }
 
-interface PopupWindow {
+declare class PopupWindow {
   readonly opened: boolean
 
-  // Package-internal; PopupConnection.connect calls it after exact validation.
+  /** @internal PopupConnection.connect calls this after exact validation. */
   bind(source: WindowProxy): void
 
   navigate(url: string): Promise<void>
   close(): Promise<void>
+
+  static open(target: string): PopupWindow
+  static current(): PopupWindow
 }
 
 interface PopupConnection<M extends Message> {
@@ -287,11 +296,6 @@ interface PopupDiagnostic {
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
-}
-
-declare const PopupWindow: {
-  open(target: string): PopupWindow
-  current(): PopupWindow
 }
 
 declare const PopupConnection: {
@@ -317,6 +321,9 @@ declare const PopupConnection: {
 }
 ```
 
+The package build enables TypeScript `stripInternal`, so `bind` is available to
+package source but absent from the emitted public declaration.
+
 `PopupConnection` owns one connection-lifetime cancellation signal and
 document-local MessagePort cancellation. Pending handshakes, signaling, carrier
 replacement, and connection closure use those signals; `close()` aborts all of
@@ -336,7 +343,7 @@ navigation metadata before `accept` begins carrier selection. Connection passes
 its connection-lifetime abort signal; the constructor closes over every
 carrier-specific option.
 
-Before direct external navigation, the application starts the next
+Before navigation without an active carrier, the application starts the next
 document-local MessagePort operation while retaining any unused fallback.
 Before popup-side navigation destroys an active WebRTC carrier, that carrier
 privately requests and awaits preparation of its next signaling round from the
@@ -367,9 +374,10 @@ message with either discriminator rejects.
 On the popup side, `navigate` coordinates carrier continuity and replaces the
 current document, preserving or replacing the carrier internally as needed;
 `close` closes the current popup and connection. Neither can create another
-browsing context. On the application side, the same operations delegate to
-`PopupWindow` for direct control or use the control messages described below
-after isolation. Callers never manage carrier reconnection.
+browsing context. On the application side, the same operations use the control
+messages described below whenever a carrier is active and otherwise delegate to
+`PopupWindow` when its retained handle remains available. Callers never manage
+carrier reconnection.
 
 `send` accepts the composition-owned union `M` and is not a delivery
 acknowledgement. Apart from rejecting reserved control discriminators, the
@@ -385,22 +393,24 @@ set therefore enforces participant direction without hardcoding protocol types
 in the connection; the handler still enforces state and order.
 
 `navigate` is available on both connection endpoints. The application endpoint
-uses its exact retained `WindowProxy` while available and sends the private
-control defined by [popup control](control.md) after isolation severs direct
-control. The popup endpoint prepares continuity and replaces its own document
-without sending that control. `close` is the application-endpoint control; it
-is idempotent and closes both the logical connection and its popup. Internal
-failure cleanup releases resources without invoking either operation or
-controlling popup lifetime.
+always sends the private control defined by [popup control](control.md) when a
+carrier is active. Without one, it uses its exact retained `WindowProxy` only
+while the handle is non-null and not closed. The popup endpoint prepares
+continuity and replaces its own document without sending that control. `close`
+uses a non-null, non-closed retained handle directly and otherwise sends its
+control over an active carrier. It is idempotent and closes both the logical
+connection and its popup. Internal failure cleanup releases resources without
+invoking either operation or controlling popup lifetime.
 
 `navigate` accepts a caller-selected opaque URL. It does not select the route or
 interpret caller-owned fields:
 
-- while direct control remains available, the application endpoint arms the
-  next document-local MessagePort operation, retains an unused fallback, closes
-  the current carrier, and navigates its exact retained `WindowProxy`;
-- after isolation severs direct control, the application endpoint sends
-  `Navigate`; and
+- while a carrier is active, the application endpoint sends `Navigate` over it;
+- without an active carrier, the application endpoint arms the next
+  document-local MessagePort operation, retains an unused fallback, and
+  navigates its exact retained `WindowProxy` only while that handle is non-null
+  and not closed; while native-anchor binding is pending it performs no browser
+  operation; and
 - either the popup endpoint calling `navigate` or the popup receiving that
   control preserves a transferable carrier or privately prepares a replacement
   for a non-transferable WebRTC carrier, then replaces its current document.
@@ -415,11 +425,12 @@ metadata or preparation
 rejects popup construction before carrier selection; preparation failure closes
 the connection without navigation.
 
-The first form may cross an arbitrary external document and wait for user
-interaction. No current carrier survives that gap, but an initial fallback
-which has not yet been selected remains armed. The next participating document
-may use it to establish the first RTC carrier without navigation-round metadata.
-The connected form may preserve a transferable port across the bounded
+Navigation to a non-participating document may wait for user interaction. A
+preserved port expires there and the application's former carrier becomes
+unusable; an initial fallback which has not yet been selected remains armed.
+The next participating document may use it to establish the first RTC carrier
+without navigation-round metadata. Connected navigation between participating
+documents may instead preserve a transferable port across the bounded
 replacements defined below.
 
 The factory installs the appropriate operation from the native resource it
