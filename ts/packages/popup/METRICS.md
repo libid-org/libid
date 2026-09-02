@@ -6,25 +6,18 @@ control work. It never exports telemetry itself. A caller may supply
 policy.
 
 ```ts
-type PopupDiagnosticCode =
-  | 'window-opened' | 'window-blocked' | 'window-bound'
-  | 'handshake-rejected' | 'carrier-message-port' | 'carrier-restored'
-  | 'carrier-fallback' | 'fallback-unavailable'
-  | 'decode-rejected' | 'control-rejected' | 'control-direct' | 'control-connected'
-  | 'continuity-unsupported' | 'keep-acknowledged' | 'keep-failed' | 'claim-empty'
-  | 'popup-unavailable' | 'send-unavailable'
-  | 'connection-closed' | 'connection-failed'
-
 interface PopupDiagnostic {
-  readonly code: PopupDiagnosticCode
+  readonly code: string
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
 }
 ```
 
-`code` is a stable package-owned identifier from the closed union above; adding
-a code is a compatible change, renaming or removing one is not. `timestamp` uses
+`code` is a stable package-owned identifier. The public type stays `string`
+because the catalog is open: each carrier adds its own codes, and a closed
+union would break exhaustive consumers on every addition. Renaming or removing
+a catalogued code is a breaking change. `timestamp` uses
 `performance.timeOrigin + performance.now()`. Optional finite, nonnegative
 `durationMs` and integer `count` fields are present only where their meaning is
 fixed by the code. The callback receives no arbitrary details map, raw

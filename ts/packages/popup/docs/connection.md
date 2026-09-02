@@ -290,12 +290,13 @@ interface PopupConnection<M extends Message> {
 type CarrierConstructor = (signal: AbortSignal) => Promise<Carrier>
 
 interface PopupDiagnostic {
-  readonly code: PopupDiagnosticCode // closed union; see METRICS.md
+  readonly code: string // stable identifier catalogued in METRICS.md
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
 }
 
+// @libid/popup/worker
 declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
 
 declare const PopupConnection: {
@@ -325,8 +326,11 @@ The package build enables TypeScript `stripInternal`, so `bind` is available to
 package source but absent from the emitted public declaration. `PopupWindow`
 exposes no direct navigation or closure; its direct operations are
 package-internal and reachable only through `PopupConnection`.
-`installPortKeeper` is the Service Worker handler the host composes into its
-own popup-origin worker script; see the [MessagePort carrier](message-port.md#internal-portkeeper-api).
+`installPortKeeper` is the Service Worker handler the host, the deployment
+serving the popup documents, composes into its own popup-origin worker
+script. It is exported only from the `@libid/popup/worker` subpath so the main
+entry carries no worker-global types; see the
+[MessagePort carrier](message-port.md#internal-portkeeper-api).
 
 `PopupConnection` owns one connection-lifetime cancellation signal and
 document-local MessagePort cancellation. Pending handshakes, signaling, carrier
@@ -436,8 +440,10 @@ Navigation to a non-participating document may wait for user interaction. A
 preserved port expires there and the application's former carrier becomes
 unusable. The application cannot observe that expiry: it retains the carrier
 until a later participating document's handshake replaces it or the connection
-closes, so a `navigate` issued meanwhile is lost while `close` still uses the
-live handle. An initial fallback which has not yet been selected remains armed.
+closes. No application message is deliverable while the popup is
+non-participating: every `send` and `navigate` issued meanwhile succeeds
+locally and is lost, while `close` still uses the live handle. An initial
+fallback which has not yet been selected remains armed.
 The next participating document may use it to establish the first RTC carrier
 without navigation-round metadata. Connected navigation between participating
 documents may instead preserve a transferable port across the bounded
