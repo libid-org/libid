@@ -164,7 +164,8 @@ rule and excluding reserved keywords such as `_blank`, `_self`, `_parent`, and
 `PopupConnection.connect` composes over that exact object, synchronously arms
 fallback binding, and never accepts a caller-supplied `WindowProxy`. It never
 constructs a `PortKeeper`. `PopupWindow.current()` captures the popup document,
-its opener, and its package-owned Service Worker registration.
+its opener, and the host-registered Service Worker registration controlling
+that document.
 `PopupConnection.accept` composes over that object. When an active registration is
 available, it privately constructs a keeper and attempts `claim` for the
 connection ID before selecting a new carrier. A matching entry restores its
@@ -172,7 +173,7 @@ native port; no entry leaves the fresh endpoint to use its available opener or
 signaling resources normally.
 
 There is no public role field or per-operation role branch. Callers never
-supply a keeper, continuity purpose, route, or phase.
+supply a keeper, route, or phase.
 
 Both endpoint records include the same caller-supplied connection ID. The
 package supplies `ConnectionVersion` internally. Connection uses the ID for
@@ -272,9 +273,6 @@ declare class PopupWindow {
   /** @internal PopupConnection.connect calls this after exact validation. */
   bind(source: WindowProxy): void
 
-  navigate(url: string): Promise<void>
-  close(): Promise<void>
-
   static open(target: string): PopupWindow
   static current(): PopupWindow
 }
@@ -292,11 +290,13 @@ interface PopupConnection<M extends Message> {
 type CarrierConstructor = (signal: AbortSignal) => Promise<Carrier>
 
 interface PopupDiagnostic {
-  readonly code: string
+  readonly code: PopupDiagnosticCode // closed union; see METRICS.md
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
 }
+
+declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
 
 declare const PopupConnection: {
   connect<M extends Message>(
@@ -322,7 +322,11 @@ declare const PopupConnection: {
 ```
 
 The package build enables TypeScript `stripInternal`, so `bind` is available to
-package source but absent from the emitted public declaration.
+package source but absent from the emitted public declaration. `PopupWindow`
+exposes no direct navigation or closure; its direct operations are
+package-internal and reachable only through `PopupConnection`.
+`installPortKeeper` is the Service Worker handler the host composes into its
+own popup-origin worker script; see the [MessagePort carrier](message-port.md#internal-portkeeper-api).
 
 `PopupConnection` owns one connection-lifetime cancellation signal and
 document-local MessagePort cancellation. Pending handshakes, signaling, carrier
@@ -380,11 +384,14 @@ messages described below whenever a carrier is active and otherwise delegate to
 carrier reconnection.
 
 `send` accepts the composition-owned union `M` and is not a delivery
-acknowledgement. Apart from rejecting reserved control discriminators, the
-connection does not revalidate trusted local input.
+acknowledgement. It throws synchronously without an active carrier or after
+closure; the connection queues no caller value. Apart from rejecting reserved
+control discriminators, the connection does not revalidate trusted local input.
 
 `on` registers one message class and handler by `message.type` and returns an
-unsubscribe function. Duplicate registrations reject. For each inbound carrier
+unsubscribe function. Duplicate or reserved registrations throw synchronously.
+Callers register handlers synchronously after `connect` returns or `accept`
+resolves; inbound values dispatch as later tasks. For each inbound carrier
 value, the connection reads only a bounded string `type` from a plain record,
 selects the registered `MessageType`, calls `decode` exactly once, and invokes
 that handler. An unknown or unregistered type, malformed routing discriminator,
@@ -427,7 +434,10 @@ the connection without navigation.
 
 Navigation to a non-participating document may wait for user interaction. A
 preserved port expires there and the application's former carrier becomes
-unusable; an initial fallback which has not yet been selected remains armed.
+unusable. The application cannot observe that expiry: it retains the carrier
+until a later participating document's handshake replaces it or the connection
+closes, so a `navigate` issued meanwhile is lost while `close` still uses the
+live handle. An initial fallback which has not yet been selected remains armed.
 The next participating document may use it to establish the first RTC carrier
 without navigation-round metadata. Connected navigation between participating
 documents may instead preserve a transferable port across the bounded
@@ -516,8 +526,9 @@ the application does not run an independent first-promise-wins race:
    validates the transferred port, and echoes the existing private MessagePort
    handshake over that port. Only that echo makes MessagePort selectable on the
    application endpoint. The fallback remains pending and unused.
-3. A popup with an absent, severed, or timed-out opener commits its configured
-   fallback. The authenticated fallback resolving on the application endpoint
+3. A popup whose opener is null or reports `closed`, or which receives no
+   valid response within `OPENER_HANDSHAKE_TIMEOUT_MS = 30_000`, commits its
+   configured fallback. The authenticated fallback resolving on the application endpoint
    confirms that choice and replaces any carrier belonging to the preceding
    popup document. An authentication failure is terminal rather than a reason
    to downgrade; an unavailable fallback also terminates.

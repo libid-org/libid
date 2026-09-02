@@ -43,17 +43,17 @@ native-anchor fallback](docs/connection.md#popup-creation-and-native-anchor-fall
 ```ts
 declare class PopupWindow {
   readonly opened: boolean
-  navigate(url: string): Promise<void>
-  close(): Promise<void>
 
   static open(target: string): PopupWindow
   static current(): PopupWindow
 }
 ```
 
-`PopupWindow.current()` wraps the current popup document, its opener, and its
-Service Worker access. It adopts the existing popup and cannot create another
-one.
+`PopupWindow` exposes no direct navigation or closure; both go through
+`PopupConnection` so continuity and control rules always apply.
+`PopupWindow.current()` wraps the current popup document, its opener, and the
+Service Worker registration controlling that document. It adopts the existing
+popup and cannot create another one.
 
 ### Connect from the popup
 
@@ -133,20 +133,50 @@ connection.send(new PopupReady(1))
 
 Higher-level popup logic combines these classes into its own union and supplies
 that union to `PopupConnection`. Lifecycle controls remain internal and never
-reach caller handlers.
+reach caller handlers. Register handlers synchronously after `connect` returns
+or `accept` resolves: inbound values dispatch as later tasks, and a value with
+no registered handler closes the connection. `send` throws synchronously
+without an active carrier or after closure; nothing is queued.
 
 ### Diagnostics
 
 Both connection constructors accept an optional local diagnostic sink:
 
 ```ts
+type PopupDiagnosticCode =
+  | 'window-opened' | 'window-blocked' | 'window-bound'
+  | 'handshake-rejected' | 'carrier-message-port' | 'carrier-restored'
+  | 'carrier-fallback' | 'fallback-unavailable'
+  | 'decode-rejected' | 'control-rejected' | 'control-direct' | 'control-connected'
+  | 'continuity-unsupported' | 'keep-acknowledged' | 'keep-failed' | 'claim-empty'
+  | 'popup-unavailable' | 'send-unavailable'
+  | 'connection-closed' | 'connection-failed'
+
 interface PopupDiagnostic {
-  readonly code: string
+  readonly code: PopupDiagnosticCode
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
 }
 ```
+
+### Continuity worker
+
+Connected navigation between participating popup documents preserves the
+MessagePort through a same-origin Service Worker. The host registers that
+worker for its popup documents and calls the exported handler from the worker
+script; the package registers nothing:
+
+```ts
+declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
+
+// popup-origin worker script
+installPortKeeper(self as unknown as ServiceWorkerGlobalScope)
+```
+
+`accept` claims a preserved port from the registration controlling the current
+document as its first step, so the host calls it before any other network
+work. See [continuity across navigations](docs/message-port.md#continuity-across-navigations).
 
 ### Fallback carrier
 
