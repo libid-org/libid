@@ -8,10 +8,10 @@ to verify.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md), its concrete orchestration in
-[CCDP-TRANSPORT.md](CCDP-TRANSPORT.md), and its
-[MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and
-[WebRTC](CCDP-CARRIER-WEBRTC.md) carriers separately. The callback participant
+in [CCDP.md](CCDP.md), its reusable popup transport in
+[TRANSPORT.md](TRANSPORT.md), and the transport's
+[MessagePort](TRANSPORT-MESSAGEPORT.md) and
+[WebRTC](TRANSPORT-WEBRTC.md) carriers separately. The callback participant
 is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
@@ -133,8 +133,8 @@ portable baseline.
 ## Ceremony Cross-Document Protocol
 
 [CCDP.md](CCDP.md) defines the package-owned protocol between the application,
-callback, and isolated prover; [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md) defines its
-browser transport; and [CALLBACK.md](CALLBACK.md) defines the callback's local
+callback, and isolated prover; [TRANSPORT.md](TRANSPORT.md) defines the shared
+popup transport; and [CALLBACK.md](CALLBACK.md) defines the callback's local
 state and UI. This document owns only the package and public client contracts
 around them.
 
@@ -144,11 +144,12 @@ Launch publishes one `@libid/ceremony` package:
 
 ```text
 @libid/ceremony
+├── transport
+│   ├── index         typed delivery, carrier selection, and navigation
+│   ├── message-port  window authentication and MessagePort delivery
+│   └── webrtc        signaling, ICE, serialization, and RTCDataChannel delivery
 ├── ccdp
-│   ├── index                 ceremony records, directional codecs, and wire version
-│   ├── transport             typed delivery, carrier selection, and navigation
-│   ├── carrier-message-port  window authentication and MessagePort delivery
-│   └── carrier-webrtc        signaling, ICE, serialization, and RTCDataChannel delivery
+│   └── index         ceremony records, directional codecs, and protocol version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for the CCDP callback root
 ├── prover
@@ -164,9 +165,10 @@ Launch publishes one `@libid/ceremony` package:
 
 `ccdp/index` is the pure protocol leaf imported by client, callback, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
-construction, or cryptographic proof verification. `ccdp/transport` is one
+construction, or cryptographic proof verification. `transport/index` is one
 concrete package-private, message-generic transport; its carriers contain only
-their browser delivery mechanics and never enter the public API.
+their browser delivery mechanics and never enter the public API. Transport has
+no dependency on CCDP and can carry another closed caller protocol unchanged.
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
@@ -211,9 +213,9 @@ prover ───> platforms/<platform>/<version>/prover ───> types
 platforms/{x,github}/<version>/prover ───> prover/notarization
 
 client, callback, prover, platforms/index ───> ccdp
-client, callback, prover ───> ccdp/transport
-ccdp/transport ───> ccdp/{carrier-message-port,carrier-webrtc}
-wallet-client ─────────> client + ceremony + wallet/protocol
+client, callback, prover ───> transport
+transport ───> transport/{message-port,webrtc}
+wallet-client ─────────> client + ceremony + wallet/protocol + transport
 ```
 
 `ceremony` never imports the client job store or either wallet composition.
@@ -226,7 +228,8 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | internal `Message`, `Decoder`, `CCDPVersion`, direction/order rules, and concrete message-generic `CCDPTransport`; no application export |
+| `@libid/ceremony/transport` | internal message-generic `PopupTransport`, `Decoder`, and `TransportVersion`; no application export or caller-protocol dependency |
+| `@libid/ceremony/ccdp` | internal CCDP `Message` union and decoders, `CCDPVersion`, and direction/order rules; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) implementing the CCDP-selected callback root |
 | `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
@@ -353,10 +356,10 @@ lowercase UUIDv4. A composition normally generates one value and calls it
 composition invariant, not a shared branded type. The identifier is not chain
 authorization, but its unpredictability and one-use handling provide browser
 continuity. Both transport endpoints receive it as construction input and
-exact-match it in private controls; no CCDP message carries it. The
-`MessagePortHandshake` response returns it on the MessagePort path, while the
-RTC path uses it to select the live application's signaling subscription. It is
-not a second authorization secret.
+exact-match it as their private `connectionId`; no CCDP message carries it. The
+`MessagePortHandshake` response returns that connection ID on the MessagePort
+path, while the RTC path uses it to select the live application's signaling
+subscription. It is not a second authorization secret.
 
 `new` chooses the platform ceremony version, generates the fresh authorization
 nonce, derives the code verifier from it and the Authorization Digest by the
@@ -699,7 +702,7 @@ validators during its compatibility window.
 [`CCDPVersion`](CCDP.md#version) independently versions callback/prover roots,
 navigation, fragments, and browser messages. Fragments and OAuth `state` select
 it before module loading; messages do not repeat it. The ceremony server API
-namespace remains independent. [`TransportVersion`](CCDP-TRANSPORT.md#versioning)
+namespace remains independent. [`TransportVersion`](TRANSPORT.md#versioning)
 independently versions private transport controls. Local Job schema versioning
 remains owned by the client store, while immutable asset revisioning remains a
 release concern. A Job which has already committed Identity has left the

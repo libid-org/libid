@@ -4,7 +4,7 @@ This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, callback, and isolated prover. It owns ceremony
 locations, navigations, messages, ordering, and protocol compatibility.
 
-The concrete [CCDP transport](CCDP-TRANSPORT.md) authenticates, decodes, and
+The shared [popup transport](TRANSPORT.md) authenticates, decodes, and
 delivers these messages without interpreting them. Shared package types such as
 `PlatformId`, `PlatformCeremonyVersion`, and `PlatformStep` retain their
 definitions in [ARCHITECTURE.md](ARCHITECTURE.md). These documents are

@@ -1,14 +1,15 @@
-# CCDP WebRTC carrier
+# WebRTC transport
 
-This document defines the WebRTC carrier used by the concrete CCDP transport
-when provider response policy severs callback opener authentication. It owns
+This document defines the WebRTC carrier used by the
+[popup transport](TRANSPORT.md) when response policy severs popup opener
+authentication. It owns
 signaling, peer establishment, and logical-value delivery over one
 `RTCDataChannel`.
 
 ## Why this carrier exists
 
-The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) is simpler,
-but cannot establish after response isolation severs the callback's opener.
+The browser-local [MessagePort carrier](TRANSPORT-MESSAGEPORT.md) is simpler,
+but cannot establish after response isolation severs the popup's opener.
 This follows the [HTML COOP model](https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies)
 and its unresolved [cross-group opener-messaging limitation](https://github.com/whatwg/html/issues/6364).
 No known alternative to WebRTC satisfies the transport constraints after that
@@ -21,13 +22,13 @@ can fail on restrictive networks.
 
 ## Topology
 
-The application page and final top-level prover are the only RTC peers. The
-callback never creates an `RTCPeerConnection`; navigation would destroy it. No
-iframe, worker, signaling service, or ceremony server terminates the
-`RTCDataChannel`.
+The application page and final top-level popup document are the only RTC peers.
+A transient popup document never creates an `RTCPeerConnection` when its next
+navigation would destroy it. No iframe, worker, or signaling service terminates
+the `RTCDataChannel`.
 
 ```text
-Application transport      Signaling service      Isolated prover transport
+Application transport      Signaling service      Destination popup transport
         |<--- SDP / ICE --------->|<--- SDP / ICE --------->|
         |<========== direct RTCDataChannel =================>|
 
@@ -36,41 +37,42 @@ Application transport      Signaling service      Isolated prover transport
 ```
 
 The application transport starts one bounded, one-use signaling subscription
-before provider navigation. This creates no peer connection, SDP, ICE candidate,
-or ceremony-data record. The application transport closes it unused when
-MessagePort wins. When RTC is committed, the final prover creates the offer and
-the application answers.
+before caller-controlled popup navigation. This creates no peer connection,
+SDP, ICE candidate, or transported-value record. The application transport
+closes it unused when MessagePort wins. When RTC is committed, the destination
+popup creates the offer and the application answers.
 
 ## Signaling service
 
-The signaling service is a bounded rendezvous, not a CCDP carrier. The
-application subscribes as answerer and the prover publishes as offerer under
-the same fresh, unguessable, one-use ceremony ID. The ID is the rendezvous
+The signaling service is a bounded rendezvous, not a carrier. The application
+subscribes as answerer and the popup publishes as offerer under the same fresh,
+unguessable, one-use connection ID. The ID is the rendezvous
 capability; the browser-stamped `Origin` restricts which browser role may present
 it but is not a general client credential. The service exact-checks the
-application and ceremony-server origins. Signaled DTLS fingerprints bind the
+application and popup origins. Signaled DTLS fingerprints bind the
 resulting channel to the exchanged descriptions but do not independently
-authenticate the signaling service. No second ceremony nonce is added.
+authenticate the signaling service. No second nonce is added.
 
 The signaling contract accepts only:
 
 - one application subscription from an allowed application origin;
-- one prover offer from the configured ceremony-server origin;
+- one popup offer from the configured popup origin;
 - one answer;
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
 The live subscription exact-matches the caller-supplied transport version,
-ceremony ID, and role and lasts only for that ceremony. Once RTC fallback starts,
-offer, answer, and candidate state is transient and is deleted when the channel
-opens, either side fails or disconnects, MessagePort wins, or the ceremony ends.
+connection ID, and role and lasts only for that connection. Once RTC fallback starts,
+offer, answer, and candidate state is transient and is deleted when the
+channel opens, either side fails or disconnects, MessagePort wins, or transport
+closes.
 Signaling records are consumed once and never enter signaling URLs, logs,
 analytics, or durable storage.
 
 An honest service is not on the data path and cannot read DTLS-protected framed
 values. A compromised service can replace exchanged fingerprints and
-man-in-the-middle the channel, but the signaling service is part of the same
-configured ceremony-server trust boundary that supplies both browser programs.
+man-in-the-middle the channel, but the signaling service belongs to the same
+configured server trust boundary that supplies the popup program.
 It therefore adds no independent signature or trust system.
 
 The signaling service is selected over the available establishment mechanisms:
@@ -78,29 +80,29 @@ The signaling service is selected over the available establishment mechanisms:
 | Mechanism | Tradeoff |
 | --- | --- |
 | Signaling service | Works cross-site, is event-driven, and needs no application-origin endpoint or additional iframe. It carries only bounded SDP and ICE metadata; application messages remain browser-local. |
-| Cookie or storage polling | Requires an additional ceremony-server iframe under the application and works only when application and ceremony server are same-site. Browser throttling made PoC signaling take more than one second, comparable to a service round trip, while still not covering cross-site deployments. |
-| `BroadcastChannel` or shared worker | Cannot reliably cross the origin and storage-partition boundary between application and ceremony server. |
-| Application endpoint or frontend-origin callback page | Can rendezvous the peers, but adds application-specific server or hosting integration that the deployment model excludes. |
+| Cookie or storage polling | Requires an additional popup-server iframe under the application and works only when application and popup server are same-site. Browser throttling made PoC signaling take more than one second, comparable to a service round trip, while still not covering cross-site deployments. |
+| `BroadcastChannel` or shared worker | Cannot reliably cross the origin and storage-partition boundary between application and popup server. |
+| Application endpoint or frontend-origin rendezvous page | Can rendezvous the peers, but adds application-specific server or hosting integration that the deployment model excludes. |
 | TURN | Solves peer reachability rather than signaling. It relays encrypted DTLS/SCTP packets, placing a service on every packet path and violating the direct browser-local transport constraint, but does not terminate the data channel or read its plaintext. |
 
 The selected path supports cross-site peers without turning the signaling
 service into an application-message relay. With STUN only, inability to form a
-direct ICE path fails the ceremony rather than selecting another carrier.
+direct ICE path fails the transport rather than selecting another carrier.
 
 ## API
 
-Signaling is private carrier machinery. Both endpoints receive the ceremony ID
-as a transport-construction input before any CCDP message exists; neither finds
-it by inspecting a transported value. The application starts connecting before
-OAuth, and the ceremony endpoint connects only after transport commits RTC
-fallback:
+Signaling is private carrier machinery. Both endpoints receive the connection
+ID as a transport-construction input before any caller message exists; neither
+finds it by inspecting a transported value. The application starts connecting
+before popup navigation, and the popup endpoint connects only after transport
+commits RTC fallback:
 
 ```ts
 interface WebRTCOptions {
   signalingServiceUrl: string
   stunUrls: readonly string[]
   transportVersion: TransportVersion
-  ceremonyId: string
+  connectionId: string
   signal: AbortSignal
 }
 
@@ -108,14 +110,14 @@ declare function connectApplicationWebRTC<M>(
   options: WebRTCOptions,
 ): Promise<Carrier<M>>
 
-declare function connectCeremonyWebRTC<M>(
+declare function connectPopupWebRTC<M>(
   options: WebRTCOptions,
 ): Promise<Carrier<M>>
 ```
 
 `connectApplicationWebRTC` synchronously starts the bounded answerer
 subscription and returns a pending carrier promise. It creates the answering
-peer only after a valid offer arrives. `connectCeremonyWebRTC` creates the
+peer only after a valid offer arrives. `connectPopupWebRTC` creates the
 offering peer and data channel, publishes its offer and candidates, and consumes
 the answer and remote candidates. Each resolves with an authenticated carrier
 only after its local channel opens. Internally they retain the peer connection
@@ -123,16 +125,17 @@ and channel and own every signaling request, trickled candidate update,
 origin-bound role, timeout, codec, framing, pressure, and cleanup operation.
 
 The application transport observes and retains the first promise without
-awaiting it during OAuth, so an early failure produces no unhandled rejection.
+awaiting it during popup navigation, so an early failure produces no unhandled
+rejection.
 MessagePort selection aborts it. Under RTC selection each endpoint awaits its
 own operation and exposes only the common carrier API. Abort, carrier closure,
 or establishment failure closes every reachable signaling, peer, and channel
 resource and releases no transported value. No signaling API or native RTC
-resource is exposed to CCDP or package consumers.
+resource is exposed to caller protocols or package consumers.
 
 ## Peer establishment
 
-The top-level prover creates one ordered reliable `RTCDataChannel` and offers;
+The destination popup creates one ordered reliable `RTCDataChannel` and offers;
 the application answers. Neither peer sets `maxPacketLifeTime` nor
 `maxRetransmits`.
 
@@ -141,7 +144,7 @@ local description as soon as it exists and forward candidates as discovered.
 Host and mDNS candidates may connect immediately; server-reflexive candidates
 provide a mobile path without depending on mDNS resolution or local-network
 permission. ICE completion is diagnostic because the channel may open earlier.
-Launch configures no TURN server. Networks whose NAT or firewall prevents a
+The deployment configures no TURN server. Networks whose NAT or firewall prevents a
 direct path fail closed; this is an explicit availability tradeoff, not a
 transport downgrade or recovery signal.
 
@@ -149,7 +152,7 @@ The selected SDP and DTLS fingerprints are immutable for the connection.
 Duplicate signaling records are idempotent; candidate records append only exact
 new candidates. Changed descriptions, roles, fingerprints, or accepted
 candidates fail. Signaling state is deleted when the channel opens, either side
-fails or disconnects, MessagePort wins, or the ceremony ends.
+fails or disconnects, MessagePort wins, or transport closes.
 
 ## Message delivery
 
@@ -203,32 +206,31 @@ reconnection, carrier switch, or message resend.
 
 ## Failure and security invariants
 
-- Signaling carries no OAuth return, proof request, progress, proof, witness,
-  attestation, cancellation, or other transported value.
+- Signaling carries no transported value.
 - The application signaling handshake requires an allowed browser-stamped
-  `Origin`; the prover handshake requires the exact ceremony-server origin.
+  `Origin`; the popup handshake requires the exact configured popup origin.
   Origin restricts browser callers but is not accepted as a standalone client
   credential.
-- Ceremony ID is the fresh, unguessable, one-use rendezvous capability. It is
-  exact-matched to the live client transport and retired when either carrier
+- Connection ID is the fresh, unguessable, one-use rendezvous capability. It is
+  exact-matched to the live application transport and retired when either carrier
   wins.
 - `RTCDataChannel` message encoding and framing are bounded and cannot add a
   value outside its authenticated connection.
 - Signaling loss, ICE failure, channel loss, popup closure, or context
-  destruction is never a ceremony result or recovery signal.
+  destruction is never a caller result or recovery signal.
 - Observable failure clears reachable inputs without selecting another carrier;
   failure may otherwise be silent.
 
 ## Connection establishment
 
 This diagram shows the logical RTC fallback establishment; it does not define
-the signaling-service wire records or show CCDP values.
+the signaling-service wire records or show transported values.
 
 ```mermaid
 sequenceDiagram
     participant A as Application transport
     participant G as Signaling service
-    participant P as Prover transport
+    participant P as Popup transport
 
     A->>G: Arm one-use subscription
     P->>G: Offer + trickled ICE candidates

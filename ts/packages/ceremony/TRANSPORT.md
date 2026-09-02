@@ -1,9 +1,10 @@
-# CCDP transport
+# Popup transport
 
-This document defines a package-private transport which establishes a
-bidirectional communication channel between two browser documents, moves
+This document defines the package-private popup transport. It establishes a
+bidirectional channel between an application page and its one popup, moves
 caller-defined values, selects a carrier, and preserves a transferable native
-resource across document navigation.
+resource while that popup replaces one document with another. It is not a
+generic document-to-document abstraction.
 
 ```ts
 type TransportVersion = 1
@@ -14,14 +15,14 @@ carrier, signaling, framing, and continuity controls. It does not version or
 describe any caller protocol.
 
 The topology is an ordinary browser tab running the application and one
-adjacent popup. The two documents may be cross-origin and cross-site.
+adjacent popup. The application and popup may be cross-origin and cross-site.
 
 ```text
-Application tab                              Ceremony popup
-https://app.example                          https://ceremony.example
-┌───────────────────────────┐ carrier ┌────────────────────────┐
-│ CCDPTransport.application │<=======>│ CCDPTransport.ceremony │
-└───────────────────────────┘         └────────────────────────┘
+Application tab                              Popup
+https://app.example                          https://popup.example
+┌────────────────────────────┐ carrier ┌──────────────────────┐
+│ PopupTransport.application │<=======>│ PopupTransport.popup │
+└────────────────────────────┘         └──────────────────────┘
 ```
 
 ## Operating constraints
@@ -36,8 +37,8 @@ The transport must:
   the application origin;
 - require no additional top-level browsing context beyond the existing popup
   and no second user action;
-- keep active ceremony work in the visible popup without requiring the
-  application tab to remain visible or continuously scheduled;
+- keep active work in the visible popup without requiring the application tab
+  to remain visible or continuously scheduled;
 - carry application-level messages directly between the two browser endpoints;
   no server relays or stores them or terminates their channel; and
 - provide ordered bidirectional delivery across WebKit, Gecko, and Chromium on
@@ -93,22 +94,26 @@ dispatch but does not interpret the resulting message.
 
 ## API
 
-The module has one long-lived application endpoint and a fresh ceremony
+The module has one long-lived application endpoint and a fresh popup
 endpoint for each popup document. Factories receive only the browser resources
 available to that endpoint:
 
 ```ts
-const applicationTransport = CCDPTransport.application<Message>(
+const applicationTransport = PopupTransport.application<Message>(
   applicationResources,
 )
 
-const ceremonyTransport = await CCDPTransport.ceremony<Message>(
-  ceremonyResources,
+const popupTransport = await PopupTransport.popup<Message>(
+  popupResources,
 )
 ```
 
+`Message` is caller-owned. It may be one protocol's closed union or a
+composition-owned union of several protocols. Transport requires unique
+registered discriminators but defines no protocol namespace or message type.
+
 `application` installs direct navigation over its retained `WindowProxy` and
-never constructs a `PortKeeper`. `ceremony` is asynchronous. When its browser
+never constructs a `PortKeeper`. `popup` is asynchronous. When its browser
 resources include an active Service Worker registration, it privately
 constructs a keeper and attempts `claim` for the connection ID before selecting
 a new carrier. A matching entry restores its native port; no entry leaves the
@@ -118,14 +123,13 @@ These are construction-specific implementations of the same API, not a public
 role field or a branch performed for each operation. Callers never supply a
 keeper, continuity purpose, route, or phase.
 
-Both resource records include the same ceremony ID and `transportVersion`.
-The ceremony ID is the caller-supplied connection ID;
-transport uses it for authentication, continuity, and private signaling without
-recovering it from transported values. Transport exact-matches both values in
-private carrier and navigation controls but assigns neither caller-level
-semantics.
+Both resource records include the same caller-supplied connection ID and
+`transportVersion`. Transport uses the ID for authentication, continuity, and
+private signaling without recovering it from transported values. Transport
+exact-matches both values in private carrier and navigation controls but assigns
+neither caller-level semantics.
 
-A ceremony endpoint constructed from `window.opener` and an immutable
+A popup endpoint constructed from `window.opener` and an immutable
 target-origin set can send an opaque value over `WindowProxy` before carrier
 selection. Transport wraps it with its exact connection ID and transport
 version; these fields are private control metadata and never enter the caller
@@ -148,7 +152,7 @@ for another connection are unrelated and bind nothing. Transport never
 interprets the caller value. This admits a navigation source only; it does not
 select a carrier, and the value remains untrusted caller input.
 
-Navigation destroys the ceremony endpoint; the application endpoint retains
+Navigation destroys the popup endpoint; the application endpoint retains
 its bound source and any idle signaling subscription.
 
 Both endpoints expose the same typed delivery and dispatch operations:
@@ -159,7 +163,7 @@ interface Decoder<M> {
   decode(value: unknown): M
 }
 
-interface Transport<M> {
+interface PopupTransport<M> {
   send(message: M): void
   on<N extends M>(
     decoder: Decoder<N>,
@@ -192,11 +196,11 @@ or branches on that URL:
 
 - the application endpoint navigates its exact retained `WindowProxy` directly;
   or
-- the ceremony endpoint internally calls `keep` for its carrier port, awaits
+- the popup endpoint internally calls `keep` for its carrier port, awaits
   worker ownership, and then replaces its current document.
 
 The factory installs the appropriate operation from the native resource it
-owns, never from the URL. A ceremony endpoint without the required carrier port
+owns, never from the URL. A popup endpoint without the required carrier port
 rejects rather than navigating and losing live state. The application endpoint
 has no keeper, including a no-op implementation.
 
@@ -212,8 +216,8 @@ Transport selects and owns the resulting authenticated carrier. A carrier does
 not interpret transported values, choose another carrier, or navigate a
 document.
 
-The browser-local [MessagePort carrier](CCDP-CARRIER-MESSAGEPORT.md) and
-opener-independent [WebRTC carrier](CCDP-CARRIER-WEBRTC.md) are the two
+The browser-local [MessagePort carrier](TRANSPORT-MESSAGEPORT.md) and
+opener-independent [WebRTC carrier](TRANSPORT-WEBRTC.md) are the two
 implementations.
 
 ### Carrier API
@@ -240,7 +244,7 @@ and closes its own peer and channel.
 
 ### Selection
 
-A fresh ceremony endpoint chooses one physical path:
+A fresh popup endpoint chooses one physical path:
 
 1. A usable retained opener completes the MessagePort carrier's exact
    source/origin authentication. Its native result is a `MessagePort`.
@@ -303,11 +307,11 @@ channel.
 
 ### Timing assumptions and browser limits
 
-The bridge covers only the immediate callback-to-prover replacement. After the
+The bridge covers only one immediate popup-document replacement. After the
 worker acknowledges preservation, the source starts navigation immediately and
 the destination claims in its clearing bootstrap before package import or
-network use. It never holds a port across OAuth, user interaction, wallet
-confirmation, or an intentional background wait.
+network use. It never holds a port across external navigation, user interaction,
+or an intentional background wait.
 
 The `keep` handler uses `event.waitUntil()` to keep its message event active
 until the port is claimed or its short deadline expires. Its acknowledgement
@@ -346,12 +350,12 @@ declare class PortKeeper {
   )
 
   keep(
-    ceremonyId: string,
+    connectionId: string,
     purpose: string,
     port: MessagePort,
   ): Promise<void>
 
-  claim(ceremonyId: string): Promise<{
+  claim(connectionId: string): Promise<{
     purpose: string
     port: MessagePort
   } | null>
@@ -370,7 +374,7 @@ queued value used before the destination establishes its data channel.
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
 not yet exist. The Service Worker record and control-message encoding are
-implementation details. Transport version, ceremony ID, purpose bounds,
+implementation details. Transport version, connection ID, purpose bounds,
 transferable count, duplicate ownership, expiry, and one-use claim are checked
 before ownership changes. A malformed, mismatched, duplicate, or post-terminal
 record rejects and closes every reachable port; absence is the sole `null`

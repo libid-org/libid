@@ -8,9 +8,9 @@ use of `PortKeeper`, cache behavior, and worker graph.
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
 [CCDP.md](CCDP.md), transport lifecycle by
-[CCDP-TRANSPORT.md](CCDP-TRANSPORT.md), and carrier mechanics by
-[CCDP-CARRIER-MESSAGEPORT.md](CCDP-CARRIER-MESSAGEPORT.md) and
-[CCDP-CARRIER-WEBRTC.md](CCDP-CARRIER-WEBRTC.md). The integrating server's
+[TRANSPORT.md](TRANSPORT.md), and carrier mechanics by
+[TRANSPORT-MESSAGEPORT.md](TRANSPORT-MESSAGEPORT.md) and
+[TRANSPORT-WEBRTC.md](TRANSPORT-WEBRTC.md). The integrating server's
 prover route, embedded `ProverAssets`, and response
 headers are defined in [SERVER.md](SERVER.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
@@ -451,7 +451,7 @@ can supply an asset URL.
 
 The Service Worker branch contains no durable OAuth or application state. In
 addition to the
-[`PortKeeper`](CCDP-TRANSPORT.md#internal-portkeeper-api),
+[`PortKeeper`](TRANSPORT.md#internal-portkeeper-api),
 it owns each selected
 immutable asset fetch from the first byte, keys ordinary artifact
 single flights by canonical URL, starts the fixed launch bb.js CRS loaders—

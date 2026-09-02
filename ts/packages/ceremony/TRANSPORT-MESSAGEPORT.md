@@ -1,7 +1,7 @@
-# CCDP MessagePort carrier
+# MessagePort transport
 
-This document defines the preferred browser-local carrier used by the concrete
-[CCDP transport](CCDP-TRANSPORT.md) while the returned popup retains its
+This document defines the preferred browser-local carrier used by the
+[popup transport](TRANSPORT.md) while the returned popup retains its
 application opener.
 
 `MessagePort` is the simplest carrier for this job. One `window.postMessage`
@@ -19,20 +19,20 @@ which severs the opener relationship. If that happens before the returned popup
 binds the channel, this carrier is unavailable. Once bound, the transport can
 preserve the popup's port across its own immediate document replacement.
 
-The controls below are package-private carrier mechanics, not CCDP messages,
+The controls below are package-private carrier mechanics, not caller messages,
 public APIs, extension points, or durable state.
 
 ## Boundary
 
 The carrier begins with caller-supplied browser handles, expected origins,
-transport version, ceremony ID, and cancellation signal. It ends with one
+transport version, connection ID, and cancellation signal. It ends with one
 authenticated local `MessagePort` at each endpoint.
 
 Within that boundary it owns:
 
 - validation of browser-stamped `MessageEvent.source` and
   `MessageEvent.origin`;
-- one `MessageChannel`, one transfer of its callback endpoint, and the lifetime
+- one `MessageChannel`, one transfer of its popup endpoint, and the lifetime
   of both local endpoints; and
 - adaptation of an accepted port to the transport's typed delivery API.
 
@@ -45,11 +45,11 @@ The carrier neither interprets those values nor persists or recovers them.
 - Events from another `WindowProxy` are ignored. Before binding, every event
   from the bound source is a handshake attempt and must exact-match its
   browser-stamped origin, `message-port` discriminator, record shape, direction,
-  and transport version. The callback additionally requires its one-use
-  ceremony ID and exactly one transferred port.
+  and transport version. The popup additionally requires its one-use
+  connection ID and exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
-  value. The response uses the exact callback origin, transfers only the new
-  callback endpoint, and never exposes the client's retained endpoint.
+  value. The response uses the exact popup origin, transfers only the new popup
+  endpoint, and never exposes the application's retained endpoint.
 - Any handshake attempt which fails those checks rejects the binding and closes
   every reachable port. An accepted handshake removes its window listener;
   later window traffic is inert.
@@ -60,7 +60,7 @@ The carrier neither interprets those values nor persists or recovers them.
   closes reachable resources and releases no later value. There is no
   reconnect, resend, or recovery inside this carrier.
 - Port loss may be silent. It is a transport failure, never delivery, success,
-  denial, cancellation, or any other ceremony outcome.
+  denial, cancellation, or any other caller outcome.
 
 ## Authentication
 
@@ -70,24 +70,24 @@ Both directions use one carrier-local record:
 interface MessagePortHandshake {
   type: 'message-port'
   transportVersion: TransportVersion
-  ceremonyId: string | null
+  connectionId: string | null
 }
 ```
 
-The returned popup sends the record with `ceremonyId: null` and no transferable.
-It contains no ceremony ID, OAuth return, or other application-level value. The
-application accepts it only from its retained popup source, configured callback
+The returned popup sends the record with `connectionId: null` and no
+transferable. It contains no connection ID or other caller-level value. The
+application accepts it only from its retained popup source, configured popup
 origin, and expected transport version.
 
 The application creates one `MessageChannel`, retains one endpoint, and sends
-the same record back with the live ceremony ID and the other endpoint as its
+the same record back with the live connection ID and the other endpoint as its
 only transferable. The popup accepts it only from its exact opener and a
-browser-stamped origin in its immutable server-provided allowlist, and only when
-the transport version and ceremony ID match its current binding and cleared
-OAuth state. It rejects a missing or additional port.
+browser-stamped origin in its immutable allowed-origin set, and only when the
+transport version and connection ID match its current binding. It rejects a
+missing or additional port.
 
 The request may use an unrestricted target origin because it contains no
-capability or application value. The response targets the exact callback origin.
+capability or application value. The response targets the exact popup origin.
 Application-level delivery starts only on the authenticated port.
 
 ## Message delivery
@@ -103,23 +103,22 @@ decode makes transport close it. None releases a value.
 
 ## API
 
-The application starts connecting before provider navigation while the
-ceremony endpoint exists only afterward:
+The application starts connecting before the popup endpoint is ready:
 
 ```ts
 declare function connectApplicationMessagePort(options: {
   popup: WindowProxy
-  callbackOrigin: string
+  popupOrigin: string
   transportVersion: TransportVersion
-  ceremonyId: string
+  connectionId: string
   signal: AbortSignal
 }): Promise<MessagePort>
 
-declare function connectCeremonyMessagePort(options: {
+declare function connectPopupMessagePort(options: {
   opener: WindowProxy
-  allowedAppOrigins: readonly string[]
+  allowedApplicationOrigins: readonly string[]
   transportVersion: TransportVersion
-  ceremonyId: string
+  connectionId: string
   signal: AbortSignal
 }): Promise<MessagePort>
 
@@ -128,19 +127,19 @@ declare function messagePortCarrier<M>(port: MessagePort): Carrier<M>
 
 `connectApplicationMessagePort` installs the exact source/origin listener
 synchronously and returns a pending port promise without sending anything. The
-application keeps that promise, starts provider navigation, and awaits it only
-when it needs the carrier:
+application keeps that promise across caller-controlled popup navigation and
+awaits it only when it needs the carrier:
 
 ```ts
 const portPromise = connectApplicationMessagePort(options)
-navigateToProvider()
+navigatePopup(externalUrl)
 const port = await portPromise
 ```
 
-After returning from the provider and clearing its URL, the callback calls and
-awaits `connectCeremonyMessagePort`. It sends the handshake request; the pending
+When the popup endpoint is ready, it calls and awaits
+`connectPopupMessagePort`. It sends the handshake request; the pending
 application operation validates it, creates the channel, sends the response,
-and resolves `portPromise` with its retained endpoint. The callback validates
+and resolves `portPromise` with its retained endpoint. The popup validates
 that response and resolves with the transferred endpoint.
 
 Each operation resolves once with its local endpoint. A handshake attempt from
