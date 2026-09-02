@@ -49,13 +49,15 @@ The carrier neither interprets those values nor persists or recovers them.
 
 ## Failure and security invariants
 
-- The application selects handshake attempts by connection ID before native
-  fallback binding and by bound `WindowProxy` afterwards. Any other event,
-  including a valid handshake for another connection ID, is not an attempt and
-  is ignored, so concurrent connections on one page never reject each other.
-  An attempt must exact-match its browser-stamped origin, `message-port`
-  discriminator, record shape, direction, connection version, and connection
-  ID. The popup additionally requires exactly one transferred port.
+- An event is a handshake attempt only when its data is a plain record whose
+  `type` is `message-port` and whose `connectionId` equals this connection's.
+  Every other event is ignored, including a valid handshake for another
+  connection ID and unrelated traffic from the bound `WindowProxy` while it
+  shows a non-participating document, so concurrent connections never reject
+  each other and a provider page cannot terminate the connection. An attempt
+  must then exact-match its browser-stamped origin, source (the bound
+  `WindowProxy` after binding), record shape, direction, and connection
+  version. The popup additionally requires exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
   value. The response uses the exact popup origin, transfers only the new popup
   endpoint, and never exposes the application's retained endpoint. After
@@ -195,15 +197,16 @@ knows what it carries.
 
 The worker itself is host-owned. The host is the deployment serving the popup
 documents. A Service Worker script must be served from that origin, so the host
-registers one for its popup documents and calls `installPortKeeper(scope)`
-from that script. The handler is exported from the `@libid/popup/worker`
-subpath only, so worker-global types never enter the main package
-declaration. The package registers nothing and `PopupWindow.current()`
-resolves the registration controlling the current document.
+registers one for its popup documents and calls `installPortKeeper()` from
+that script. The handler is exported from the `@libid/popup/worker` subpath
+only, so worker-global types never enter the main package declaration. The
+package registers nothing and `PopupWindow.current()` resolves the active
+registration whose scope matches the current document; control of the
+document is not required to message that worker.
 
 ```ts
 // @libid/popup/worker
-declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
+declare function installPortKeeper(): void
 
 declare class PortKeeper {
   constructor(
