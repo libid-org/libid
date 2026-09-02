@@ -47,11 +47,13 @@ Application connection      Signaling service      Destination popup connection
 ```
 
 The application connection starts one bounded, one-use signaling subscription
-before each popup navigation which may require RTC in the destination. This
-creates no peer connection, SDP, ICE candidate, or transported-value record.
-The application closes the subscription unused when MessagePort wins. When RTC
-is committed, the destination popup creates a fresh offer and the application
-creates a fresh matching answer.
+before its first popup navigation and retains it while MessagePort serves any
+number of participating popup documents. This creates no peer connection, SDP,
+ICE candidate, or transported-value record. MessagePort selection does not
+close the subscription. When a popup document later commits RTC, it creates the
+fresh offer and the application creates the matching answer. Consumption,
+signaling failure, or logical connection closure ends that standby round; an
+active RTC carrier prepares each later round through the private rearm procedure.
 
 ## Signaling service
 
@@ -79,11 +81,13 @@ The signaling contract accepts only:
 The live subscription and every offer, answer, candidate, and cleanup record
 exact-match the caller-supplied connection version, connection ID, round, and
 role. State is transient and is deleted when the channel opens, either side
-fails, MessagePort wins, or the round is abandoned. Only after that deletion may
-the same live logical connection start its next round. At most one round for a
-connection ID may be live. A delayed record from an earlier round cannot match
-or create state for the current round. Signaling records are consumed once and
-never enter signaling URLs, logs, analytics, or durable storage.
+fails, the logical connection closes, or the round is abandoned. MessagePort
+selection leaves an unused round armed. Only after a round is consumed or
+deleted may the same live logical connection start its next round. At most one
+round for a connection ID may be live. A delayed record from an earlier round
+cannot match or create state for the current round. Signaling records are
+consumed once and never enter signaling URLs, logs, analytics, or durable
+storage.
 
 The signaling service handles independent one-shot rounds. It does not retain a
 subscription for the logical connection, detect popup navigation, or understand
@@ -238,13 +242,14 @@ pressure, and cleanup operation.
 
 The application connection observes the initial promise without awaiting it
 during popup navigation, so an early failure produces no unhandled rejection.
-MessagePort selection aborts that attempt. During controlled replacement, the
-active application RTC carrier internally starts the exact next round while the
-old channel remains usable and reports only its pending authenticated carrier
-through the package-private replacement hook. Each popup fallback creates a new
-physical peer; the application creates a new peer and answer rather than reusing
-an earlier description. Under RTC selection each endpoint otherwise exposes
-only the common carrier API.
+MessagePort selection leaves that promise pending under the logical
+connection's abort signal. During controlled replacement, the active application
+RTC carrier internally starts the exact next round while the old channel remains
+usable and reports only its pending authenticated carrier through the
+package-private replacement hook. Each popup fallback creates a new physical
+peer; the application creates a new peer and answer rather than reusing an
+earlier description. Under RTC selection each endpoint otherwise exposes only
+the common carrier API.
 Abort, logical connection closure, or establishment failure closes every
 reachable signaling, peer, and channel resource and releases no transported
 value. No signaling API or native RTC resource is exposed to caller protocols
@@ -269,7 +274,8 @@ The selected SDP and DTLS fingerprints are immutable for one signaling round.
 Duplicate signaling records are idempotent; candidate records append only exact
 new candidates. Changed descriptions, roles, fingerprints, or accepted
 candidates fail. Signaling state is deleted when the channel opens, either side
-fails, MessagePort wins, or the round is abandoned.
+fails, the logical connection closes, or the round is abandoned. An unused
+application answerer round remains armed while MessagePort is active.
 
 ## Message delivery
 

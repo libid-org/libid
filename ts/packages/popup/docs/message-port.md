@@ -56,7 +56,9 @@ The carrier neither interprets those values nor persists or recovers them.
   exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
   value. The response uses the exact popup origin, transfers only the new popup
-  endpoint, and never exposes the application's retained endpoint.
+  endpoint, and never exposes the application's retained endpoint. After
+  validating that response, the popup echoes the same handshake record over the
+  transferred port; the application does not select the port before that echo.
 - Any handshake attempt which fails those checks rejects the binding and closes
   every reachable port. An accepted handshake removes its window listener;
   later window traffic is inert.
@@ -94,9 +96,18 @@ browser-stamped origin in its immutable allowed-origin set, and only when the
 connection version and connection ID match its current binding. It rejects a
 missing or additional port.
 
+After accepting the response, the popup starts the transferred port and sends
+the same `MessagePortHandshake` record over it as the final establishment
+acknowledgement. The application exact-checks that record on its retained port
+before resolving its pending operation. This reuses the carrier-local handshake
+shape; it is not a caller message or an additional protocol control. A missing,
+malformed, duplicate, or mismatched acknowledgement closes both reachable
+endpoints and selects no carrier.
+
 The request may use an unrestricted target origin because it contains no
 capability or application value. The response targets the exact popup origin.
-Application-level delivery starts only on the authenticated port.
+Application-level delivery starts only after the final acknowledgement; its
+position on the ordered port keeps every later caller value behind it.
 
 ## Message delivery
 
@@ -250,9 +261,11 @@ machinery; callers continue using the same `PopupConnection`.
 
 When the popup endpoint is ready, it calls and awaits
 `connectPopupMessagePort`. It sends the handshake request; the pending
-application operation validates it, creates the channel, sends the response,
-and resolves `portPromise` with its retained endpoint. The popup validates
-that response and resolves with the transferred endpoint.
+application operation validates it, creates the channel, and sends the response
+with the popup endpoint. The popup validates that response, sends the same
+handshake record over the transferred port, and resolves with that endpoint.
+The application validates the acknowledgement and only then resolves
+`portPromise` with its retained endpoint.
 
 Each operation resolves once with its local endpoint. A later participating
 document repeats the operation under the same logical connection. A handshake attempt from
