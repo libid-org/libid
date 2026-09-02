@@ -27,28 +27,44 @@ Authorization Nonce: Fresh 32-byte randomness that makes each Authorization
 
 Proof Verifier: The component on the Consumer Chain that every Consumer calls
    to verify a libID proof. Its caller names the identity platform and the
-   Platform Ceremony Version; it selects the Platform Verifier registered for
-   that pair and returns the verified result. It is not the party that
-   produces proofs.
+   Verifier Version; it selects the Platform Verifier registered for that
+   pair, forwards the Submission Payload and native value to it unread, and
+   returns the result unchanged. It is not the party that produces proofs.
 
-Platform Verifier: The component on the Consumer Chain registered for one
-   identity platform and one Platform Ceremony Version. It validates that
-   version's Submission and returns its verified identity outputs. Different
-   Consumer Chains may use different Platform Verifier implementations for
-   the same Platform Ceremony Version. It obtains
-   attestation authenticity from the Notary Service for each attestation its
-   Platform Profile requires, which is no attestation at all where that
-   profile carries none.
+Platform Verifier: The component on the Consumer Chain registered under one
+   identity platform and one Verifier Version. It implements exactly one
+   Platform Ceremony Version: it decodes that version's Submission Payload,
+   recomputes the Authorization Digest, validates the evidence, and returns
+   its verified identity outputs. Different Consumer Chains may use different
+   Platform Verifier implementations for the same Platform Ceremony Version.
+   It obtains attestation authenticity from the Notary Service for each
+   attestation its Platform Profile requires, which is no attestation at all
+   where that profile carries none.
 
 Platform Ceremony Version: The unsigned 16-bit `platformCeremonyVersion`
    selecting one identity platform's immutable Authorization Digest
-   construction, OAuth construction, and platform-specific proof statement. It
-   identifies no verifier contract, verifier implementation, or mutable
-   verifier-authority revision.
+   construction, OAuth construction, and platform-specific proof statement.
+   The digest binds it, so it is the same number on every Consumer Chain. It
+   identifies no Platform Verifier implementation and is not a routing key.
 
-Supported Version Set: The identity-platform and Platform Ceremony Version
-   pairs a Proof Verifier currently accepts. More than one version of one
+Verifier Version: The unsigned 16-bit key under which a Consumer Chain's
+   Verifier Governance Process registers one Platform Verifier for one
+   identity platform. It is local to that Consumer Chain, assigned on its own
+   cadence, and not bound in the Authorization Digest. Two Verifier Versions
+   of one platform may implement the same Platform Ceremony Version.
+
+Supported Version Set: The identity-platform and Verifier Version pairs a
+   Proof Verifier currently accepts. More than one Verifier Version of one
    platform can be supported at the same time.
+
+Submission Payload: The opaque byte string a Consumer passes through the Proof
+   Verifier to the selected Platform Verifier. Only that Platform Verifier
+   fixes its encoding and reads it. For every profile it carries the Platform
+   Ceremony Version it was built for, the operation domain, the Authorization
+   Nonce, the Authorized Transaction Data, the proof, the platform's
+   attestations in the notary's own format, and any further value the
+   Platform Profile requires the caller to supply. It carries no Chain ID and
+   no Verifier Version.
 
 Consumer Chain: The chain whose canonical state transition consumes a libID
    proof.
@@ -81,10 +97,8 @@ Chain Profile: The normative mapping from one Consumer Chain to its Chain ID,
    Data encoding.
 
 Submission: The complete input a Consumer passes to the Proof Verifier for
-   one verification: the identity platform, the Platform Ceremony Version, the
-   operation domain, the Authorization Nonce, the Authorized Transaction Data,
-   the proof, the platform's attestations, and any further value the Platform
-   Profile requires the caller to supply.
+   one verification: the identity platform, the Verifier Version, the native
+   value the quotation returns, and the Submission Payload.
 
 Ceremony: The complete off-chain process that authenticates a user's selected
    identity-platform account through its platform-specific OAuth flow, derives
@@ -110,9 +124,9 @@ Redirect Runtime: The immutable browser component served at a registered
    across the application's live ceremony channel.
 
 Verifier Governance Process: The authority over the verification path: the
-   Proof Verifier's Supported Version Set, each Platform Verifier's pinned
-   constants and trust roots, and the protocol parameters. It is not the
-   Consumer's governance.
+   Proof Verifier's Supported Version Set and the Verifier Version each entry
+   is registered under, each Platform Verifier's pinned constants and trust
+   roots, and the protocol parameters. It is not the Consumer's governance.
 
 Identity Platform: Google, X, GitHub, or a future source of authenticated
    identity evidence. "Provider" is reserved for the formal OIDC term and for
@@ -294,15 +308,22 @@ bytes plus the Authorized Transaction Data.
 
 `platformCeremonyVersion` identifies the complete platform ceremony boundary:
 this Authorization Digest layout, the platform's OAuth construction, and its
-platform-specific proof statement.
+platform-specific proof statement. It is the only version the digest binds.
+The Verifier Version a Consumer Chain routes on is not in the digest, so a
+proof made for one ceremony version is acceptable at every Platform Verifier
+implementing it.
 
 - REQ-COMMON-01B (upholds SP-BIND-01):
   The Proof Verifier MUST reject a Submission whose identity platform and
-  `platformCeremonyVersion` pair lies outside its Supported Version Set. A
-  change to any part of that boundary bumps the affected platform's version;
-  a common Authorization Digest change bumps every affected platform's
-  version. A verifier implementation or deployment change which preserves the
-  complete boundary does not.
+  Verifier Version pair lies outside its Supported Version Set. The Platform
+  Verifier MUST reject a Submission Payload whose `platformCeremonyVersion`
+  differs from the one it implements. A change to any part of the ceremony
+  boundary bumps the affected platform's `platformCeremonyVersion`; a common
+  Authorization Digest change bumps every affected platform's
+  `platformCeremonyVersion`. A verifier implementation or deployment change
+  which preserves the complete boundary does not bump it; which Verifier
+  Version it is registered under is the Verifier Governance Process's
+  decision.
 
 `chainId` identifies the Consumer Chain.
 
@@ -320,11 +341,13 @@ platform-specific proof statement.
   Consumer Chain's Chain Profile and supply its canonical Chain ID to the
   Canonical Runtime for each ceremony. The Canonical Runtime MUST validate and
   commit that exact 32-byte value. Selecting a Chain Profile is destination
-  selection, not proof authority: the Proof Verifier MUST independently take
-  the Chain ID of its digest recomputation from its own Consumer Chain
-  environment or immutable deployment configuration. The Proof Verifier MUST
-  NOT take the Chain ID from the Submission, Authorized Transaction Data, or
-  any other caller-controlled input. Necessity: an Application can select a
+  selection, not proof authority: the Platform Verifier MUST independently
+  take the Chain ID of its digest recomputation from its own Consumer Chain
+  environment or immutable deployment configuration. The Platform Verifier
+  MUST NOT take the Chain ID from the Submission Payload, Authorized
+  Transaction Data, or any other caller-controlled input. The Chain Profile
+  MUST expose the digest recomputation as one construction that reads the
+  Chain ID itself and accepts none as an argument. Necessity: an Application can select a
   destination chain just as it selects the operation and its transaction data,
   while independent Consumer Chain recomputation makes a proof constructed for
   any other chain unusable there. Several Consumer Chains expose no
@@ -368,10 +391,13 @@ requirement to compare one is unsatisfiable on those paths; Google carries no
 compare there. Neither method is optional, and no profile uses both.
 
 - REQ-COMMON-02 (upholds SP-BIND-01):
-  The Proof Verifier MUST recompute the Authorization Digest from the
-  caller-supplied operation domain and Platform Ceremony Version, its observed
-  Chain ID, and the `authorizationNonce` and Authorized Transaction Data
-  carried in the Submission.
+  The Platform Verifier MUST recompute the Authorization Digest from the
+  operation domain, `authorizationNonce`, and Authorized Transaction Data it
+  decoded from the Submission Payload, the Platform Ceremony Version it
+  implements, and its observed Chain ID. Necessity: only the Platform
+  Verifier can read the payload. The recomputed digest is a commitment the
+  evidence has to match under REQ-COMMON-02A or REQ-COMMON-02B, so a caller
+  who changes any input produces a digest no proof opens against.
 - REQ-COMMON-02A (upholds SP-BIND-01):
   Where a Platform Profile exposes the Authorization Digest as a public proof
   input, the Platform Verifier MUST reject a proof whose Authorization Digest
@@ -434,17 +460,19 @@ An Consumer never verifies a libID proof itself. Verification is four roles
 on the Consumer Chain, each answering to the one above it:
 
 ```text
-Consumer          names the platform and version, pays the quoted fees,
-                  records the digest, authorizes the transaction it decodes
+Consumer          names the platform and the Verifier Version, pays the
+                  quoted fees, records the digest, authorizes the
+                  transaction it decodes
    |
    v
-Proof Verifier    selects the Platform Verifier for that pair, recomputes the
-                  Authorization Digest, hands it and the Submission down,
-                  returns the result
+Proof Verifier    selects the Platform Verifier for that pair, forwards the
+                  Submission Payload and the value unread, returns the
+                  result unchanged
    |
    v
-Platform Verifier checks that platform's fields, verifies the proof under the
-                  artifact selected for that pair, then calls the Notary
+Platform Verifier decodes the payload, recomputes the Authorization Digest,
+                  checks that platform's fields, verifies the proof under
+                  the artifact selected for it, then calls the Notary
                   Service once per attestation its profile requires — zero
                   times for a profile carrying none
    |
@@ -453,16 +481,25 @@ Notary Service    authenticates one notary signature and charges one fee
                   (X and GitHub only)
 ```
 
-Only the Consumer knows what the transaction means; only the Notary Service
-knows whether the notary signed. Everything between them is dispatch and
-field checking. The Supported Version Set lives in the Proof Verifier. The
-Platform Profile defines every immutable platform constant — endpoints,
-revealed ranges, attestation format, validity rules, and parameter keys — and
-each ledger's Platform Verifier enforces that profile. Verifier governance owns
-the mutable verifier artifact, Notary Service, trust roots, fees, and parameter
-values. The verifier's code and address may differ across ledgers without
-changing the Platform Ceremony Version. The Consumer holds none of those
-constants.
+Only the Consumer knows what the transaction means; only the Platform
+Verifier knows what the payload is; only the Notary Service knows whether the
+notary signed. Everything between them is dispatch. The Supported Version Set
+lives in the Proof Verifier and is keyed by Verifier Version. The Platform
+Profile defines every immutable platform constant — endpoints, revealed
+ranges, attestation format, validity rules, and parameter keys — and each
+Consumer Chain's Platform Verifier enforces that profile and fixes the
+encoding of its own Submission Payload. Verifier governance owns the mutable
+verifier artifact, Notary Service, trust roots, fees, parameter values, and
+the Verifier Version each verifier is registered under. The Consumer holds
+none of those constants.
+
+Two versions travel this path, deliberately unrelated. The Platform Ceremony
+Version is inside the payload and the digest, fixed by the Canonical Runtime
+before the ceremony starts. The Verifier Version is beside the payload and in
+no digest, learned by the Consumer from its deployment. Binding the second
+into the digest would tie the Canonical Runtime to each Consumer Chain's
+upgrade cadence and end a proof's validity at a verifier upgrade instead of at
+the Consumer's nullifier.
 
 The last hop is conditional. A Platform Profile whose evidence is a signed
 platform token reaches no Notary Service at all: Google's Attestation Count
@@ -472,8 +509,9 @@ an identity session — so one Submission on either path pays two fees.
 
 - REQ-COMMON-05:
   The Consumer MUST call the Proof Verifier with the identity platform, the
-  Platform Ceremony Version, the Submission, and the native value the
-  quotation of REQ-COMMON-06E returns. That value covers one Notary Fee of
+  Verifier Version, the Submission Payload, and the native value the
+  quotation of REQ-COMMON-06E returns. The Consumer MUST NOT decode the
+  Submission Payload. That value covers one Notary Fee of
   §9.1 for each attestation the selected profile requires, and is zero where
   its Attestation Count is zero. Necessity: cross-component interoperability
   of one verification entry point serving every Consumer.
@@ -481,16 +519,19 @@ an identity session — so one Submission on either path pays two fees.
   The Proof Verifier MUST select the Platform Verifier its Supported Version
   Set registers for that pair. The Proof Verifier MUST NOT accept a
   caller-supplied verifier address. Necessity: a caller-selected verifier
-  verifies nothing. Each Consumer Chain selects its own implementation; that
-  implementation choice is outside the Platform Ceremony Version.
+  verifies nothing. Each Consumer Chain selects its own implementations and
+  assigns its own Verifier Versions; neither is part of the Platform Ceremony
+  Version. The Proof Verifier MUST NOT decode the Submission Payload.
 - REQ-COMMON-05B:
-  The Proof Verifier MUST support more than one Platform Ceremony Version of
-  one identity platform concurrently. Necessity: concurrent support is what
-  lets a deployment run a new version beside the one it replaces while holders
-  migrate. When a version leaves the Supported Version Set is the Verifier
-  Governance Process's decision under REQ-COMMON-05C, and this specification
-  fixes no minimum overlap: a ceremony stranded by a removal is recoverable,
-  because its holder can run the ceremony again under a supported version.
+  The Proof Verifier MUST support more than one Verifier Version of one
+  identity platform concurrently, including two that implement the same
+  Platform Ceremony Version. Necessity: concurrent support lets a deployment
+  run a new verifier beside the one it replaces, and a proof is acceptable at
+  every Verifier Version implementing its ceremony version, so an upgrade
+  strands no ceremony in flight. When a Verifier Version leaves the Supported
+  Version Set is the Verifier Governance Process's decision under
+  REQ-COMMON-05C; this specification fixes no minimum overlap, because a
+  stranded ceremony can be run again under a supported version.
 - REQ-COMMON-05C:
   The Verifier Governance Process MUST own every addition to and removal from
   the Supported Version Set. Necessity: the set decides which proof statements
@@ -504,17 +545,22 @@ an identity session — so one Submission on either path pays two fees.
   the Notary Service where its Platform Profile
   requires no attestation.
 - REQ-COMMON-05E (upholds SP-CLIENT-01):
-  The Platform Verifier MUST return its verified fields: the client
+  The Platform Verifier MUST return its verified fields: the Authorization
+  Digest it recomputed, the operation domain and Authorized Transaction Data
+  it decoded, the Platform Ceremony Version it implements, the client
   identifier, the canonical `userId`, the raw handle bytes, and
   `metadataObservedAt`. Necessity: an authenticated `userId`, handle, and
-  observation time are what the ceremony exists to produce, and the Consumer
-  has no other authenticated source for them.
+  observation time are what the ceremony exists to produce; the digest is the
+  Consumer's replay nullifier, which it cannot recompute without reading the
+  payload. The Consumer trusts these fields as it trusts the Platform Verifier
+  the Verifier Governance Process installed.
 - REQ-COMMON-45 (upholds SP-BIND-01, SP-EXCHANGE-01):
-  The Platform Verifier MUST verify the proof carried in the Submission under
-  the exact verifier artifact the Verifier Governance Process selected for
-  the submitted identity platform and Platform Ceremony Version. Different
-  Consumer Chains MAY select different artifacts, but each artifact MUST
-  enforce the same proof statement for that version. The Platform Verifier
+  The Platform Verifier MUST verify the proof carried in the Submission
+  Payload under the exact verifier artifact the Verifier Governance Process
+  selected for it. The Verifier Governance Process MAY select a different
+  artifact for each Consumer Chain and each Verifier Version. The Verifier
+  Governance Process MUST select only artifacts that enforce the proof
+  statement of the Platform Ceremony Version the verifier implements. The Platform Verifier
   MUST reject a Submission whose proof does not verify under that
   artifact. The Platform Verifier MUST NOT accept a caller-supplied artifact,
   verifying key, or externally computed verification result. Necessity:
@@ -523,44 +569,49 @@ an identity session — so one Submission on either path pays two fees.
   role is obliged to run it, and every public input the surrounding rules
   compare is then a number the caller wrote down.
 - REQ-COMMON-46 (upholds SP-BIND-01):
-  The Proof Verifier MUST pass the digest it recomputed under REQ-COMMON-02,
-  together with the complete Submission, to the Platform Verifier it
-  selected. The Platform Verifier MUST take the digest that REQ-COMMON-02A
-  and REQ-COMMON-15A compare against from that forwarded value and from
-  nothing else. Necessity: both of those rules compare something against a
-  digest recomputed one hop above them, and a Platform Verifier left to
-  rebuild it or to receive it another way would compare against a digest the
-  caller could choose.
+  The Proof Verifier MUST pass the Submission Payload and the native value to
+  the Platform Verifier it selected without decoding either. The Platform
+  Verifier MUST take the digest that REQ-COMMON-02A and REQ-COMMON-15A
+  compare against from its own recomputation under REQ-COMMON-02 and from
+  nothing else. Necessity: a digest received from the caller is a digest the
+  caller chose; one recomputed from the decoded payload is a commitment the
+  evidence has to match.
 
-The operation domain travels in the Submission and is authenticated by digest
-recomputation rather than trusted: a Submission naming a domain other than
-the one the ceremony committed produces a different digest, which fails
-whichever binding check of REQ-COMMON-02A and REQ-COMMON-02B its profile
-uses. The Proof Verifier therefore returns the domain it authenticated, and
-the Consumer decides whether that domain is its own.
+The operation domain travels inside the Submission Payload and is
+authenticated by digest recomputation rather than trusted: a payload naming a
+domain other than the one the ceremony committed produces a different digest,
+which fails whichever binding check of REQ-COMMON-02A and REQ-COMMON-02B its
+profile uses. The Platform Verifier therefore returns the domain it
+authenticated, the Proof Verifier forwards it, and the Consumer decides
+whether that domain is its own.
 
 - REQ-COMMON-06 (upholds SP-BIND-01):
-  The Proof Verifier MUST return the authenticated operation domain, the
-  Authorized Transaction Data, and every field REQ-COMMON-05E lists to the
-  Consumer on acceptance. The Proof Verifier MUST return nothing but the
-  rejection on rejection.
+  The Proof Verifier MUST return the Platform Verifier's result to the
+  Consumer unchanged on acceptance: every field REQ-COMMON-05E lists. The
+  Proof Verifier MUST return nothing but the rejection on rejection.
 - REQ-COMMON-06A (upholds SP-BIND-01):
   The Consumer MUST reject a returned operation domain it does not own. The
   Consumer MUST select its transaction handler by that domain before decoding
   the Authorized Transaction Data under REQ-COMMON-01F.
 - REQ-COMMON-06B:
   The Proof Verifier MUST NOT decode, interpret, or apply the Authorized
-  Transaction Data. Necessity: transaction semantics belong to the Consumer
-  that fixed the operation domain.
+  Transaction Data, nor any other part of the Submission Payload. Necessity:
+  transaction semantics belong to the Consumer; the payload's shape belongs to
+  the Platform Verifier.
 - REQ-COMMON-06C (upholds SP-BIND-01):
-  The Proof Verifier MUST take the Chain ID of the digest recomputation of
-  REQ-COMMON-02 from the Chain ID it observes under ASM-CHAIN-02. The Proof Verifier MUST NOT read a Chain ID from the Submission. The Proof Verifier
-  MUST dispatch on the Platform Ceremony Version the Submission names.
-  Necessity: the Consumer Chain the evidence was authorized for and the proof
-  statement that verifies it are both bound in the digest, and recomputing
-  that digest is the whole check on either; the Submission carries no Chain ID for anything to compare against, and the dispatched version cannot
-  disagree with the submitted one because dispatch reads it from the
-  Submission in the first place.
+  The Platform Verifier MUST take the Chain ID of the digest recomputation of
+  REQ-COMMON-02 from the Chain ID it observes under ASM-CHAIN-02. Neither the
+  Proof Verifier nor the Platform Verifier MAY read a Chain ID from the
+  Submission or its payload. The Proof Verifier MUST dispatch on the Verifier
+  Version the Submission names. The Platform Verifier MUST reject a payload
+  whose Platform Ceremony Version is not the one it implements, before any
+  Notary Fee is delivered. Necessity: the Consumer Chain the evidence was
+  authorized for and the proof statement that verifies it are both bound in
+  the digest, and recomputing that digest is the whole check on either. The
+  Verifier Version is not in the digest and is checked against nothing: it
+  only selects which registered Platform Verifier answers. Refusing the wrong
+  ceremony version by name, first, keeps that refusal from surfacing as a
+  digest mismatch after the fees were paid.
 
 The Notary Fees of §9.1 are charged at the bottom of this path, so native
 value passes down it and stops where the work is done. A path with no
@@ -578,9 +629,12 @@ attestation to verify carries no value at all.
   and no value can be captured in transit.
 - REQ-COMMON-06E:
   The Proof Verifier MUST expose a fee quotation for an identity platform and
-  Platform Ceremony Version covering the whole verification path, quoting one
-  Notary Fee for each attestation that pair's Platform Profile requires and
-  zero where it requires none. Necessity: a Consumer cannot attach a correct
+  Verifier Version covering the whole verification path, quoting one Notary
+  Fee for each attestation the registered Platform Verifier's profile
+  requires and zero where it requires none. The Proof Verifier MUST NOT
+  derive the quotation from the Submission Payload. Necessity: a price read
+  from the payload would let a caller deliver less than the path forwards,
+  and there is no refund path. Necessity: a Consumer cannot attach a correct
   fee if quoting requires knowing the path's internal topology, and a profile
   verifying two attestations costs two fees while one verifying none costs
   nothing.
@@ -812,7 +866,7 @@ exposes a minimal set of public inputs, which never includes a credential.
   The Platform Profile whose Attestation Count is nonzero MUST fix the
   attestation protocol, format, and required security properties. The Verifier
   Governance Process MUST select an exact compatible Notary Service before it
-  supports that platform and version pair on a Consumer Chain. The
+  registers a Platform Verifier for that platform on a Consumer Chain. The
   Implementation MUST use that format's native commitment for every hidden
   range of such a profile. The Proving Circuit MUST open each hidden range
   whose value that profile checks. A profile whose Attestation Count is zero
@@ -1232,14 +1286,20 @@ the constructions that role implements.
   origin the deployment controls. Verification: audit of the platform client
   configuration.
 - TEST-COMMON-16 (exercises REQ-COMMON-05, REQ-COMMON-05A, REQ-COMMON-05B, REQ-COMMON-05C, REQ-COMMON-05D, REQ-COMMON-05E, REQ-COMMON-06, REQ-COMMON-06A, REQ-COMMON-06B, REQ-COMMON-06C, REQ-COMMON-06D, REQ-COMMON-06E):
-  A platform and version pair outside the Supported Version Set is rejected;
-  a caller-supplied verifier address has no effect; two supported versions of
-  one platform both verify; a Submission naming an operation domain other
+  A platform and Verifier Version pair outside the Supported Version Set is
+  rejected; a caller-supplied verifier address has no effect; two supported
+  Verifier Versions of one platform both verify, and two implementing the same
+  Platform Ceremony Version accept the same Submission Payload and produce the
+  same digest, which the Consumer spends once; a payload naming a Platform
+  Ceremony Version other than the one the selected verifier implements is
+  rejected before any fee moves; a payload naming an operation domain other
   than the one the ceremony committed fails digest recomputation; a Consumer
   receiving a domain it does not own rejects the result; the recomputation
-  takes its Chain ID from the Proof Verifier's observed environment, so the
+  takes its Chain ID from the Platform Verifier's observed environment, so the
   same Submission presented on another chain fails it and no caller-supplied
-  Chain ID reaches it; a rejected verification returns no transaction data;
+  Chain ID reaches it; the Proof Verifier forwards the payload byte for byte
+  and returns the result unchanged; a rejected verification returns no
+  transaction data;
   an accepted verification returns the client identifier; the quotation covers the whole path and quotes one
   Notary Fee for each attestation the selected profile requires; a profile
   whose Attestation Count is zero quotes zero, reaches no Notary Service, and
@@ -1288,17 +1348,18 @@ the constructions that role implements.
   exactly two fees; and a Submission whose second attestation verification
   rejects leaves no fee delivered for the first.
 - TEST-COMMON-22 (exercises REQ-COMMON-45):
-  An Submission whose proof does not verify under the artifact selected for
-  its identity platform and Platform Ceremony Version is rejected; a proof
-  verifying only under another platform's or another version's artifact is
-  rejected; and a caller-supplied artifact, verifying key, or precomputed
+  A Submission whose proof does not verify under the artifact selected for
+  the Platform Verifier registered under its identity platform and Verifier
+  Version is rejected; a proof verifying only under another platform's or
+  another ceremony version's artifact is rejected; and a caller-supplied artifact, verifying key, or precomputed
   verification result changes no decision.
-- TEST-COMMON-23 (exercises REQ-COMMON-46):
-  The Platform Verifier receives the digest the Proof Verifier recomputed
-  together with the complete Submission, and the comparisons of
-  REQ-COMMON-02A and REQ-COMMON-15A run against that forwarded digest; a
-  Platform Verifier taking the digest from any other source rejects the
-  Submission.
+- TEST-COMMON-23 (exercises REQ-COMMON-02, REQ-COMMON-46):
+  The Platform Verifier recomputes the digest from the operation domain,
+  nonce and transaction data it decoded, the ceremony version it implements,
+  and its observed Chain ID, and the comparisons of REQ-COMMON-02A and
+  REQ-COMMON-15A run against that value; changing any decoded digest input
+  in the payload fails the binding check; a digest supplied in or beside the
+  payload changes no decision; the Proof Verifier decodes nothing.
 
 ## 12. Security Considerations
 
@@ -1309,7 +1370,9 @@ Replay within one Consumer deployment is prevented by `authorizationNonce`
 and REQ-COMMON-03. Replay across Consumer Chains whose Chain Profiles use
 distinct canonical identifier bytes is prevented by the Chain ID in the
 digest; a profile collision forfeits that separation. Replay across Platform Ceremony Versions is prevented by
-`platformCeremonyVersion`. The digest does not prevent cross-deployment replay
+`platformCeremonyVersion`. The digest does not bind the Verifier Version, so
+a proof is acceptable at every Verifier Version implementing its ceremony
+version; REQ-COMMON-03 prevents replay among them. The digest does not prevent cross-deployment replay
 because it binds no Consumer identifier. Every Consumer transaction
 kind therefore defines an authorization predicate over the authenticated
 Transaction Author and the proof-bound Authorized Transaction Data. A copied
