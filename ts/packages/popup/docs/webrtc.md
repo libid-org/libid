@@ -1,7 +1,7 @@
 # WebRTC carrier
 
 This document defines the WebRTC fallback carrier for the
-[popup connection](CONNECTION.md) when response policy severs popup opener
+[popup connection](connection.md) when response policy severs popup opener
 authentication. It owns peer establishment and logical-value delivery over one
 `RTCDataChannel`.
 
@@ -13,7 +13,7 @@ and the security properties that contract must preserve.
 
 ## Why this carrier exists
 
-The browser-local [MessagePort carrier](CONNECTION-MESSAGEPORT.md) is simpler,
+The browser-local [MessagePort carrier](message-port.md) is simpler,
 but cannot establish after response isolation severs the popup's opener.
 This follows the [HTML COOP model](https://html.spec.whatwg.org/multipage/browsers.html#cross-origin-opener-policies)
 and its unresolved [cross-group opener-messaging limitation](https://github.com/whatwg/html/issues/6364).

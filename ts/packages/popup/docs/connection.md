@@ -317,7 +317,7 @@ records stable code `fallback-unavailable` and closes.
 `onDiagnostic` receives sanitized local events from construction onward. It is
 advisory, may throw without affecting connection behavior, and initiates no
 package-owned network or durable-storage work. Its data rules and measurement
-catalog are defined by [metrics and diagnostics](METRICS.md).
+catalog are defined by [metrics and diagnostics](../METRICS.md).
 
 Higher-level popup logic supplies its composition-owned message union to
 `PopupConnection<M>` and registers the union's classes and handlers.
@@ -355,7 +355,7 @@ set therefore enforces participant direction without hardcoding protocol types
 in the connection; the handler still enforces state and order.
 
 `navigate` and `close` are application-endpoint controls defined by
-[popup control](CONTROL.md). They use the exact retained `WindowProxy` while it
+[popup control](control.md). They use the exact retained `WindowProxy` while it
 is available; after isolation severs direct control, they send their control
 messages over the selected connection. `close` is idempotent and closes both
 the logical connection and its popup. Internal failure cleanup releases
@@ -402,8 +402,8 @@ Connection selects and owns the resulting authenticated carrier for the current
 popup document. A carrier does not interpret transported values, choose another
 carrier, or navigate a document.
 
-The browser-local [MessagePort carrier](CONNECTION-MESSAGEPORT.md) is built in.
-An explicitly supplied [WebRTC carrier](CONNECTION-WEBRTC.md) constructor
+The browser-local [MessagePort carrier](message-port.md) is built in.
+An explicitly supplied [WebRTC carrier](webrtc.md) constructor
 provides the opener-independent fallback.
 
 MessagePort is preferred while the popup retains its opener. WebRTC defines the
@@ -493,9 +493,9 @@ instead prepares its replacement before navigation and installs it after the
 destination authenticates. The caller observes neither mechanism and cannot
 recover from continuity loss.
 
-The [MessagePort carrier](CONNECTION-MESSAGEPORT.md)
+The [MessagePort carrier](message-port.md)
 owns transferable-port preservation, its Service Worker bridge, timing, and
-failure rules. The [WebRTC carrier](CONNECTION-WEBRTC.md#private-navigation-preparation)
+failure rules. The [WebRTC carrier](webrtc.md#private-navigation-preparation)
 owns fresh-round preparation for its nontransferable data channel.
 
 ## Document-Isolation-Policy evolution
