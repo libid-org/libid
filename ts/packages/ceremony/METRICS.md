@@ -9,6 +9,10 @@ The public [`CeremonyEvent`](ARCHITECTURE.md#progress) stream remains the small,
 stable product-progress surface. Diagnostics are a separate, opt-in stream
 with finer spans, facts, counters, and terminal outcomes. A diagnostic record
 is never evidence that a ceremony succeeded and never drives ceremony state.
+Popup lifecycle, connection, carrier, continuity, control, and locally
+undeliverable connection failures are defined by the
+[popup metrics contract](../popup/METRICS.md); ceremony may consume those
+sanitized records but does not redefine them.
 
 ## Collection boundary
 
@@ -22,7 +26,7 @@ Each browser context measures its own work with the native Performance API:
   cannot describe.
 
 The callback and prover send only bounded, sanitized diagnostic records over
-the ceremony's already-authenticated transport. The Ceremony Client combines
+the ceremony's already-authenticated popup connection. The Ceremony Client combines
 them with its own records and exposes one optional application observer. No
 diagnostic record changes CCDP ordering or requires an acknowledgement.
 
@@ -33,12 +37,11 @@ retry the ceremony.
 
 ### Undeliverable failures
 
-Every caught technical failure which cannot be delivered through CCDP because
-transport is unavailable emits one local `console.error` containing only a
-package-owned subsystem and stable error code. When a local diagnostics or
-metrics sink is available in that browser context, it also records the same
-sanitized failure best effort. This includes transport-construction failure,
-transport loss, and context teardown before a terminal message can cross.
+Popup-connection failures follow the popup metrics contract. Every other caught
+ceremony failure which cannot be delivered through CCDP emits one local
+`console.error` containing only a ceremony-owned subsystem and stable error
+code. When a local diagnostics or metrics sink is available in that browser
+context, it also records the same sanitized failure best effort.
 
 Package-side local reporting initiates no network request, durable record,
 retry, recovery, or ceremony outcome. It never logs the raw exception object or
@@ -141,32 +144,11 @@ performance qualification compares the post-provider and proof-request spans.
 | callback bootstrap | document start through bounded copy and immediate URL clearing |
 | OAuth parse | cleared copy through the selected platform return decoder |
 | package load | callback entrypoint import and initialization |
-| source authentication | opener/source/origin/version binding, with no origin value exported |
-| carrier selection | attempted and selected carrier class plus stable rejection code |
 | proof handoff | authenticated OAuth delivery through prover navigation |
 
 OAuth query/fragment lengths may be reported only as coarse, code-defined
 size buckets. Values, field names supplied by a provider, and URLs are never
 reported.
-
-### Continuity and carrier
-
-Common carrier measurements are:
-
-- establishment start to usable typed transport;
-- selected carrier class;
-- queued record count and bounded encoded-byte total;
-- transport send-to-receive latency where both timestamps are available;
-- `PortKeeper` keep acknowledgement, callback-to-prover navigation gap, claim
-  duration, and one-use claim result;
-- close reason and close latency; and
-- timeout code, elapsed time, and last completed carrier phase.
-
-MessagePort diagnostics never include transferred values. WebRTC diagnostics,
-when that carrier is implemented, additionally measure signaling-path class,
-offer publication, answer pickup, candidate discovery by class only, selected
-pair class, ICE checks, DTLS, and data-channel open. Candidate addresses, SDP,
-cookies, and signaling payloads are forbidden.
 
 ### Prefetch, cache, and assets
 
@@ -220,9 +202,9 @@ children.
 
 ### Proof delivery and cleanup
 
-Measure proof generation to transport send, transport send to client receipt,
+Measure proof generation to connection send, connection send to client receipt,
 proof-shape validation, preview construction, application observer delivery,
-and transport/context cleanup separately. Record duplicate or late delivery,
+and connection/context cleanup separately. Record duplicate or late delivery,
 discarded result, ignored progress, and close failure as stable counters or
 codes.
 
@@ -294,8 +276,8 @@ Qualification compares at least:
 The first implementation should expose only:
 
 1. end-to-end, provider, post-provider, and proof-request spans;
-2. callback authentication, carrier establishment, `PortKeeper`, delivery,
-   and cleanup spans;
+2. callback bootstrap, OAuth parsing, proof handoff, delivery, and ceremony
+   cleanup spans, plus the popup package's sanitized connection diagnostics;
 3. cache/prefetch aggregates and benefit/residual-wait facts;
 4. the existing platform/prover span catalogs;
 5. isolation, shared-memory, thread-count, release, and worker-failure facts;

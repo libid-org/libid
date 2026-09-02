@@ -8,10 +8,8 @@ to verify.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md), its reusable popup transport in
-[TRANSPORT.md](TRANSPORT.md), and the transport's
-[MessagePort](TRANSPORT-MESSAGEPORT.md) and
-[WebRTC](TRANSPORT-WEBRTC.md) carriers separately. The callback participant
+in [CCDP.md](CCDP.md); popup lifecycle and communication are supplied by
+[`@libid/popup`](../popup/README.md). The callback participant
 is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
@@ -33,8 +31,8 @@ Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 The specification's **Ceremony Client** role maps to this package's closed
 client, callback, prover, and platform implementation as a whole. Its
 **Ceremony Popup** is the auxiliary browser window; the package documents
-running inside it are the callback and prover. There is no popup module or
-participant.
+running inside it are the callback and prover. `@libid/popup` owns the window
+and connection but is not a ceremony-protocol participant.
 
 ## System boundary
 
@@ -50,10 +48,11 @@ sequenceDiagram
     participant O as OAuth provider
     participant R as Prover document
 
-    A->>C: Create Ceremony from Job operation
     U->>A: Activate identity action
-    A->>P: Open ceremony navigation
+    A->>A: Create popup window and connection
+    A->>C: Create Ceremony from Job operation + connection
     A->>C: Call proveUserIdentity
+    C->>P: Navigate connection to callback
     P->>R: Start selected-profile prefetch
     P-->>C: Report prefetch readiness
     C->>P: Continue with frozen provider URL
@@ -62,18 +61,18 @@ sequenceDiagram
     O-->>P: Return to callback alias
     alt Retained opener authenticates
         P-->>C: Select MessagePort carrier and deliver OAuth return
-        P->>R: Hand off transport endpoint and navigate same popup
+        P->>R: Continue popup connection and navigate same popup
     else Opener path unavailable
         P->>R: Hand off OAuth return and navigate same popup
         R-->>C: Select WebRTC carrier and deliver OAuth return
     end
     alt User denied
-        C-->>R: Cancel through transport
+        C-->>R: Cancel through connection
         C-->>A: IdentityResult denied
     else User approved
         C->>C: Validate platform return
-        C->>R: Request proof through transport
-        R-->>C: Progress and generated proof through transport
+        C->>R: Request proof through connection
+        R-->>C: Progress and generated proof through connection
         C->>C: Validate evidence and assemble OAuthProof
         C-->>A: IdentityResult accepted with Identity
         A->>A: Commit Job successor before downstream use
@@ -93,14 +92,15 @@ may run key preparation before the ceremony and wallet confirmation afterward;
 those sessions do not extend the browser message protocol.
 
 The application origin owns the durable operation record, called the Job. One
-application-scoped `CeremonyClient` owns its live ceremonies, retained popups,
-and the in-memory ceremony-ID routing table. The client, callback, and prover
+application-scoped `CeremonyClient` owns its live ceremonies and in-memory
+ceremony-ID routing table. The composition supplies each ceremony's popup
+connection. The client, callback, and prover
 keep credentials, witnesses, and the generated proof only in memory. The
 application origin is an authority boundary: it supplies the operation domain
 and transaction data, so compromising it already permits authorizing a
 different operation. The ceremony does not attempt to hide its transient OAuth
 result from other scripts executing in that origin. If the application does
-not assemble and commit the delivered result before the live transport is lost,
+not assemble and commit the delivered result before the live connection is lost,
 the ceremony restarts with fresh OAuth. Downstream application work may remain
 resumable independently.
 
@@ -111,7 +111,7 @@ can isolate the prover document itself without applying COOP/COEP to its whole
 frame chain. With interoperable browser support, libID could keep the prover in
 an isolated cross-origin iframe while the non-isolated ceremony popup retains
 its ordinary opener communication. That would remove the top-level
-callback-to-prover replacement and its transport-continuity machinery. It
+callback-to-prover replacement and its popup-connection continuity machinery. It
 would not protect against an OAuth provider response that itself severs the
 opener with COOP; the fallback carrier remains necessary for that independent
 case.
@@ -133,8 +133,8 @@ portable baseline.
 ## Ceremony Cross-Document Protocol
 
 [CCDP.md](CCDP.md) defines the package-owned protocol between the application,
-callback, and isolated prover; [TRANSPORT.md](TRANSPORT.md) defines the shared
-popup transport; and [CALLBACK.md](CALLBACK.md) defines the callback's local
+callback, and isolated prover; [`@libid/popup`](../popup/README.md) carries it;
+and [CALLBACK.md](CALLBACK.md) defines the callback's local
 state and UI. This document owns only the package and public client contracts
 around them.
 
@@ -144,10 +144,6 @@ Launch publishes one `@libid/ceremony` package:
 
 ```text
 @libid/ceremony
-├── transport
-│   ├── index         typed delivery, carrier selection, and navigation
-│   ├── message-port  window authentication and MessagePort delivery
-│   └── webrtc        signaling, ICE, serialization, and RTCDataChannel delivery
 ├── ccdp
 │   └── index         ceremony records, directional codecs, and protocol version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
@@ -165,10 +161,9 @@ Launch publishes one `@libid/ceremony` package:
 
 `ccdp/index` is the pure protocol leaf imported by client, callback, and prover.
 It performs no platform dispatch, browser work, storage, network, authorization
-construction, or cryptographic proof verification. `transport/index` is one
-concrete package-private, message-generic transport; its carriers contain only
-their browser delivery mechanics and never enter the public API. Transport has
-no dependency on CCDP and can carry another closed caller protocol unchanged.
+construction, or cryptographic proof verification. Those entrypoints use the
+caller-supplied `@libid/popup` connection without owning its carriers or
+continuity machinery.
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
@@ -182,11 +177,10 @@ never enter the client catalog.
 Individual platform leaves never import the aggregator. `callback` and `prover`
 are build entrypoints, not separately versioned packages. They emit the
 immutable roots whose filenames and shell selection are defined by CCDP, plus
-worker/WASM assets from one compatible package release. The prover artifact runs in both Window and Service Worker
-contexts: its Window branch runs iframe prefetch or the one active top-level
-prover, while its Service Worker branch owns shared asset single flights,
-cache, and the worker handlers used by the transport's short-lived
-`PortKeeper`.
+worker/WASM assets from one compatible package release. The prover artifact
+runs in both Window and Service Worker contexts: its Window branch runs iframe
+prefetch or the one active top-level prover, while its Service Worker branch
+owns only shared asset single flights and cache.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
@@ -213,9 +207,8 @@ prover ───> platforms/<platform>/<version>/prover ───> types
 platforms/{x,github}/<version>/prover ───> prover/notarization
 
 client, callback, prover, platforms/index ───> ccdp
-client, callback, prover ───> transport
-transport ───> transport/{message-port,webrtc}
-wallet-client ─────────> client + ceremony + wallet/protocol + transport
+client, callback, prover ───> @libid/popup
+wallet-client ─────────> client + ceremony + wallet/protocol + @libid/popup
 ```
 
 `ceremony` never imports the client job store or either wallet composition.
@@ -228,11 +221,10 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/transport` | internal message-generic `PopupTransport`, `Decoder`, and `TransportVersion`; no application export or caller-protocol dependency |
 | `@libid/ceremony/ccdp` | internal CCDP `Message` union and decoders, `CCDPVersion`, and direction/order rules; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) implementing the CCDP-selected callback root |
-| `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
+| `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch owns only package-private asset prefetch and cache |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.
@@ -304,21 +296,14 @@ interface CeremonyClient {
   new: <P extends PlatformId>(
     ceremonyId: string,
     input: {
+      connection: PopupConnection<Message>
       chainId: Uint8Array
       platformId: P
       operationDomain: Uint8Array
       transactionData: Uint8Array
     },
-  ) => Promise<Ceremony<P>>
+  ) => Ceremony<P>
 }
-
-const jobId = crypto.randomUUID()
-const ceremony = await ceremonies.new(jobId, {
-  chainId,
-  platformId,
-  operationDomain,
-  transactionData,
-})
 ```
 
 `validateProofMessage` dispatches to the selected version's exact `types`
@@ -348,26 +333,26 @@ opaque. It requires the selected platform to be enabled by validated
 `CeremonyConfig`, chooses the numerically greatest ceremony version supported
 both locally and by that platform, generates a fresh 32-byte authorization nonce,
 computes the authorization digest and code verifier, and freezes all of those
-values before constructing OAuth or allowing provider navigation.
+values before constructing OAuth or allowing provider navigation. Client
+initialization has already fetched and validated `CeremonyConfig`, so `new`
+does only local synchronous work.
 
 `CeremonyClient.new(ceremonyId, input)` accepts a plain string which must be a
 lowercase UUIDv4. A composition normally generates one value and calls it
 `jobId` in its Job API and `ceremonyId` in this API. The equality is a
 composition invariant, not a shared branded type. The identifier is not chain
 authorization, but its unpredictability and one-use handling provide browser
-continuity. Both transport endpoints receive it as construction input and
-exact-match it as their private `connectionId`; no CCDP message carries it. The
-`MessagePortHandshake` response returns that connection ID on the MessagePort
-path, while the RTC path uses it to select the live application's signaling
-subscription. It is not a second authorization secret.
+continuity. The composition uses the same value as the supplied popup
+connection's private `connectionId`; no CCDP message carries it. It is not a
+second authorization secret.
 
 `new` chooses the platform ceremony version, generates the fresh authorization
 nonce, derives the code verifier from it and the Authorization Digest by the
 normative Proof Key for Code Exchange (PKCE) construction where required, and
 constructs the authorization request with the [CCDP-defined OAuth
 state](CCDP.md#protocol-locations), registers that ID to this live `Ceremony`,
-and returns only after its navigation data is ready. OAuth `state` carries the
-CCDP routing version plus `ceremonyId`; it is not a second identifier:
+and returns with its navigation data ready. OAuth `state` carries the CCDP
+routing version plus `ceremonyId`; it is not a second identifier:
 
 ```ts
 interface CeremonyNavigation {
@@ -379,45 +364,53 @@ interface Ceremony<P extends PlatformId = PlatformId> {
   readonly navigation: CeremonyNavigation
 
   onEvent(listener: (event: CeremonyEvent) => void): () => void
-  proveUserIdentity(options?: { expectedPopup: WindowProxy }): Promise<IdentityResult<P>>
+  proveUserIdentity(): Promise<IdentityResult<P>>
   cancel(): Promise<void>
 }
 ```
 
-The caller owns launch UI and invokes `window.open`; the ceremony package never
-renders an anchor or chooses between launch paths. `navigation.target` is a
-unique, non-reserved browsing-context name. The caller renders an
-action-specific real anchor from `navigation.href` and `navigation.target`,
-attempts `window.open('about:blank', navigation.target)` synchronously, and
-prevents native navigation only if it receives a usable handle. It passes that
-handle once as `expectedPopup`. If no handle is returned, it omits
-`expectedPopup` and leaves the same activation's real-anchor navigation
-untouched.
+The caller owns launch UI and constructs the popup connection. The ceremony
+package never opens a window, renders an anchor, or selects a carrier.
+`navigation.target` is the exact non-reserved `libid-${ceremonyId}` browsing-
+context name. In the activation handler, the caller synchronously creates a
+`PopupWindow` and `PopupConnection`, passes the connection to `new`, and updates
+the action-specific real anchor from the returned navigation. It prevents
+native navigation only when scripted popup creation succeeded; otherwise the
+same activation's anchor proceeds while the armed connection binds it.
 
 The scripted path is primary and PoC-qualified; the qualified mobile browsers
 did not reject it. The real anchor is a hedge against an unqualified browser or
 embedding policy returning `null`, not a claim that a launch target is known to
 require it.
 
-`expectedPopup` is a transport-authority input, not UI configuration. When
-present, `proveUserIdentity()` immediately navigates that `WindowProxy` to
-`navigation.href` and exact-matches the first callback message against it. When
-absent, the package opens or navigates nothing; the real anchor reaches the
-same URL and transport binds its browser-stamped `MessageEvent.source` only
-after exact-matching the private connection ID and transport version and the
-client accepts `ProverPrefetchingAssets`. Both paths then retain the same source
-through OAuth. There is no nullable popup value or mutable `setPopup` API.
+`proveUserIdentity()` navigates the retained connection to `navigation.href`
+when direct popup control exists. With native-anchor fallback, connection
+binding and navigation are owned by `@libid/popup`; ceremony observes only its
+typed messages. There is no popup argument to proving and no mutable connection
+setter.
 
 ```ts
 function activate(event: MouseEvent) {
-  const expectedPopup = window.open(
-    'about:blank',
-    ceremony.navigation.target,
-  )
-  if (expectedPopup) event.preventDefault()
-  void ceremony.proveUserIdentity(
-    expectedPopup ? { expectedPopup } : undefined,
-  )
+  const anchor = event.currentTarget as HTMLAnchorElement
+  const ceremonyId = crypto.randomUUID()
+  const target = `libid-${ceremonyId}`
+  const popupWindow = PopupWindow.open(target)
+  const connection = PopupConnection.connect<Message>(popupWindow, {
+    connectionId: ceremonyId,
+    popupOrigin,
+  })
+  const ceremony = ceremonies.new(ceremonyId, {
+    connection,
+    chainId,
+    platformId,
+    operationDomain,
+    transactionData,
+  })
+
+  anchor.href = ceremony.navigation.href
+  anchor.target = ceremony.navigation.target
+  if (popupWindow.opened) event.preventDefault()
+  void ceremony.proveUserIdentity()
 }
 ```
 
@@ -443,7 +436,7 @@ exists. The final composition-owned Job CAS is the authority boundary: if
 cancellation, expiry, or another transition retired the Job, a late Identity
 cannot commit.
 
-`cancel()` is best-effort ceremony-work and transport cleanup and is called
+`cancel()` is best-effort ceremony-work and connection cleanup and is called
 only after the composition retires its Job. It does not close or navigate the
 popup. Losing the application document loses the in-memory ceremony map and
 therefore requires fresh OAuth, as already required by the
@@ -522,7 +515,8 @@ Callers do not supply a generic explicitly. A static platform literal flows
 through `new` and `proveUserIdentity()`:
 
 ```ts
-const ceremony = await ceremonies.new(jobId, {
+const ceremony = ceremonies.new(jobId, {
+  connection,
   chainId,
   platformId: 'google',
   operationDomain,
@@ -598,7 +592,7 @@ Identity fields.
 
 The live `Ceremony` privately retains its ID, copied operation inputs, selected
 platform and ceremony version, authorization nonce and digest, OAuth client and
-redirect, derived code verifier, and popup `WindowProxy`. A restart creates a fresh Ceremony
+redirect, derived code verifier, and supplied popup connection. A restart creates a fresh Ceremony
 with a fresh nonce, digest, and verifier. After proof acceptance, the Job may
 store the accepted `IdentityResult` and its public `OAuthProof` fields. Before
 acceptance, no Job or IndexedDB index stores the authorization nonce or digest,
@@ -670,7 +664,7 @@ errors.
 `CeremonyEvent` is advisory. The application may project it into broader Job
 progress, but confirmation, submission, and finality remain outside this
 package. [CCDP](CCDP.md#progress-and-proof-delivery) defines authenticated
-transport and delivery ordering.
+connection delivery ordering.
 
 ## Versioning and compatibility
 
@@ -702,8 +696,9 @@ validators during its compatibility window.
 [`CCDPVersion`](CCDP.md#version) independently versions callback/prover roots,
 navigation, fragments, and browser messages. Fragments and OAuth `state` select
 it before module loading; messages do not repeat it. The ceremony server API
-namespace remains independent. [`TransportVersion`](TRANSPORT.md#versioning)
-independently versions private transport controls. Local Job schema versioning
+namespace remains independent. The popup package's
+[`ConnectionVersion`](../popup/CONNECTION.md) independently versions private
+connection controls. Local Job schema versioning
 remains owned by the client store, while immutable asset revisioning remains a
 release concern. A Job which has already committed Identity has left the
 ceremony and remains usable under its composition's own compatibility rules.
