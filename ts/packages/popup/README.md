@@ -159,5 +159,7 @@ interface Carrier {
 
 Omitting it starts no fallback work. If opener-based connection fails, the
 connection terminates with the stable `fallback-unavailable` diagnostic. The
-WebRTC constructor closes over its own signaling and ICE configuration; callers
-do not manage carrier selection, replacement, or lifetime.
+WebRTC application constructor closes over its own signaling and ICE
+configuration. Its popup-side factory eagerly consumes package-owned navigation
+metadata and returns the later constructor without starting RTC. Callers do not
+manage carrier selection, replacement, or lifetime.
