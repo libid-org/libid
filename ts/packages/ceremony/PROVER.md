@@ -21,19 +21,19 @@ Normative proof relations and authorization semantics remain in the
 
 ## Component boundary
 
-One dual-context `libid-ceremony-prover.js` artifact serves one prover document
-and its Service Worker. The document has two modes and exactly one active
-post-callback location:
+One dual-context `libid-ccdp-v<version>-prover.js` root serves the
+prover shell and its Service Worker for the selected CCDP version. The document
+has two modes and exactly one active post-callback location:
 
 ```text
 Before OAuth
-└── /api/v1/ceremony/prover#prefetch?platformId=...&ceremonyVersion=...
+└── /ccdp/prover#prefetch?ccdpVersion=1&platformId=...&ceremonyVersion=...
     ephemeral iframe starts selected-profile fetches
              │
              └── parent navigates to OAuth; this iframe is destroyed
 
 After OAuth
-└── /api/v1/ceremony/prover#prove?ceremonyId=...
+└── /ccdp/prover#prove?ccdpVersion=1&ceremonyId=...
     same popup navigates here as a top-level document
       ├── claims the preserved carrier port
       ├── resumes MessagePort or opens WebRTC from its queued return
@@ -352,7 +352,7 @@ fetches only its selected platform/version profile.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
 Their JavaScript is part of the prover build; whether the build emits one
-`libid-ceremony-prover.js` file or immutable companion chunks is not deployment
+`libid-ccdp-v<version>-prover.js` file or immutable companion chunks is not deployment
 configuration. The build likewise owns every toolchain worker, WASM, and common
 reference string (CRS) location. A deployer cannot replace those dependencies
 through `ProverAssets`.
@@ -432,7 +432,7 @@ semantics.
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
 behavior, not configuration or action input. The initial callback loads the fixed
 prover document, whose Window branch registers its own deployed
-`libid-ceremony-prover.js` module URL as a module service worker and asks it to
+selected `libid-ccdp-v<version>-prover.js` module URL as a module service worker and asks it to
 start only the selected platform/version profile's artifact single flights.
 There is no separate prefetch route, artifact, or mode flag.
 

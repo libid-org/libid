@@ -31,9 +31,11 @@ permitted inbound messages, and enforce state and order.
 type CCDPVersion = 1
 ```
 
-`CCDPVersion` covers internal locations, navigation order, `Message`, its
-direction, validation, and transport-binding semantics. The transport's private
-controls are independently exact-bound by `TransportVersion`.
+`CCDPVersion` is encoded in the launch/prover fragments and OAuth `state`.
+Version `1` selects matching callback and prover root modules, fragment
+grammars, navigation order, and `Message` semantics. A message does not repeat
+the version selected before its module loads. The ceremony server API and
+transport controls are independently versioned.
 
 ## Protocol locations
 
@@ -44,11 +46,11 @@ version before launch. CCDP uses the following browser locations:
 | Location | Browser context | Exact form |
 |---|---|---|
 | Popup reservation | popup | `about:blank` |
-| Initial callback | popup | `${serverOrigin}/api/v1/ceremony/callback#launch?ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
-| Selected-profile prefetch | callback child iframe | `${serverOrigin}/api/v1/ceremony/prover#prefetch?platformId=<id>&ceremonyVersion=<uint>` |
+| Initial callback | popup | `${serverOrigin}/ccdp/callback#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
+| Selected-profile prefetch | callback child iframe | `${serverOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
 | Platform authorization | popup | the frozen `providerAuthorizationUrl` defined by the selected platform ceremony version |
 | Provider return | popup | the frozen `redirectUri` followed by the provider-defined query or fragment return |
-| Proof generation | popup | `${serverOrigin}/api/v1/ceremony/prover#prove?ceremonyId=<uuid>` |
+| Proof generation | popup | `${serverOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
 
 Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
 shown above. Producers emit each named field exactly once in the displayed
@@ -58,21 +60,23 @@ platform IDs and version bounds are defined by the package catalog.
 
 The launch and prover routes have no query. Their fragments never reach the
 server and are copied and cleared before rendering, module import, storage, or
-network use. The receiving participant exact-validates the cleared copy before
-any protocol action. No OAuth return, credential, proof input, or proof is
-placed in an internal fragment. The provider-mandated query on `redirectUri`
-is the only protocol exception.
+network use. Their clearing bootstraps use `ccdpVersion` to select one exact
+root module from a deployment-fixed supported map. No OAuth return, credential,
+proof input, or proof is placed in an internal fragment. The provider-mandated
+query on `redirectUri` is the only protocol exception.
 
 The prefetch location carries only the selected public profile. It needs no
 ceremony ID: the callback binds its one child by browser source, and the child
 does not join the application transport.
 
 The selected platform ceremony version owns the exact provider authorization
-and return grammar. Where the platform uses them, the authorization request
-contains the live ceremony ID as OAuth `state` and the frozen `redirectUri` as
-`redirect_uri`. CCDP owns the surrounding popup navigation but does not
-duplicate platform fields. `redirectUri` is the exact absolute configured
-callback alias for that platform; its default path is `/auth/v1/callback`.
+and return grammar. OAuth `state` has the exact CCDP routing form
+`v1.<ceremonyId>`: the version selects the callback namespace and the lowercase
+UUIDv4 suffix remains the transport connection ID. The authorization request
+uses that state and the frozen `redirectUri`; CCDP owns the surrounding popup
+navigation but does not duplicate platform fields. `redirectUri` is the exact
+absolute configured callback alias for that platform; its default path is
+`/auth/v1/callback` and does not change between CCDP versions.
 
 ## End-to-end sequence
 
@@ -90,6 +94,7 @@ sequenceDiagram
     C-->>A: ProverPrefetchingAssets
     A->>O: Navigate same popup to providerAuthorizationUrl
     O->>C: Return same popup to redirectUri
+    Note over C: Clear return and select callback root by state version
     alt Retained opener selects MessagePort
         C-->>A: CallbackDeliverParams
         C->>P: Preserve carrier and navigate to prover + prove fragment
@@ -154,8 +159,12 @@ callback and prefetch iframe.
 ### 2. Provider authorization and return
 
 The provider owns the popup until it navigates to the frozen `redirectUri`.
-The returned callback is a fresh instance of the same callback document. Its
-bootstrap bounds and clears both URL components before package code runs.
+That route serves the same request-invariant callback shell used at launch. Its
+inline bootstrap bounds and clears both URL components, extracts exactly one
+`v<version>.<ceremonyId>` state, and imports the matching immutable callback
+root from its closed supported-version map in the same document. Unknown or
+malformed versions fail before package code loads. This replaces the callback
+module import the page already requires; it adds no document navigation.
 
 ```ts
 interface CallbackDeliverParams {
@@ -167,10 +176,9 @@ interface CallbackDeliverParams {
 }
 ```
 
-The callback creates this message from the bounded query and fragment copied and
-cleared by the server bootstrap. It extracts only the single OAuth state needed
-for ceremony routing and does not classify approval, denial, transport, or
-platform fields.
+The callback creates this message from the bounded query and fragment copied by
+its clearing bootstrap. It extracts the ceremony ID suffix from the state and
+does not classify approval, denial, transport, or platform fields.
 
 On the successful path, `CallbackDeliverParams` is the first CCDP message after
 provider return and reaches the application only through the authenticated
@@ -370,8 +378,9 @@ Opener authentication, Service Worker controls, SDP, and ICE candidates are not
   does not interpret or alter message meaning.
 - Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal
   values change no state.
-- No CCDP message carries ceremony ID or transport version because transport
-  ownership already supplies both.
+- No CCDP message carries ceremony ID, `CCDPVersion`, or `TransportVersion`.
+  Transport ownership supplies correlation and its private version; the loaded
+  route supplies CCDP version.
 - Callback and prover accept only the locations and fragments defined above;
   received CCDP values never select a navigation destination.
 - Progress remains advisory and cannot authorize, cancel, or complete a
@@ -386,13 +395,16 @@ Opener authentication, Service Worker controls, SDP, and ICE candidates are not
 
 ## Versioning and compatibility
 
-A loaded application client and server browser artifacts must share
-`CCDPVersion`. A compatible release may change internal carrier code, worker
-controls, ICE policy, cache mechanics, or equivalent framing without changing
-the logical transport or protocol. A breaking internal location, fragment
-grammar, navigation order, message shape, direction, ordering, authentication,
-transport-binding, or validation rule increments `CCDPVersion`.
+A loaded application client selects `CCDPVersion` in its launch fragment. The
+callback shell carries it through OAuth `state`, every later internal navigation
+repeats it in its fragment, and each shell loads that exact version's immutable
+root. Compatible implementation changes keep the version. A breaking fragment
+grammar, navigation order, message shape, direction, ordering, or validation
+rule publishes new callback/prover roots while old roots remain available for
+live ceremonies and a compatibility window. No CCDP message repeats the
+already-selected version.
 
 `PlatformCeremonyVersion` remains independent and versions one platform's
-authorization, OAuth, proof, and output semantics. The server HTTP namespace is
-also independent. The package versioning and rollout model applies.
+authorization, OAuth, proof, and output semantics. `TransportVersion` remains
+independent and versions private transport controls. The ceremony server API
+namespace is also independent.

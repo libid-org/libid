@@ -150,9 +150,9 @@ Launch publishes one `@libid/ceremony` package:
 │   ├── carrier-message-port  window authentication and MessagePort delivery
 │   └── carrier-webrtc        signaling, ICE, serialization, and RTCDataChannel delivery
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
-├── callback    source entrypoint for libid-ceremony-callback.js
+├── callback    source entrypoint for libid-ccdp-v<version>-callback.js
 ├── prover
-│   ├── index          source entrypoint for libid-ceremony-prover.js, workers, WASM, and prefetch
+│   ├── index          source entrypoint for libid-ccdp-v<version>-prover.js, workers, WASM, and prefetch
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    client-safe platform/version catalog and derived public result types
@@ -178,9 +178,9 @@ catalog and public result types, and is re-exported by the package root and
 client API. Prover leaves are internal imports of the prover entrypoint and
 never enter the client catalog.
 Individual platform leaves never import the aggregator. `callback` and `prover`
-are build entrypoints, not separately versioned packages. They emit `libid-ceremony-callback.js`,
-`libid-ceremony-prover.js`, and immutable worker/WASM assets from one compatible
-package release. The prover artifact runs in both Window and Service Worker
+are build entrypoints, not separately versioned packages. They emit immutable
+callback/prover roots named by `CCDPVersion` plus worker/WASM assets from one
+compatible package release. The prover artifact runs in both Window and Service Worker
 contexts: its Window branch runs iframe prefetch or the one active top-level
 prover, while its Service Worker branch owns shared asset single flights,
 cache, and the worker handlers used by the transport's short-lived
@@ -228,8 +228,8 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal `Message`, `Decoder`, `CCDPVersion`, direction/order rules, and concrete message-generic `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ceremony-callback.js` and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback document |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ceremony-prover.js`; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
+| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ccdp-v<version>-callback.js` roots and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback shell |
+| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ccdp-v<version>-prover.js` roots; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.
@@ -361,14 +361,14 @@ not a second authorization secret.
 `new` chooses the platform ceremony version, generates the fresh authorization
 nonce, derives the code verifier from it and the Authorization Digest by the
 normative Proof Key for Code Exchange (PKCE) construction where required, and
-constructs the authorization request with `state=ceremonyId`, registers that ID
+constructs the authorization request with `state=v1.<ceremonyId>`, registers that ID
 to this live `Ceremony`, and returns only after its navigation data is ready.
-OAuth `state` is a provider-facing serialization of `ceremonyId`, not a second
-identifier:
+OAuth `state` carries the CCDP routing version plus `ceremonyId`; it is not a
+second identifier:
 
 ```ts
 interface CeremonyNavigation {
-  href: string   // /api/v1/ceremony/callback#launch?ceremonyId=...&platformId=...&ceremonyVersion=...
+  href: string   // /ccdp/callback#launch?ccdpVersion=1&ceremonyId=...&platformId=...&ceremonyVersion=...
   target: string
 }
 
@@ -418,7 +418,8 @@ function activate(event: MouseEvent) {
 }
 ```
 
-`proveUserIdentity()` parses the callback's OAuth `state` as a ceremony ID and
+`proveUserIdentity()` parses the callback's OAuth `state`, exact-matches its
+CCDP version, extracts the ceremony ID, and
 claims that ID once in its owning client's live map, sends the minimal proving
 inputs, validates the provider return, performs exchange and proving,
 constructs the non-authoritative identity preview and OAuth proof, and resolves
@@ -610,7 +611,7 @@ submission capability.
 All records are exact-shape validated. `metadataObservedAt` is a nonnegative
 safe integer; fractions, infinities, `NaN`, and overflow fail. Ceremony IDs are
 lowercase RFC 4122 UUIDv4 values generated with `crypto.randomUUID()` and are
-serialized unchanged as OAuth `state`. The code verifier is derived by the
+serialized as the suffix of `v1.<ceremonyId>` OAuth `state`. The code verifier is derived by the
 normative PKCE construction. Derived hashes are exact 32-byte `Uint8Array`
 values. Unknown fields, aliases, coercions, and
 noncanonical encodings fail before use.
@@ -695,9 +696,11 @@ output-shape versions. A proof change normally changes the assembled
 public compatibility axis. One package release may retain older platform-version
 validators during its compatibility window.
 
-[`CCDPVersion`](CCDP.md#version) independently versions the browser message
-protocol. [`TransportVersion`](CCDP-TRANSPORT.md#versioning) independently
-versions private transport controls. Local Job schema versioning
-remains owned by the client store; deployment route and asset versioning remain
-release concerns. A Job which has already committed Identity has left the
+[`CCDPVersion`](CCDP.md#version) independently versions callback/prover roots,
+navigation, fragments, and browser messages. Fragments and OAuth `state` select
+it before module loading; messages do not repeat it. The ceremony server API
+namespace remains independent. [`TransportVersion`](CCDP-TRANSPORT.md#versioning)
+independently versions private transport controls. Local Job schema versioning
+remains owned by the client store, while immutable asset revisioning remains a
+release concern. A Job which has already committed Identity has left the
 ceremony and remains usable under its composition's own compatibility rules.

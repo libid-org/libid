@@ -44,7 +44,7 @@ One deployment has these server-owned inputs:
 | `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned callback |
 | Callback alias path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback and prover roots | Immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
+| Callback and prover roots | Closed `CCDPVersion` maps to immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
 | Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
@@ -70,10 +70,10 @@ An integrating server exposes:
 
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
-| `GET` | `/api/v1/ceremony/config` | always | public application configuration | server exact-checks request `Origin` against `allowedAppOrigins` and returns exact noncredentialed CORS |
-| `GET` | `/api/v1/ceremony/callback` | always | initial callback document | none at HTTP ingress; loaded callback exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
-| `GET` | configured callback alias, default `/auth/v1/callback` | always | direct byte-identical alias of the callback document and registered OAuth `redirect_uri` | none at HTTP ingress; loaded callback performs the same browser-side check after provider return |
-| `GET` | `/api/v1/ceremony/prover` | always | shared prefetch and isolated-prover document | none at HTTP ingress; the fixed public document binds through the transferred CCDP port after loading |
+| `GET` | `/api/v1/ceremony/config` | always | public platform-ceremony configuration | server exact-checks request `Origin` against `allowedAppOrigins` and returns exact noncredentialed CORS |
+| `GET` | `/ccdp/callback` | always | callback shell for initial launch | none at HTTP ingress; loaded callback exact-checks browser-stamped `MessageEvent.origin` against its embedded `allowedAppOrigins` |
+| `GET` | configured callback alias, default `/auth/v1/callback` | always | byte-identical callback shell and registered OAuth `redirect_uri` | none at HTTP ingress; its inline bootstrap clears input and selects CCDP by OAuth `state` |
+| `GET` | `/ccdp/prover` | always | shared prefetch and isolated-prover shell | none at HTTP ingress; the fixed public document binds through the transferred CCDP port after loading |
 | `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | server requires `Origin` to equal the configured ceremony server origin and rejects cross-origin preflight |
 
 Server-side request-origin enforcement is used only where the browser reliably
@@ -88,10 +88,11 @@ TLS bridge, or proof-recovery route exists. Unsupported methods fail without
 running route work. Except for the provider-mandated callback query and the
 GitHub JSON body, ceremony routes accept no query or request body.
 
-The `/api/v1` namespace versions the server HTTP surface. It is independent of
-`CCDPVersion`, which versions browser messages, and
-`PlatformCeremonyVersion`, which versions one platform's ceremony semantics.
-There is no request-time version negotiation.
+The `v1` in `/api/v1/ceremony/...` versions the JSON server API used by config
+and platform services. `/ccdp/callback` and `/ccdp/prover` are browser protocol
+documents, not API routes. Their shells select `CCDPVersion` from browser-local
+fragments or OAuth `state`. `PlatformCeremonyVersion` independently versions
+one platform's ceremony semantics. There is no request-time version negotiation.
 
 ## Public configuration
 
@@ -138,14 +139,14 @@ version in each live Ceremony.
 
 ## Callback document and configured alias
 
-`GET /api/v1/ceremony/callback` and the configured callback alias directly serve
+`GET /ccdp/callback` and the configured callback alias directly serve
 one deployment-generated callback document with the same bytes and security
 headers. The configured path is an alias, not a second document or an HTTP
 redirect. The OAuth registration uses the callback URL, while application
-launch uses `/api/v1/ceremony/callback`.
+launch uses `/ccdp/callback`.
 
 The response is invariant across requests. In particular, its HTML, headers,
-root module URL, CSP, and embedded `allowedAppOrigins` do not depend on the
+root-module map, CSP, and embedded `allowedAppOrigins` do not depend on the
 request path, `Origin`, `Referer`, query, fragment, platform, or ceremony. The
 document is top-level, non-isolated, and non-frameable so it preserves the
 application opener through OAuth.
@@ -166,8 +167,12 @@ rendering, error reporting, module loading, or network activity, it:
 2. copies the exact `location.search` and `location.hash`, including their
    leading delimiters when nonempty;
 3. clears both with `history.replaceState`;
-4. imports the exact immutable `libid-ceremony-callback.js` root URL; and
-5. invokes the package entrypoint with the captured values and embedded
+4. reads exactly one CCDP version from `ccdpVersion` in a launch fragment or
+   the `v<version>.<ceremonyId>` OAuth state on provider return;
+5. selects and imports the exact immutable
+   `libid-ccdp-v<version>-callback.js` URL from its closed embedded
+   map; and
+6. invokes the selected package entrypoint with the captured values and embedded
    deployment allowlist:
 
 ```ts
@@ -187,7 +192,12 @@ A root import failure is terminal for that document. The bootstrap does not
 retry the same module URL because browsers retain a failed module-map entry; a
 user retry starts in a fresh callback document.
 
-The bootstrap does not parse platform fields or derive an allowlist.
+The bootstrap parses no platform field beyond locating one OAuth `state` across
+the copied query and fragment, and it never derives an allowlist. Unknown,
+missing, conflicting, or unsupported CCDP versions fail after clearing and
+before module import. Initial launch and provider return each fetch only their
+selected callback root; the inline selection adds no loader or document
+roundtrip.
 [CCDP](CCDP.md#protocol-locations) owns the closed browser-location grammar,
 navigations, and message ordering; the callback module implements its
 participant lifecycle after URL clearing.
@@ -212,18 +222,19 @@ The shared callback response uses:
 - `style-src` permitting only the exact hash of the stylesheet text installed
   by the immutable callback root;
 - one exact hash for the inline clearing bootstrap and only the deployment's
-  immutable root-module source; and
+  closed immutable callback-root sources; and
 - no broad `https:`, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
 
 ## Prover document
 
-`GET /api/v1/ceremony/prover` serves one deployment-generated response for all
+`GET /ccdp/prover` serves one deployment-generated response for all
 platforms:
 
-- `#prefetch?platformId=<id>&ceremonyVersion=<uint>` starts selected-profile
-  asset prefetch; and
-- `#prove?ceremonyId=<uuid>` is accepted only in the popup's promoted top-level
-  browsing context, where the isolated prover claims the application port.
+- `#prefetch?ccdpVersion=<uint>&platformId=<id>&ceremonyVersion=<uint>` starts
+  selected-profile asset prefetch; and
+- `#prove?ccdpVersion=<uint>&ceremonyId=<uuid>` is accepted only in the popup's
+  promoted top-level browsing context, where the isolated prover claims the
+  application port.
 
 Fragments do not reach the server. Both roles therefore receive identical HTML,
 headers, embedded assets, and root module. A nonempty query is rejected; no
@@ -275,9 +286,9 @@ cannot add or replace any URL.
 
 The bootstrap bounds and copies its fragment, clears it before storage,
 rendering, errors, module loading, or network activity, and then exact-validates
-the closed value and embedded `ProverAssets`. An executing branch imports the
-exact same-origin immutable `libid-ceremony-prover.js` root and passes its
-inputs to the Window entrypoint:
+the closed value and embedded `ProverAssets`. It selects the exact same-origin
+immutable `libid-ccdp-v<version>-prover.js` root from its closed
+embedded CCDP-version map and passes its inputs to the Window entrypoint:
 
 ```ts
 declare function startProver(
@@ -295,8 +306,8 @@ network use. The Service Worker branch installs its package-private cache and
 transport-continuity handlers when the same root is evaluated in a worker and
 exports no protocol entrypoint.
 The prover root is also the module service-worker registration URL and permits
-a scope covering `/api/v1/ceremony/`; its response sets
-`Service-Worker-Allowed: /api/v1/ceremony/` when the script URL's default scope
+a scope covering `/ccdp/`; its response sets
+`Service-Worker-Allowed: /ccdp/` when the script URL's default scope
 does not already cover it. Callback and prover perform no configuration request.
 
 ### Prover response policy

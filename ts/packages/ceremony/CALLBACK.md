@@ -1,8 +1,9 @@
 # `@libid/ceremony` callback architecture
 
 This document defines the browser participant emitted as
-`libid-ceremony-callback.js`. The same fixed, non-isolated document runs before
-OAuth and at the configured provider callback. It preserves and authenticates
+`libid-ccdp-v<version>-callback.js`. The same fixed, non-isolated shell
+runs before OAuth and at the configured provider callback, selecting that root
+from its cleared launch fragment or OAuth `state`. It preserves and authenticates
 the application opener when available and delegates typed delivery, carrier
 selection, and same-popup promotion to the concrete CCDP transport.
 
@@ -38,8 +39,8 @@ JavaScript heap. Continuity comes from either the authenticated retained
 
 ## Entrypoint and trusted inputs
 
-The server bootstrap bounds and clears the URL before loading package code,
-then calls:
+The server bootstrap bounds and clears the URL, selects the exact supported
+CCDP root, and then calls:
 
 ```ts
 declare function startCallback(
@@ -59,9 +60,10 @@ input. `startCallback` copies and freezes both inputs before installing listener
 The callback accepts two closed inputs:
 
 - **Initial launch:** empty query and a launch fragment containing one bounded
-  ceremony ID, platform ID, and platform ceremony version.
+  CCDP version, ceremony ID, platform ID, and platform ceremony version.
 - **Provider callback:** the bounded raw query and fragment with exactly one
-  syntactically valid OAuth `state`, which serializes the ceremony ID.
+  syntactically valid OAuth `state` in the form
+  `v<ccdpVersion>.<ceremonyId>`.
 
 The callback recognizes only enough callback grammar to find that single routing
 value. The application client's selected platform/version client leaf later
@@ -98,9 +100,9 @@ no state.
 
 | Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
-| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct the ceremony transport over the opener, bind one `/prover#prefetch?platformId=...&ceremonyVersion=...` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
+| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct the ceremony transport over the opener, bind one `/ccdp/prover#prefetch?ccdpVersion=...&platformId=...&ceremonyVersion=...` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
 | Provider return | one OAuth state and `CallbackDeliverParams` | construct a fresh ceremony transport; it exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
-| Prover transition | carrier port is preserved | transport replaces this document with `/api/v1/ceremony/prover#prove?ceremonyId=...` |
+| Prover transition | carrier port is preserved | transport replaces this document with `/ccdp/prover#prove?ccdpVersion=1&ceremonyId=...` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 callback never constructs the provider URL. After provider return it releases
@@ -164,9 +166,11 @@ to configuration.
 
 ## Compatibility and acceptance
 
-Both carrier bindings exact-match the package's `TransportVersion` before
-delivering the OAuth return. An
-unsupported document restarts with fresh OAuth. Version axes are defined in
+The clearing shell selects `CCDPVersion` from the launch fragment or OAuth
+`state` before importing the matching callback root; no callback message repeats
+it. Both carrier bindings independently exact-match the package's
+`TransportVersion` before delivering the OAuth return. An unsupported version
+fails before package code loads. Version axes are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
 
 Callback acceptance is covered by [TEST_PLAN.md](TEST_PLAN.md).
