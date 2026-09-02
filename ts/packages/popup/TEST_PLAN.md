@@ -36,6 +36,7 @@ control independently of any protocol transported by the package.
 | POPUP-CONNECTION-005 | Without a fallback constructor, successful MessagePort use emits no fallback diagnostic; fallback selection records exactly one sanitized `fallback-unavailable` failure and closes. |
 | POPUP-CONNECTION-006 | Carrier loss, endpoint loss, popup closure, background suspension, and continuity loss are never delivery, cancellation, success, or recovery. Resumed delivery preserves order. |
 | POPUP-CONNECTION-007 | Both constructors accept an exact lowercase RFC 4122 UUIDv4 `connectionId` and reject uppercase, noncanonical, malformed, wrong-version, and wrong-variant strings before carrier, keeper, or signaling work. Caller integration generates a different `crypto.randomUUID()` value for every logical connection and never reuses a retired value. |
+| POPUP-CONNECTION-008 | `PopupConnection.navigate()` directly between participating documents preserves or prepares the carrier. A navigation outside that API loses the current carrier. A later participating document may establish the first RTC carrier from the still-unused initial fallback without round metadata; after RTC is active, an unmanaged navigation terminates the logical connection without restarting round zero. |
 
 ## MessagePort and navigation continuity
 
