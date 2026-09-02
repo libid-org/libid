@@ -35,20 +35,19 @@ if (popupWindow.opened) event.preventDefault()
 
 `PopupWindow.open(target)` synchronously attempts
 `window.open('about:blank', target)` and returns a wrapper even when the browser
-returns no handle. In that case the connection binds the popup created by the
-same action's real anchor. See [popup creation and native-anchor
-fallback](docs/connection.md#popup-creation-and-native-anchor-fallback).
+returns no handle. It throws `TypeError` before opening for an empty target or
+one beginning with `_`. When no handle is returned, the connection binds the
+popup created by the same action's real anchor. See [popup creation and
+native-anchor fallback](docs/connection.md#popup-creation-and-native-anchor-fallback).
 
 ```ts
-interface PopupWindow {
+declare class PopupWindow {
   readonly opened: boolean
   navigate(url: string): Promise<void>
   close(): Promise<void>
-}
 
-declare const PopupWindow: {
-  open(target: string): PopupWindow
-  current(): PopupWindow
+  static open(target: string): PopupWindow
+  static current(): PopupWindow
 }
 ```
 
@@ -91,8 +90,11 @@ interface PopupConnection<M extends Message> {
 }
 ```
 
-`navigate` and `close` control the same popup directly while possible and over
-the connection after isolation. `close` releases both the connection and popup.
+Before carrier selection, `navigate` uses the retained popup handle when
+available. Once a carrier is active, the application endpoint sends navigation
+control over it; popup-endpoint navigation acts locally. `close` uses an
+available retained handle and otherwise uses popup control, then releases both
+the connection and popup.
 
 ### Define and exchange messages
 
