@@ -339,9 +339,9 @@ CCDP event, or change a timeout. Terminal cleanup removes the timer and notice.
 
 The UI is package-owned and accepts no application markup or renderer.
 
-On terminal cleanup, the prover calls `window.close()`. If the ceremony popup
-remains open, the prover view renders the fixed safe fallback itself; closing
-does not require another CCDP message or callback relay.
+Terminal cleanup clears prover inputs, workers, connections, and timers. It
+never closes or navigates the popup; the application composition may retain it
+for a larger wallet flow.
 
 ## Shared toolchain and assets
 

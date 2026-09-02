@@ -47,7 +47,8 @@ Transport owns:
 - selection and ownership of one authenticated carrier;
 - ordered delivery and continuity across popup document replacement;
   and
-- one-shot selection, navigation, closure, cleanup, and race resolution.
+- one-shot selection, navigation, transport closure, cleanup, and race
+  resolution.
 
 Carriers own endpoint authentication, establishment, physical serialization
 where required, native framing, resource cleanup, and delivery mechanics. Each
@@ -174,7 +175,9 @@ closes the transport and delivers no message. The registered set therefore
 enforces participant direction without hardcoding protocol types in transport;
 the handler still enforces state and order.
 
-`close` is idempotent and sends no delivery result.
+`close` is idempotent, sends no delivery result, and releases only transport
+resources. It never calls `WindowProxy.close()` or otherwise controls popup
+lifetime.
 
 `navigatePopup` accepts a caller-selected opaque URL. It never parses, builds,
 or branches on that URL:

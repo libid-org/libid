@@ -274,8 +274,9 @@ interface AbortCeremony {
 
 `AppCancelCeremony` is the parameterless downstream command for explicit user
 cancellation, valid provider denial, invalid callback classification, or
-retired application authority. Reachable proving work clears queued input and
-attempts to close; no acknowledgement or platform-specific cancel path exists.
+retired application authority. Reachable proving work clears queued input; no
+acknowledgement or platform-specific cancel path exists. Callback and prover
+never close or navigate the popup in response.
 
 `AbortCeremony` is the upstream technical-failure message created by callback or
 prover code. Its reason is a bounded sanitized diagnostic string, not a stable
@@ -379,6 +380,8 @@ Opener authentication, Service Worker controls, SDP, and ICE candidates are not
   ceremony.
 - Transport state, navigation, popup closure, and progress are never a ceremony
   result.
+- The application composition owns popup lifetime after every terminal outcome;
+  callback, prover, and transport cleanup never call `window.close()`.
 - Cancellation and context-loss cleanup are best effort.
 - No ceremony recovery, durable browser checkpoint, or transport migration
   exists.

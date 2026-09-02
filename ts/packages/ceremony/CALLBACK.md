@@ -141,10 +141,10 @@ A sanitized `AbortCeremony.reason` is diagnostic input to the application, not
 arbitrary callback markup.
 
 Terminal cleanup clears retained query and fragment bytes, removes the prover
-prefetch child, listeners, and untransferred ports,
-severs references which are no longer needed, and attempts to close. If closing
-fails, the document renders one fixed safe fallback. No terminal history or
-recovery record is written.
+prefetch child, listeners, and untransferred ports, and severs references which
+are no longer needed. It never closes or navigates the popup; the application
+composition owns that window's lifetime. No terminal history or recovery
+record is written.
 
 ## Validation ownership
 

@@ -427,6 +427,11 @@ resolves with a denied `IdentityResult`; popup closure, malformed return,
 invalid proving input, isolation failure, and proving failure are ordinary
 ceremony failures, not denial.
 
+The ceremony never closes its popup. The application composition owns whether
+to retain, navigate, or close the window after any result, cancellation, or
+failure; a wallet composition may therefore continue its own flow in the same
+popup.
+
 The Job is already committed before `proveUserIdentity()` and remains the
 composition's current ceremony state while the call runs. Progress may update
 its advisory projection, but no pre-proving authority CAS or ceremony callback
@@ -434,10 +439,11 @@ exists. The final composition-owned Job CAS is the authority boundary: if
 cancellation, expiry, or another transition retired the Job, a late Identity
 cannot commit.
 
-`cancel()` is best-effort browser cleanup and is called only after the
-composition retires its Job. Losing the application document loses the
-in-memory ceremony map and therefore requires fresh OAuth, as already
-required by the no-ceremony-recovery launch scope.
+`cancel()` is best-effort ceremony-work and transport cleanup and is called
+only after the composition retires its Job. It does not close or navigate the
+popup. Losing the application document loses the in-memory ceremony map and
+therefore requires fresh OAuth, as already required by the
+no-ceremony-recovery launch scope.
 
 ### Server configuration
 
