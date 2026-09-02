@@ -58,11 +58,12 @@ interface ProverPrefetchingAssets {
 }
 ```
 
-`ProverPrefetchingAssets` is the sole CCDP message before carrier
-authentication. It states that prefetch for the selected public profile has
-been dispatched; it does not promise that downloads completed. Its fields are
-public correlation data, grant no authority, and may cause only navigation of
-the bound popup to the provider URL already frozen by the live `Ceremony`.
+`ProverPrefetchingAssets` is the sole nonterminal CCDP message before carrier
+authentication; an already-constructed transport may instead send terminal
+`AbortCeremony`. Readiness states that prefetch for the selected public profile
+has been dispatched; it does not promise that downloads completed. Its fields
+are public correlation data, grant no authority, and may cause only navigation
+of the bound popup to the provider URL already frozen by the live `Ceremony`.
 
 The application accepts it only when its ceremony ID and platform/version
 match that live ceremony and its browser-stamped source and origin match the
@@ -180,8 +181,10 @@ attempts to close; no acknowledgement or platform-specific cancel path exists.
 prover code. Its reason is a bounded sanitized diagnostic string, not a stable
 code or raw exception. Exact reason enums may emerge from implementation
 experience. The application rejects the live ceremony for every observable
-abort. It is sent only through authenticated transport; an earlier callback,
-context, or transport failure may produce no message.
+abort. It requires a constructed transport but not an authenticated carrier.
+Transport-construction failure has no CCDP path and remains local diagnostics
+or metrics. Before a real-anchor launch binds its popup source, a callback
+failure likewise cannot be correlated safely and remains local.
 
 ### Closed message union
 
@@ -206,7 +209,7 @@ type Message =
 | `AppCancelCeremony` | application | active callback or prover endpoint | at most once before another terminal message; makes later messages inert and requests downstream cleanup |
 | `ProverNotifyEvent` | prover | application | zero or more after `AppRequestProof` and before a terminal message |
 | `ProverDeliverProof` | prover | application | at most once after `AppRequestProof`; ends the prover run |
-| `AbortCeremony` | callback or prover | application | at most once after transport authentication for an observable technical failure before another terminal message |
+| `AbortCeremony` | callback or prover | application | at most once after transport construction for an observable technical failure before another terminal message |
 
 Messages outside these directions or positions are invalid. Cancellation,
 proof delivery, and abort make later messages inert even when they race in
@@ -296,8 +299,9 @@ navigation, URL clearing, and participant UI do not alter it.
 
 ## Shared invariants
 
-- `ProverPrefetchingAssets` is the only pre-carrier message and carries no
-  credential, proof input, proof, or authority.
+- `ProverPrefetchingAssets` is the only nonterminal pre-carrier message and
+  carries no credential, proof input, proof, or authority; `AbortCeremony` is
+  the only terminal exception.
 - One live ceremony accepts one prefetch readiness and one
   `CallbackDeliverParams`.
 - Transport authenticates before any OAuth return reaches the application and

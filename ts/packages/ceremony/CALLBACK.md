@@ -103,13 +103,21 @@ no state.
 | Prover transition | carrier port is preserved | transport replaces this document with `/api/v1/ceremony/prover#ceremonyId` |
 
 Prefetch handles public assets and needs no application reply or timeout. The
-callback never constructs the provider URL. After provider return it releases no value
-to the application until one carrier binds. An absent or severed opener commits
+callback never constructs the provider URL. After provider return it releases
+no OAuth return to the application until one carrier binds. An absent or severed opener commits
 WebRTC immediately; an otherwise usable opener receives the bounded
 `CALLBACK_OPENER_TIMEOUT_MS = 30_000` local-authentication deadline before RTC
 selection. A late local reply is inert. A failure to preserve the selected
 carrier port through the worker clears the return and renders the fixed
 prover-load failure instead of navigating.
+
+During initial launch, an already-constructed transport may report an
+observable prefetch failure with terminal `AbortCeremony` before carrier
+selection when the application has a bound popup source. After provider return,
+an observable abort uses the selected transport. Failure to construct transport
+has no CCDP path. A real-anchor launch also cannot correlate an abort before
+readiness binds its popup source. Those failures remain local diagnostics or
+metrics and the fixed failure view.
 
 The callback has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own
