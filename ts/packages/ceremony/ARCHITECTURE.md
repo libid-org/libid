@@ -104,6 +104,32 @@ not assemble and commit the delivered result before the live transport is lost,
 the ceremony restarts with fresh OAuth. Downstream application work may remain
 resumable independently.
 
+### Document-Isolation-Policy evolution
+
+[Document-Isolation-Policy (DIP)](https://wicg.github.io/document-isolation-policy/)
+can isolate the prover document itself without applying COOP/COEP to its whole
+frame chain. With interoperable browser support, libID could keep the prover in
+an isolated cross-origin iframe while the non-isolated ceremony popup retains
+its ordinary opener communication. That would remove the top-level
+callback-to-prover replacement and its transport-continuity machinery. It
+would not protect against an OAuth provider response that itself severs the
+opener with COOP; the fallback carrier remains necessary for that independent
+case.
+
+DIP is an evolution path, not a launch dependency. Status checked 2026-09-02:
+
+| Engine | Current status | Tracker |
+|---|---|---|
+| Chromium | shipped on desktop in Chrome 137; mobile support must still be qualified independently | [Chrome documentation](https://developer.chrome.com/blog/document-isolation-policy) |
+| Gecko | positive standards position; implementation remains open | [Mozilla position](https://github.com/mozilla/standards-positions/issues/1074), [Firefox implementation](https://bugzilla.mozilla.org/show_bug.cgi?id=2063367) |
+| WebKit | position and implementation remain open, with continuing implementer demand | [WebKit position](https://github.com/WebKit/standards-positions/issues/399) |
+
+Reconsider the launch topology only after Gecko and WebKit ship compatible
+behavior and real-device tests confirm `crossOriginIsolated`,
+`SharedArrayBuffer`/WASM threads, cross-origin iframe messaging, asset policy,
+and mobile lifecycle behavior. Until then, the top-level isolated prover is the
+portable baseline.
+
 ## Ceremony Cross-Document Protocol
 
 [CCDP.md](CCDP.md) defines the package-owned protocol between the application,
