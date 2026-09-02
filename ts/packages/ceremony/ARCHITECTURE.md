@@ -88,9 +88,9 @@ may run key preparation before the ceremony and wallet confirmation afterward;
 those sessions do not extend the browser message protocol.
 
 The application origin owns the durable operation record, called the Job. One
-application-scoped `CeremonyClient` owns its live ceremonies and in-memory
-ceremony-ID routing table. The composition supplies each ceremony's popup
-connection. The client, callback, and prover
+application-scoped `CeremonyClient` creates independent `Ceremony` instances.
+Each instance owns its in-memory state and handlers on the popup connection
+supplied by the composition. The client, callback, and prover
 keep credentials, witnesses, and the generated proof only in memory. The
 application origin is an authority boundary: it supplies the operation domain
 and transaction data, so compromising it already permits authorizing a
@@ -346,18 +346,13 @@ second authorization secret.
 nonce, derives the code verifier from it and the Authorization Digest by the
 normative Proof Key for Code Exchange (PKCE) construction where required, and
 constructs the authorization request with the [CCDP-defined OAuth
-state](CCDP.md#protocol-locations), registers that ID to this live `Ceremony`,
-and returns with its navigation data ready. OAuth `state` carries the CCDP
+state](CCDP.md#protocol-locations), and returns the `Ceremony` with its launch
+URL ready. OAuth `state` carries the CCDP
 routing version plus `ceremonyId`; it is not a second identifier:
 
 ```ts
-interface CeremonyNavigation {
-  href: string   // CCDP initial callback location
-  target: string
-}
-
 interface Ceremony<P extends PlatformId = PlatformId> {
-  readonly navigation: CeremonyNavigation
+  readonly launchUrl: string
 
   onEvent(listener: (event: CeremonyEvent) => void): () => void
   proveUserIdentity(): Promise<IdentityResult<P>>
@@ -367,19 +362,19 @@ interface Ceremony<P extends PlatformId = PlatformId> {
 
 The caller owns launch UI and constructs the popup connection. The ceremony
 package never opens a window, renders an anchor, or selects a carrier.
-`navigation.target` is the exact non-reserved `libid-${ceremonyId}` browsing-
-context name. In the activation handler, the caller synchronously creates a
-`PopupWindow` and `PopupConnection`, passes the connection to `new`, and updates
-the action-specific real anchor from the returned navigation. It prevents
-native navigation only when scripted popup creation succeeded; otherwise the
-same activation's anchor proceeds while the armed connection binds it.
+The caller chooses one unique non-reserved browsing-context target, uses it for
+both `PopupWindow.open` and the action-specific real anchor, and passes the
+resulting connection to `new`. Ceremony exposes only the initial CCDP callback
+location as `launchUrl`. The activation handler prevents native navigation only
+when scripted popup creation succeeded; otherwise the same activation's anchor
+proceeds while the armed connection binds it.
 
 The scripted path is primary and PoC-qualified; the qualified mobile browsers
 did not reject it. The real anchor is a hedge against an unqualified browser or
 embedding policy returning `null`, not a claim that a launch target is known to
 require it.
 
-`proveUserIdentity()` navigates the retained connection to `navigation.href`
+`proveUserIdentity()` navigates the retained connection to `launchUrl`
 when direct popup control exists. With native-anchor fallback, connection
 binding and navigation are owned by `@libid/popup`; ceremony observes only its
 typed messages. There is no popup argument to proving and no mutable connection
@@ -403,19 +398,20 @@ function activate(event: MouseEvent) {
     transactionData,
   })
 
-  anchor.href = ceremony.navigation.href
-  anchor.target = ceremony.navigation.target
+  anchor.href = ceremony.launchUrl
+  anchor.target = target
   if (popupWindow.opened) event.preventDefault()
   void ceremony.proveUserIdentity()
 }
 ```
 
-`proveUserIdentity()` parses the callback's OAuth `state`, exact-matches its
-CCDP version, extracts the ceremony ID, and
-claims that ID once in its owning client's live map, sends the minimal proving
-inputs, validates the provider return, performs exchange and proving,
-constructs the non-authoritative identity preview and OAuth proof, and resolves
-with an accepted `IdentityResult`. A valid ceremony-bound provider denial
+When `CallbackDeliverParams` arrives on the retained connection,
+`proveUserIdentity()` parses its OAuth `state`, exact-matches the CCDP version
+and ceremony ID against this instance's frozen values, and consumes that return
+once. It then sends the minimal proving inputs, validates the provider return,
+performs exchange and proving, constructs the non-authoritative identity preview
+and OAuth proof, and resolves with an accepted `IdentityResult`. A valid
+ceremony-bound provider denial
 resolves with a denied `IdentityResult`; popup closure, malformed return,
 invalid proving input, isolation failure, and proving failure are ordinary
 ceremony failures, not denial.
