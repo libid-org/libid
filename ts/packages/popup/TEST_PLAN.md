@@ -20,7 +20,7 @@ control independently of any protocol transported by the package.
 | POPUP-WINDOW-002 | When scripted opening returns `null`, the same activation's real anchor retains its navigation, and only an exact initial source/origin/version/connection binding marks the wrapper opened. |
 | POPUP-WINDOW-003 | `_blank`, `noopener`, `noreferrer`, delayed synthetic activation, a wrong source, and an opaque sandbox origin cannot bind the native-anchor path. |
 | POPUP-WINDOW-004 | Popup presentation as a window or tab changes no connection, storage, recovery, or control rule; `closed` remains advisory and never becomes a result. |
-| POPUP-CONTROL-001 | Before isolation, `navigate` and `close` act on the retained popup directly and emit no control message. |
+| POPUP-CONTROL-001 | While native-anchor binding is pending, `navigate` performs no browser operation and leaves the same activation's default navigation intact. Before isolation with a retained handle, `navigate` and `close` act on that popup directly and emit no control message. |
 | POPUP-CONTROL-002 | After direct control is severed, `navigate` sends one exact canonical-HTTPS `Navigate`, while malformed, credentialed, noncanonical, relative, and non-HTTPS URLs fail before navigation. |
 | POPUP-CONTROL-003 | After direct control is severed, `close` sends one `ClosePopup`, closes local resources, and is idempotent; only a package-created script-closable popup accepts it. |
 | POPUP-CONTROL-004 | Controls are application-to-popup, one-shot, unacknowledged, connection-bound, and private; wrong-direction, duplicate, replayed, unknown, and post-terminal controls perform no browser operation. |
@@ -30,9 +30,9 @@ control independently of any protocol transported by the package.
 | ID | Assertion |
 |---|---|
 | POPUP-CONNECTION-001 | A carrier becomes selectable only after it authenticates both browser endpoints; origin, source, connection ID, connection version, and direction mismatches release no caller value. |
-| POPUP-CONNECTION-002 | MessagePort wins whenever its authenticated opener path completes first; an absent, severed, invalid, or timed-out path commits fallback once, and a selected path never migrates after failure. |
-| POPUP-CONNECTION-003 | `connect` invokes a supplied fallback constructor once immediately and observes its promise; `accept` invokes its constructor once only after MessagePort becomes unavailable. |
-| POPUP-CONNECTION-004 | MessagePort selection and `close` abort a pending fallback constructor through its supplied signal and release every reachable loser resource. |
+| POPUP-CONNECTION-002 | MessagePort wins whenever its authenticated opener path completes first for a participating document; an absent, severed, invalid, or timed-out path commits fallback for that document, and a failed active carrier never migrates. |
+| POPUP-CONNECTION-003 | One logical connection uses a fresh MessagePort for the initial popup and returned callback; direct external navigation closes the old port and arms the callback handshake before navigating. No port or keeper survives the OAuth wait. |
+| POPUP-CONNECTION-004 | `connect` invokes a supplied fallback constructor once per application-side carrier attempt and observes its promise; `accept` invokes its constructor once only after MessagePort becomes unavailable. MessagePort selection aborts the current attempt's fallback, direct external navigation arms a fresh attempt before navigating, and connection closure aborts every attempt. |
 | POPUP-CONNECTION-005 | Without a fallback constructor, successful MessagePort use emits no fallback diagnostic; fallback selection records exactly one sanitized `fallback-unavailable` failure and closes. |
 | POPUP-CONNECTION-006 | Carrier loss, endpoint loss, popup closure, background suspension, and continuity loss are never delivery, cancellation, success, or recovery. Resumed delivery preserves order. |
 

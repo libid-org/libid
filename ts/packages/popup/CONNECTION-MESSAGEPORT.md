@@ -15,9 +15,11 @@ sections.
 Its limitation is establishment under isolation. `window.postMessage` requires
 a live `WindowProxy`, while Cross-Origin-Opener-Policy can cause a
 [browsing-context-group switch](https://html.spec.whatwg.org/multipage/browsers.html#coop-bcg-switch)
-which severs the opener relationship. If that happens before the returned popup
-binds the channel, this carrier is unavailable. Once bound, the connection can
-preserve the popup's port across its own immediate document replacement.
+which severs the opener relationship. If that happens before a returned popup
+document binds its channel, this carrier is unavailable for that document. Each
+participating popup document establishes a fresh port. Once bound, the
+connection can preserve that port across one immediate participating-document
+replacement, but never across the external OAuth visit.
 
 The controls below are package-private carrier mechanics, not caller messages,
 public APIs, extension points, or durable state.
@@ -127,16 +129,20 @@ declare function messagePortCarrier(port: MessagePort): Carrier
 ```
 
 `connectApplicationMessagePort` installs its listener synchronously and returns
-a pending port promise without sending anything. When `PopupWindow` retained a
+a pending port promise for one popup document without sending anything. When `PopupWindow` retained a
 handle it requires that exact source. Otherwise it internally binds
 `PopupWindow` to the source of the first handshake that exact-matches the configured popup origin,
-connection version, and connection ID. The application keeps the promise across
-caller-controlled popup navigation and awaits it only when it needs the carrier:
+connection version, and connection ID. Before direct navigation through an
+external document, the connection closes the current port and synchronously
+creates the next pending operation:
 
 ```ts
-const portPromise = connectApplicationMessagePort(options)
+let portPromise = connectApplicationMessagePort(options)
+const initialPort = await portPromise
+initialPort.close()
+portPromise = connectApplicationMessagePort(options)
 connection.navigate(externalUrl)
-const port = await portPromise
+const callbackPort = await portPromise
 ```
 
 When the popup endpoint is ready, it calls and awaits
@@ -145,7 +151,8 @@ application operation validates it, creates the channel, sends the response,
 and resolves `portPromise` with its retained endpoint. The popup validates
 that response and resolves with the transferred endpoint.
 
-Each operation resolves once with its local endpoint. A handshake attempt from
+Each operation resolves once with its local endpoint. A later participating
+document repeats the operation under the same logical connection. A handshake attempt from
 the retained or newly bound source that fails authentication rejects
 immediately; abort also rejects. Both paths remove the window listener and
 close every reachable port.

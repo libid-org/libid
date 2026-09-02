@@ -1,9 +1,11 @@
 # @libid/popup
 
-`@libid/popup` connects an application page to its popup across origins,
-isolation boundaries, mobile suspension, and immediate popup-document
-replacement. It carries caller-defined messages without owning or naming a
-caller protocol.
+`@libid/popup` connects an application page to one popup browsing context across
+origins, external navigation, isolation boundaries, mobile suspension, and
+immediate popup-document replacement. It carries caller-defined messages
+without owning or naming a caller protocol. One logical connection installs a
+fresh carrier in each participating popup document; no MessagePort is retained
+through the external OAuth visit.
 
 ## API
 
@@ -98,8 +100,9 @@ is supplied independently in each browser document.
 `PopupWindow.open(target)` synchronously attempts
 `window.open('about:blank', target)` and returns a wrapper even when the browser
 returns no handle. The application connection binds that native-anchor fallback
-internally. Its `navigate` and `close` use direct popup control while available
-and connection control after isolation. `PopupWindow.current()` wraps the popup
+internally. Its `navigate` leaves a pending native-anchor fallback to the same
+activation, uses direct popup control when a handle is available, and uses
+connection control after isolation. `PopupWindow.current()` wraps the popup
 document, its opener, and its
 Service Worker access. The popup-side connection exposes the same operations
 for that window but cannot create another popup.

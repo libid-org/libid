@@ -151,10 +151,11 @@ Internally they retain the peer connection and channel and own every signaling
 request, trickled candidate update, origin-bound role, timeout, codec, framing,
 pressure, and cleanup operation.
 
-The application connection observes and retains the first promise without
-awaiting it during popup navigation, so an early failure produces no unhandled
-rejection.
-MessagePort selection aborts it. Under RTC selection each endpoint awaits its
+The application connection observes and retains the promise for the current
+carrier attempt without awaiting it during popup navigation, so an early
+failure produces no unhandled rejection. MessagePort selection aborts it.
+Before direct external navigation, the logical connection starts a fresh
+application fallback attempt for the next popup document. Under RTC selection each endpoint awaits its
 own operation and exposes only the common carrier API. Abort, carrier closure,
 or establishment failure closes every reachable signaling, peer, and channel
 resource and releases no transported value. No signaling API or native RTC
