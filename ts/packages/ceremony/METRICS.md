@@ -38,8 +38,7 @@ transport is unavailable emits one local `console.error` containing only a
 package-owned subsystem and stable error code. When a local diagnostics or
 metrics sink is available in that browser context, it also records the same
 sanitized failure best effort. This includes transport-construction failure,
-an unbound real-anchor source, transport loss, and context teardown before a
-terminal message can cross.
+transport loss, and context teardown before a terminal message can cross.
 
 Package-side local reporting initiates no network request, durable record,
 retry, recovery, or ceremony outcome. It never logs the raw exception object or

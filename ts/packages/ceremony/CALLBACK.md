@@ -113,12 +113,11 @@ prover-load failure instead of navigating.
 
 During initial launch, an already-constructed transport may report an
 observable prefetch failure with terminal `AbortCeremony` before carrier
-selection when the application has a bound popup source. After provider return,
-an observable abort uses the selected transport. Failure to construct transport
-has no CCDP path. A real-anchor launch also cannot correlate an abort before
-readiness binds its popup source. Those failures follow the
-[undeliverable-failure rule](METRICS.md#undeliverable-failures) and render the
-fixed failure view.
+selection; the transport's private connection ID can also bind a real-anchor
+source from that abort. After provider return, an observable abort uses the
+selected transport. Failure to construct transport has no CCDP path, follows
+the [undeliverable-failure rule](METRICS.md#undeliverable-failures), and renders
+the fixed failure view.
 
 The callback has no post-navigation platform config, so it cannot validate the
 platform, version, client, redirect, PKCE, or proof. The client and prover own

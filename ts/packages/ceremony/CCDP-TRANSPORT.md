@@ -62,9 +62,12 @@ dispatch but does not interpret the resulting message.
 - A carrier is selectable only after it authenticates both endpoints.
 - One transport admits at most one popup source, one carrier, and one
   cross-document continuation; losing races are inert.
-- Application-level messages travel only over the selected end-to-end carrier.
-  Establishment, rendezvous, and continuity controls carry none; neither do
-  cookies, durable storage, request data, or URLs.
+- Before carrier selection, authenticated WindowProxy delivery wraps an opaque
+  caller value in a private control exact-bound to the transport's connection
+  ID and application version. After selection, application-level messages
+  travel only over the selected end-to-end carrier. Rendezvous and continuity
+  controls carry none; neither do cookies, durable storage, request data, or
+  URLs.
 - A carrier may validate its generic value domain, bounds, and framing but
   cannot inspect a message discriminator or interpret, classify, synthesize, or
   alter its meaning.
@@ -114,9 +117,14 @@ caller's application protocol. Transport exact-matches both in private carrier
 and navigation controls but never interprets either.
 
 A ceremony endpoint constructed from `window.opener` and an immutable
-target-origin set can send an opaque value over `WindowProxy`. A caller-supplied
-popup handle is bound by the application factory. Without one, the application
-explicitly binds a source:
+target-origin set can send an opaque value over `WindowProxy` before carrier
+selection. Transport wraps it with its exact connection ID and application
+version; these fields are private control metadata and never enter the caller
+value. The application endpoint validates and removes that control before
+decoding or exposing the value.
+
+A caller-supplied popup handle is bound by the application factory. Without
+one, the application explicitly binds a source:
 
 ```ts
 applicationTransport.bindPopup(
@@ -124,11 +132,12 @@ applicationTransport.bindPopup(
 ): Promise<void>
 ```
 
-`bindPopup` considers only values from the configured remote origin and commits
-the browser-stamped source of the first value accepted by the caller predicate.
-Transport never interprets the value, and rejected candidates bind nothing.
-This admits a navigation source only; it neither authenticates nor selects a
-carrier, and the candidate remains untrusted caller input.
+`bindPopup` considers only controls with the exact connection ID and application
+version from the configured remote origin, then commits the browser-stamped
+source of the first decoded value accepted by the caller predicate. Controls
+for another connection are unrelated and bind nothing. Transport never
+interprets the caller value. This admits a navigation source only; it does not
+select a carrier, and the value remains untrusted caller input.
 
 Navigation destroys the ceremony endpoint; the application endpoint retains
 its bound source and any idle signaling subscription.

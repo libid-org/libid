@@ -352,11 +352,11 @@ lowercase UUIDv4. A composition normally generates one value and calls it
 `jobId` in its Job API and `ceremonyId` in this API. The equality is a
 composition invariant, not a shared branded type. The identifier is not chain
 authorization, but its unpredictability and one-use handling provide browser
-continuity: the initial callback discloses it to the initiating app, the
-post-OAuth callback withholds it from window messages, and the
-`MessagePortHandshake` response must return it on the MessagePort path. On the
-RTC path, the same one-use value selects the live application's signaling
-subscription; it is not a second authorization secret.
+continuity. Both transport endpoints receive it as construction input and
+exact-match it in private controls; no CCDP message carries it. The
+`MessagePortHandshake` response returns it on the MessagePort path, while the
+RTC path uses it to select the live application's signaling subscription. It is
+not a second authorization secret.
 
 `new` chooses the platform ceremony version, generates the fresh authorization
 nonce, derives the code verifier from it and the Authorization Digest by the
@@ -400,11 +400,10 @@ require it.
 present, `proveUserIdentity()` immediately navigates that `WindowProxy` to
 `navigation.href` and exact-matches the first callback message against it. When
 absent, the package opens or navigates nothing; the real anchor reaches the
-same URL and the client binds its browser-stamped `MessageEvent.source` after
-matching `ProverPrefetchingAssets`'s ceremony ID, platform ID, and ceremony version
-to the live Ceremony. Both paths then
-retain the same source through OAuth. There is no nullable popup value or
-mutable `setPopup` API.
+same URL and transport binds its browser-stamped `MessageEvent.source` only
+after exact-matching the private connection ID and application version and the
+client accepts `ProverPrefetchingAssets`. Both paths then retain the same source
+through OAuth. There is no nullable popup value or mutable `setPopup` API.
 
 ```ts
 function activate(event: MouseEvent) {

@@ -43,21 +43,19 @@ version.
 ```ts
 interface ProverPrefetchingAssets {
   type: 'prover-prefetching-assets'
-  ceremonyId: string
-  platformId: PlatformId
-  platformCeremonyVersion: PlatformCeremonyVersion
 }
 ```
 
-`ProverPrefetchingAssets` may be sent before carrier authentication. It states
-that prefetch for the selected public profile has been dispatched; it does not
-promise that downloads completed. Its fields are public correlation data,
-grant no authority, and may cause only navigation of the bound popup to the
-provider URL already frozen by the live `Ceremony`.
-
-The application accepts it only when its ceremony ID and platform/version
-match that live ceremony and its browser-stamped source and origin match the
-expected callback.
+`ProverPrefetchingAssets` is delivered through the authenticated WindowProxy
+path before carrier selection. It states that prefetch for the selected public
+profile has been dispatched; it does not promise that downloads completed and
+grants no authority. The callback already received and validated the selected
+profile through its cleared launch input; echoing it would compare the
+application with its own values. Transport exact-matches connection ID,
+application version, and origin; it exact-matches a supplied popup source or
+binds the browser-stamped source accepted by the client. Acceptance may cause
+only navigation of that popup to the provider URL already frozen by the live
+`Ceremony`.
 
 ### OAuth-return delivery
 
@@ -170,9 +168,7 @@ prover code. Its reason is a bounded sanitized diagnostic string, not a stable
 code or raw exception. Exact reason enums may emerge from implementation
 experience. The application rejects the live ceremony for every observable
 abort. It requires a constructed transport but not an authenticated carrier.
-Transport-construction failure has no CCDP path. Before a real-anchor launch
-binds its popup source, a callback failure likewise cannot be correlated
-safely. Both follow the
+Transport-construction failure has no CCDP path and follows the
 [undeliverable-failure rule](METRICS.md#undeliverable-failures).
 
 ### Closed message union
@@ -192,7 +188,7 @@ type Message =
 
 | Message | Created by | Received by | Valid position and cardinality |
 |---|---|---|---|
-| `ProverPrefetchingAssets` | prover prefetch child, forwarded unchanged by callback | application | exactly once before provider navigation and carrier authentication |
+| `ProverPrefetchingAssets` | prover prefetch child, forwarded unchanged by callback | application | exactly once through authenticated WindowProxy delivery, before provider navigation and carrier selection |
 | `CallbackDeliverParams` | callback | application | exactly once after provider return and transport authentication, before the application decision |
 | `AppRequestProof` | application | active prover | exactly once after an accepted callback result; starts proving |
 | `AppCancelCeremony` | application | active callback or prover endpoint | at most once before another terminal message; makes later messages inert and requests downstream cleanup |
@@ -293,8 +289,8 @@ navigation, URL clearing, and participant UI do not alter it.
   does not interpret or alter message meaning.
 - Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal
   values change no state.
-- Every CCDP message after prefetch readiness omits ceremony ID because
-  transport ownership already supplies it.
+- No CCDP message carries ceremony ID or application version because transport
+  ownership already supplies both.
 - Progress remains advisory and cannot authorize, cancel, or complete a
   ceremony.
 - Transport state, navigation, popup closure, and progress are never a ceremony
