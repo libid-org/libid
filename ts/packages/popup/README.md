@@ -143,35 +143,30 @@ without an active carrier or after closure; nothing is queued.
 Both connection constructors accept an optional local diagnostic sink:
 
 ```ts
-type PopupDiagnosticCode =
-  | 'window-opened' | 'window-blocked' | 'window-bound'
-  | 'handshake-rejected' | 'carrier-message-port' | 'carrier-restored'
-  | 'carrier-fallback' | 'fallback-unavailable'
-  | 'decode-rejected' | 'control-rejected' | 'control-direct' | 'control-connected'
-  | 'continuity-unsupported' | 'keep-acknowledged' | 'keep-failed' | 'claim-empty'
-  | 'popup-unavailable' | 'send-unavailable'
-  | 'connection-closed' | 'connection-failed'
-
 interface PopupDiagnostic {
-  readonly code: PopupDiagnosticCode
+  readonly code: string
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
 }
 ```
 
+`code` is one of the stable identifiers catalogued in
+[metrics and diagnostics](METRICS.md); the set grows with new carriers.
+
 ### Continuity worker
 
 Connected navigation between participating popup documents preserves the
-MessagePort through a same-origin Service Worker. The host registers that
-worker for its popup documents and calls the exported handler from the worker
-script; the package registers nothing:
+MessagePort through a same-origin Service Worker. The host, the deployment
+serving the popup documents, registers that worker and calls the handler from
+the `@libid/popup/worker` subpath in its worker script; the package registers
+nothing and the main entry exports no worker-global types:
 
 ```ts
-declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
-
 // popup-origin worker script
-installPortKeeper(self as unknown as ServiceWorkerGlobalScope)
+import { installPortKeeper } from '@libid/popup/worker'
+
+installPortKeeper(self)
 ```
 
 `accept` claims a preserved port from the registration controlling the current
