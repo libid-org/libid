@@ -1,54 +1,81 @@
 # @libid/popup
 
-`@libid/popup` connects an application page to one popup browsing context across
+`@libid/popup` owns one popup browsing context from creation or adoption through
+navigation and closure. It connects that popup to an application page across
 origins, external navigation, isolation boundaries, mobile suspension, and
-popup-document replacement. It carries caller-defined messages without owning
-or naming a caller protocol.
+popup-document replacement, carrying caller-defined messages without owning or
+naming the caller protocol.
 
-`PopupConnection` represents one logical connection. It retains a usable
-carrier for as long as possible and may preserve, transfer, or replace that
-carrier transparently across document changes. Carrier identity, count, and
-lifetime are not API guarantees. If no carrier can continue or be established,
-the logical connection fails closed.
+The detailed design is split into the [popup connection](CONNECTION.md), its
+[MessagePort](CONNECTION-MESSAGEPORT.md) and
+[WebRTC](CONNECTION-WEBRTC.md) carriers, and [popup control](CONTROL.md).
+Acceptance is indexed by the [test plan](TEST_PLAN.md), while
+[metrics and diagnostics](METRICS.md) defines local observability.
 
 ## API
 
-The public API separates popup lifecycle from communication. The application
-creates a `PopupWindow`, then gives it to its connection. The popup document
-wraps its current window and does the same:
+### Open the popup
+
+The application creates a lifecycle object during the user activation. It then
+constructs the connection before deciding whether to suppress the action's
+native navigation:
 
 ```ts
-const openedWindow = PopupWindow.open(anchor.target)
-const applicationConnection = PopupConnection.connect<Messages>(openedWindow, {
+const popupWindow = PopupWindow.open(anchor.target)
+const connection = PopupConnection.connect<Messages>(popupWindow, {
   connectionId,
   popupOrigin,
   fallback,
   onDiagnostic,
 })
 
-const currentWindow = PopupWindow.current()
-const popupConnection = await PopupConnection.accept<Messages>(currentWindow, {
-  connectionId,
-  allowedApplicationOrigins,
-  fallback,
-  onDiagnostic,
-})
+void connection.navigate(anchor.href)
+if (popupWindow.opened) event.preventDefault()
+```
 
-interface Message {
-  readonly type: string
-}
+`PopupWindow.open(target)` synchronously attempts
+`window.open('about:blank', target)` and returns a wrapper even when the browser
+returns no handle. In that case the connection binds the popup created by the
+same action's real anchor. See [popup creation and native-anchor
+fallback](CONNECTION.md#popup-creation-and-native-anchor-fallback).
 
-interface MessageType<M extends Message> {
-  readonly type: M['type']
-  decode(value: unknown): M
-}
-
+```ts
 interface PopupWindow {
   readonly opened: boolean
   navigate(url: string): Promise<void>
   close(): Promise<void>
 }
 
+declare const PopupWindow: {
+  open(target: string): PopupWindow
+  current(): PopupWindow
+}
+```
+
+`PopupWindow.current()` wraps the current popup document, its opener, and its
+Service Worker access. It adopts the existing popup and cannot create another
+one.
+
+### Connect from the popup
+
+Each participating popup document accepts its side of the same logical
+connection:
+
+```ts
+const popupWindow = PopupWindow.current()
+const connection = await PopupConnection.accept<Messages>(popupWindow, {
+  connectionId,
+  allowedApplicationOrigins,
+  fallback,
+  onDiagnostic,
+})
+```
+
+`PopupConnection` retains a usable carrier for as long as possible and may
+preserve, transfer, or replace it transparently across document changes. If no
+carrier can continue or be established, the logical connection fails closed.
+
+```ts
 interface PopupConnection<M extends Message> {
   send(message: M): void
   on<N extends M>(
@@ -58,63 +85,25 @@ interface PopupConnection<M extends Message> {
   navigate(url: string): Promise<void>
   close(): Promise<void>
 }
-
-type CarrierConstructor = (signal: AbortSignal) => Promise<Carrier>
-
-interface Carrier {
-  send(value: Message): void
-  on(handler: (value: unknown) => void): () => void
-  close(): void
-}
-
-interface PopupDiagnostic {
-  readonly code: string
-  readonly timestamp: number
-  readonly durationMs?: number
-  readonly count?: number
-}
-
-declare const PopupWindow: {
-  open(target: string): PopupWindow
-  current(): PopupWindow
-}
-
-declare const PopupConnection: {
-  connect<M extends Message>(popupWindow: PopupWindow, options: {
-    connectionId: string
-    popupOrigin: string
-    fallback?: CarrierConstructor
-    onDiagnostic?: (event: PopupDiagnostic) => void
-  }): PopupConnection<M>
-
-  accept<M extends Message>(popupWindow: PopupWindow, options: {
-    connectionId: string
-    allowedApplicationOrigins: readonly string[]
-    fallback?: CarrierConstructor
-    onDiagnostic?: (event: PopupDiagnostic) => void
-  }): Promise<PopupConnection<M>>
-}
 ```
 
-Omitting `fallback` starts no fallback work. If opener-based connection fails,
-the connection terminates with the stable `fallback-unavailable` diagnostic. A
-real WebRTC constructor closes over its own signaling and ICE configuration and
-is supplied independently in each browser document.
+`navigate` and `close` control the same popup directly while possible and over
+the connection after isolation. `close` releases both the connection and popup.
 
-`PopupWindow.open(target)` synchronously attempts
-`window.open('about:blank', target)` and returns a wrapper even when the browser
-returns no handle. The application connection binds that native-anchor fallback
-internally. Its `navigate` leaves a pending native-anchor fallback to the same
-activation, uses direct popup control when a handle is available, and uses
-connection control after isolation. `PopupWindow.current()` wraps the popup
-document, its opener, and its
-Service Worker access. The popup-side connection exposes the same operations
-for that window but cannot create another popup.
+### Define and exchange messages
 
-Each message is one class that supplies its transported discriminator and
-static decoder:
+Each caller-owned message class supplies its discriminator and decoder:
 
 ```ts
+interface Message {
+  readonly type: string
+}
+
+interface MessageType<M extends Message> {
+  readonly type: M['type']
+  decode(value: unknown): M
+}
+
 class PopupReady implements Message {
   static readonly type = 'popup-ready'
   readonly type = PopupReady.type
@@ -127,39 +116,48 @@ class PopupReady implements Message {
   }
 }
 
-type Messages = PopupReady // Add other composition-owned message classes here.
+type Messages = PopupReady
 
-popupConnection.on(PopupReady, ready => {
+connection.on(PopupReady, ready => {
   // ready is PopupReady
 })
 
-popupConnection.send(new PopupReady(1))
+connection.send(new PopupReady(1))
 ```
 
 Higher-level popup logic combines these classes into its own union and supplies
-that union to `PopupConnection`. No protocol-wide union becomes part of this
-package. Lifecycle controls are consumed internally and never reach caller
-handlers.
+that union to `PopupConnection`. Lifecycle controls remain internal and never
+reach caller handlers.
 
-The caller keeps a real action-specific anchor as a native fallback when
-`window.open()` returns no handle. `PopupConnection.connect` synchronously arms
-binding before the activation handler returns; see [popup creation and native-anchor
-fallback](CONNECTION.md#popup-creation-and-native-anchor-fallback).
+### Diagnostics
 
-See [popup connection](CONNECTION.md) for the complete boundary and lifecycle,
-the [MessagePort carrier](CONNECTION-MESSAGEPORT.md) for the preferred path, the
-[WebRTC carrier](CONNECTION-WEBRTC.md) for opener-independent fallback, and
-[popup control](CONTROL.md) for navigation and closure. Package acceptance is
-indexed by the [test plan](TEST_PLAN.md), and its local observability boundary
-is defined by [metrics and diagnostics](METRICS.md).
+Both connection constructors accept an optional local diagnostic sink:
 
-## Browser evolution
+```ts
+interface PopupDiagnostic {
+  readonly code: string
+  readonly timestamp: number
+  readonly durationMs?: number
+  readonly count?: number
+}
+```
 
-MessagePort is preferred while the popup retains its opener. An explicitly
-supplied WebRTC implementation defines the opener-independent fallback
-boundary; its signaling-service wire contract is outside the current
-specification.
+### Fallback carrier
 
-[Document-Isolation-Policy](CONNECTION.md#document-isolation-policy-evolution)
-can remove top-level isolated-document replacement where browser support and
-real-device qualification satisfy the connection constraints.
+The optional fallback is a carrier constructor supplied independently in every
+participating document:
+
+```ts
+type CarrierConstructor = (signal: AbortSignal) => Promise<Carrier>
+
+interface Carrier {
+  send(value: Message): void
+  on(handler: (value: unknown) => void): () => void
+  close(): void
+}
+```
+
+Omitting it starts no fallback work. If opener-based connection fails, the
+connection terminates with the stable `fallback-unavailable` diagnostic. The
+WebRTC constructor closes over its own signaling and ICE configuration; callers
+do not manage carrier selection, replacement, or lifetime.
