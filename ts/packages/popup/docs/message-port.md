@@ -111,7 +111,7 @@ position on the ordered port keeps every later caller value behind it.
 
 ## Message delivery
 
-`messagePortCarrier` passes each logical value directly to
+`PortCarrier` passes each logical value directly to
 `MessagePort.postMessage`. Native structured clone preserves arrays, plain
 records, and `Uint8Array`; this carrier adds no JSON encoding, byte tag,
 normalization, or additional copy. Received `MessageEvent.data` remains
@@ -153,8 +153,9 @@ channel.
 For every participating-document replacement, the bridge must complete within
 its bounded interval. The same logical connection may use it repeatedly. After
 the worker acknowledges preservation, the source starts navigation immediately
-and the destination claims in its clearing bootstrap before package import or
-network use. It never holds a port while an unrelated document, user
+and the destination calls `PopupConnection.accept` before any other network
+use; the claim is its first step, so the deadline includes document load and
+package import. It never holds a port while an unrelated document, user
 interaction, or intentional background wait owns the popup; a later
 participating document establishes a replacement carrier.
 
@@ -185,59 +186,62 @@ path.
 `PortKeeper` is the carrier's package-private continuity component. It
 encapsulates Service Worker communication, temporary ownership, event lifetime,
 the claim deadline, one-use transfer, and cleanup. It neither reads the port nor
-interprets its purpose.
+knows what it carries.
+
+The worker itself is host-owned: a Service Worker script must be served from
+the popup origin, so the host registers one for its popup documents and calls
+the public `installPortKeeper(scope)` from that script. The package registers
+nothing and `PopupWindow.current()` resolves the registration controlling the
+current document.
 
 ```ts
+declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
+
 declare class PortKeeper {
   constructor(
     registration: ServiceWorkerRegistration,
     connectionVersion: ConnectionVersion,
   )
 
-  keep(
-    connectionId: string,
-    purpose: string,
-    port: MessagePort,
-  ): Promise<void>
-
-  claim(connectionId: string): Promise<{
-    purpose: string
-    port: MessagePort
-  } | null>
+  keep(connectionId: string, port: MessagePort): Promise<void>
+  claim(connectionId: string): Promise<MessagePort | null>
 }
 ```
 
 The constructor fixes the active registration and connection version for both
 operations. `keep` resolves only after the worker owns the exact port, after
 which connection may replace the source document. `claim` atomically returns
-and removes the unchanged purpose and port, or returns `null` when no entry
-exists. `null` authenticates and selects nothing; popup construction continues
-with its available browser resources. A returned port is the selected carrier
-endpoint.
+and removes the unchanged port, or returns `null` when no entry exists. `null`
+authenticates and selects nothing; popup construction continues with its
+available browser resources. A returned port is the selected carrier endpoint.
 
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
 not yet exist. The Service Worker record and control-message encoding are
-implementation details. Connection version, connection ID, purpose bounds,
-transferable count, duplicate ownership, expiry, and one-use claim are checked
-before ownership changes. A malformed, mismatched, duplicate, or post-terminal
-record rejects and closes every reachable port; absence is the sole `null`
-result. Worker loss or a failed `keep` acknowledgement prevents navigation with
+implementation details. Connection version, connection ID, transferable
+count, duplicate ownership, and one-use claim are checked before ownership
+changes. A malformed, mismatched, or duplicate record rejects and closes every
+reachable port. Expiry deletes the entry and closes its port; an expired or
+already-claimed entry is absent and yields `null`, the worker keeps no record
+of it. Worker loss or a failed `keep` acknowledgement prevents navigation with
 live state. No `BroadcastChannel`, cookie, IndexedDB record, request, or URL
-carries the port or purpose.
+carries the port.
 
 ## API
 
-The application starts connecting before the popup endpoint is ready:
+The application starts listening before the popup endpoint is ready:
 
 ```ts
-declare function connectApplicationMessagePort(options: {
-  popupWindow: PopupWindow
-  popupOrigin: string
-  connectionVersion: ConnectionVersion
-  connectionId: string
-  signal: AbortSignal
-}): Promise<MessagePort>
+declare function listenForPopupPorts(
+  options: {
+    popupWindow: PopupWindow
+    popupOrigin: string
+    connectionVersion: ConnectionVersion
+    connectionId: string
+    signal: AbortSignal
+  },
+  onPort: (port: MessagePort) => void,
+): () => void
 
 declare function connectPopupMessagePort(options: {
   opener: WindowProxy
@@ -247,30 +251,32 @@ declare function connectPopupMessagePort(options: {
   signal: AbortSignal
 }): Promise<MessagePort>
 
-declare function messagePortCarrier(port: MessagePort): Carrier
+declare class PortCarrier implements Carrier {
+  constructor(port: MessagePort)
+  /** Hands the port to `PortKeeper.keep` and closes this carrier. */
+  detach(): MessagePort
+}
 ```
 
-`connectApplicationMessagePort` installs its listener synchronously and returns
-a pending port promise for one popup document without sending anything. When `PopupWindow` retained a
-handle it requires that exact source. Otherwise it internally binds
-`PopupWindow` to the source of the first handshake that exact-matches the configured popup origin,
-connection version, and connection ID. When a document change cannot preserve
-the current port, the connection closes it and synchronously creates the next
-pending operation before navigating. This replacement is private connection
+`listenForPopupPorts` installs one window listener synchronously for the
+connection lifetime and sends nothing. When `PopupWindow` retained a handle it
+requires that exact source; otherwise it binds `PopupWindow` to the source of
+the first handshake that exact-matches the configured popup origin, connection
+version, and connection ID, and requires that source afterwards. Each accepted
+handshake creates one channel, responds with the popup endpoint, awaits the
+echo, and then reports the retained endpoint through `onPort`; the connection
+installs it and closes the previous carrier. A newer accepted handshake
+supersedes one still awaiting its echo. This replacement is private connection
 machinery; callers continue using the same `PopupConnection`.
 
 When the popup endpoint is ready, it calls and awaits
-`connectPopupMessagePort`. It sends the handshake request; the pending
-application operation validates it, creates the channel, and sends the response
-with the popup endpoint. The popup validates that response, sends the same
-handshake record over the transferred port, and resolves with that endpoint.
-The application validates the acknowledgement and only then resolves
-`portPromise` with its retained endpoint.
-
-Each operation resolves once with its local endpoint. A later participating
-document repeats the operation under the same logical connection. A handshake attempt from
-the retained or newly bound source that fails authentication rejects
-immediately; abort also rejects. Both paths remove the window listener and
-close every reachable port.
-The concrete error type is private. `messagePortCarrier` starts the port,
-forwards unchanged structured-clone values, and closes idempotently.
+`connectPopupMessagePort`. It sends the handshake request; the listening
+application validates it, creates the channel, and sends the response with the
+popup endpoint. The popup validates that response, sends the same handshake
+record over the transferred port, and resolves with that endpoint. A handshake
+attempt from the opener that fails authentication rejects immediately; abort
+and the `OPENER_HANDSHAKE_TIMEOUT_MS` deadline also reject. Every rejection
+removes the window listener and closes every reachable port. The concrete
+error type is private. `PortCarrier` starts the port, forwards unchanged
+structured-clone values, closes idempotently, and `detach` surrenders the
+port for preservation.

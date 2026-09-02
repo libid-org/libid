@@ -6,15 +6,25 @@ control work. It never exports telemetry itself. A caller may supply
 policy.
 
 ```ts
+type PopupDiagnosticCode =
+  | 'window-opened' | 'window-blocked' | 'window-bound'
+  | 'handshake-rejected' | 'carrier-message-port' | 'carrier-restored'
+  | 'carrier-fallback' | 'fallback-unavailable'
+  | 'decode-rejected' | 'control-rejected' | 'control-direct' | 'control-connected'
+  | 'continuity-unsupported' | 'keep-acknowledged' | 'keep-failed' | 'claim-empty'
+  | 'popup-unavailable' | 'send-unavailable'
+  | 'connection-closed' | 'connection-failed'
+
 interface PopupDiagnostic {
-  readonly code: string
+  readonly code: PopupDiagnosticCode
   readonly timestamp: number
   readonly durationMs?: number
   readonly count?: number
 }
 ```
 
-`code` is a stable package-owned identifier. `timestamp` uses
+`code` is a stable package-owned identifier from the closed union above; adding
+a code is a compatible change, renaming or removing one is not. `timestamp` uses
 `performance.timeOrigin + performance.now()`. Optional finite, nonnegative
 `durationMs` and integer `count` fields are present only where their meaning is
 fixed by the code. The callback receives no arbitrary details map, raw
@@ -25,11 +35,11 @@ value.
 
 | Area | Measurements |
 |---|---|
-| Popup window | scripted-open result, native-anchor binding result, direct navigation or closure result |
-| Connection | construction, source authentication, selected carrier class, usable connection, close reason and latency |
-| Message delivery | bounded queued count and encoded bytes where encoding exists, send-to-receive latency where both clocks are available, decode rejection code |
-| Continuity | keep acknowledgement, navigation gap, claim duration, claim result, expiry, and worker loss |
-| Control | direct or connected execution, validation failure, and local acceptance latency; never remote success |
+| Popup window | `window-opened`, `window-blocked`, `window-bound` |
+| Connection | `handshake-rejected`, `carrier-message-port`, `carrier-restored`, `carrier-fallback`, `fallback-unavailable`, `popup-unavailable`, `send-unavailable`, `connection-closed` and `connection-failed` with `durationMs` since construction |
+| Message delivery | `decode-rejected`; MessagePort adds no encoding or clock, so no size or latency measurement exists |
+| Continuity | `keep-acknowledged` with `durationMs`, `keep-failed`, `claim-empty`, `continuity-unsupported` |
+| Control | `control-direct`, `control-connected`, `control-rejected`; never remote success |
 | WebRTC | signaling-path class, offer publication, answer pickup, candidate class, selected-pair class, ICE checks, DTLS, data-channel open, and terminal failure |
 
 `fallback-unavailable` is emitted exactly once only when opener-based
