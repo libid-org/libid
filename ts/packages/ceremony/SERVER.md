@@ -44,7 +44,7 @@ One deployment has these server-owned inputs:
 | `allowedAppOrigins` | Nonempty set of canonical application origins admitted to fetch configuration and authenticate a returned callback |
 | Callback alias path | Developer-configurable path whose default is `/auth/v1/callback` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback and prover roots | Closed `CCDPVersion` maps to immutable module URLs, exact package-owned stylesheet hashes, and deployment-fixed CSP sources |
+| Callback and prover roots | The closed maps and immutable filenames defined by [CCDP](CCDP.md#browser-shells), plus exact package-owned stylesheet hashes and deployment-fixed CSP sources |
 | Prover assets | One exact immutable URL for the libID-built notarization-client module and its fixed sibling WASM, one exact immutable circuit URL per platform/version, and one common Notary Service address |
 | Confidential platform settings | GitHub client secret, redirect URI, and other platform-required token-exchange settings when GitHub is enabled |
 
@@ -151,56 +151,10 @@ request path, `Origin`, `Referer`, query, fragment, platform, or ceremony. The
 document is top-level, non-isolated, and non-frameable so it preserves the
 application opener through OAuth.
 
-The HTML is a security shell, not a UI template. It contains the clearing
-bootstrap and one empty mount point, but no ceremony view, branding markup,
-loading control, or normal-operation stylesheet. After clearing, the root
-module creates the complete package UI. Only the bootstrap's fixed textual
-module-load failure can render without it.
-
-### Ingress bootstrap
-
-The document contains one CSP-hashed inline bootstrap. Before storage,
-rendering, error reporting, module loading, or network activity, it:
-
-1. bounds the combined raw query and fragment to
-   `MAX_OAUTH_RETURN_BYTES = 32 KiB`;
-2. copies the exact `location.search` and `location.hash`, including their
-   leading delimiters when nonempty;
-3. clears both with `history.replaceState`;
-4. reads exactly one CCDP version from `ccdpVersion` in a launch fragment or
-   the `v<version>.<ceremonyId>` OAuth state on provider return;
-5. selects and imports the exact immutable
-   `libid-ccdp-v<version>-callback.js` URL from its closed embedded
-   map; and
-6. invokes the selected package entrypoint with the captured values and embedded
-   deployment allowlist:
-
-```ts
-declare function startCallback(
-  oauthReturn: { query: string; fragment: string },
-  allowedAppOrigins: readonly string[],
-): void
-
-startCallback(oauthReturn, allowedAppOrigins)
-```
-
-Malformed and oversized input follows the same clearing order; an oversized
-value is not retained, and no failure is rendered until both URL components are
-gone.
-
-A root import failure is terminal for that document. The bootstrap does not
-retry the same module URL because browsers retain a failed module-map entry; a
-user retry starts in a fresh callback document.
-
-The bootstrap parses no platform field beyond locating one OAuth `state` across
-the copied query and fragment, and it never derives an allowlist. Unknown,
-missing, conflicting, or unsupported CCDP versions fail after clearing and
-before module import. Initial launch and provider return each fetch only their
-selected callback root; the inline selection adds no loader or document
-roundtrip.
-[CCDP](CCDP.md#protocol-locations) owns the closed browser-location grammar,
-navigations, and message ordering; the callback module implements its
-participant lifecycle after URL clearing.
+[CCDP](CCDP.md#callback-shell) owns the shell's exact input modes, clearing and
+version-selection algorithm, root filename, and package entrypoint. The server
+embeds the closed root map, `allowedAppOrigins`, stylesheet hash, and CSP sources
+required by that definition.
 
 Google returns its credential in the fragment, which is never sent to the
 server. X and GitHub return provider-mandated callback parameters in the query.
@@ -227,18 +181,12 @@ The shared callback response uses:
 
 ## Prover document
 
-`GET /ccdp/prover` serves one deployment-generated response for all
-platforms:
-
-- `#prefetch?ccdpVersion=<uint>&platformId=<id>&ceremonyVersion=<uint>` starts
-  selected-profile asset prefetch; and
-- `#prove?ccdpVersion=<uint>&ceremonyId=<uuid>` is accepted only in the popup's
-  promoted top-level browsing context, where the isolated prover claims the
-  application port.
-
-Fragments do not reach the server. Both roles therefore receive identical HTML,
-headers, embedded assets, and root module. A nonempty query is rejected; no
-server request parameter selects platform, role, asset, or CSP.
+`GET /ccdp/prover` serves one deployment-generated, request-invariant response
+for all platforms. [CCDP](CCDP.md#prover-shell) owns its exact fragment modes,
+clearing and version-selection algorithm, root filename, context checks, and
+package entrypoint. The server embeds only the closed root map, stylesheet hash,
+CSP sources, and `ProverAssets` required by that definition. No server request
+parameter selects platform, role, asset, or CSP.
 
 ### Embedded prover assets
 
@@ -284,31 +232,11 @@ also fetches the global notarization client. The server schema does not
 redefine that platform inventory. A request, fragment, or browser message
 cannot add or replace any URL.
 
-The bootstrap bounds and copies its fragment, clears it before storage,
-rendering, errors, module loading, or network activity, and then exact-validates
-the closed value and embedded `ProverAssets`. It selects the exact same-origin
-immutable `libid-ccdp-v<version>-prover.js` root from its closed
-embedded CCDP-version map and passes its inputs to the Window entrypoint:
-
-```ts
-declare function startProver(
-  fragment: string,
-  assets: ProverAssets,
-  port?: MessagePort,
-): void
-```
-
-For a `prove` fragment, the clearing bootstrap requires
-`window.top === window`, obtains the transport-preserved port before importing
-the root, and supplies it as `port`. Prefetch requires `window.top !== window`
-and supplies no port. Any other combination fails before package code or
-network use. The Service Worker branch installs its package-private cache and
-transport-continuity handlers when the same root is evaluated in a worker and
-exports no protocol entrypoint.
-The prover root is also the module service-worker registration URL and permits
-a scope covering `/ccdp/`; its response sets
+The selected prover root is also the module Service Worker registration URL.
+Its response permits a scope covering `/ccdp/` and sets
 `Service-Worker-Allowed: /ccdp/` when the script URL's default scope
-does not already cover it. Callback and prover perform no configuration request.
+does not already cover it. Callback and prover perform no configuration
+request.
 
 ### Prover response policy
 

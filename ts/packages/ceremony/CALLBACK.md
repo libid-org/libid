@@ -1,18 +1,19 @@
 # `@libid/ceremony` callback architecture
 
-This document defines the browser participant emitted as
-`libid-ccdp-v<version>-callback.js`. The same fixed, non-isolated shell
-runs before OAuth and at the configured provider callback, selecting that root
-from its cleared launch fragment or OAuth `state`. It preserves and authenticates
-the application opener when available and delegates typed delivery, carrier
+This document defines the browser participant implemented by the selected CCDP
+callback root. The same fixed, non-isolated shell runs before OAuth and at the
+configured provider callback. The callback preserves and authenticates the
+application opener when available and delegates typed delivery, carrier
 selection, and same-popup promotion to the concrete CCDP transport.
 
 The exact cross-document records and their order are defined by
 [CCDP](CCDP.md), transport lifecycle in
 [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md), browser-local authentication in
 [CCDP-CARRIER-MESSAGEPORT.md](CCDP-CARRIER-MESSAGEPORT.md), and opener-severed
-fallback in [CCDP-CARRIER-WEBRTC.md](CCDP-CARRIER-WEBRTC.md). The server-owned
-HTML bootstrap, callback alias, embedded allowlist, and response headers are defined by the
+fallback in [CCDP-CARRIER-WEBRTC.md](CCDP-CARRIER-WEBRTC.md). The shell, root
+filename, URL inputs, and entrypoint call are defined by
+[CCDP](CCDP.md#callback-shell); its server-owned deployment values and response
+headers are defined by the
 [server contract](SERVER.md#callback-document-and-configured-alias). Prover
 execution is defined in [PROVER.md](PROVER.md). This document
 owns only the callback participant's local lifecycle.
@@ -39,37 +40,22 @@ JavaScript heap. Continuity comes from either the authenticated retained
 
 ## Entrypoint and trusted inputs
 
-The server bootstrap bounds and clears the URL, selects the exact supported
-CCDP root, and then calls:
-
-```ts
-declare function startCallback(
-  oauthReturn: {
-    query: string
-    fragment: string
-  },
-  allowedAppOrigins: readonly string[],
-): void
-```
-
 `oauthReturn` is the exact copied query and fragment, including their leading
 delimiter when nonempty. `allowedAppOrigins` is immutable deployment data
-embedded by the server. It is never inferred from `Origin`, `Referer`, or URL
-input. `startCallback` copies and freezes both inputs before installing listeners.
+embedded by the server. The CCDP shell passes both to `startCallback`; the
+callback copies and freezes them before installing listeners.
 
-The callback accepts two closed inputs:
+The callback accepts the two closed inputs defined by CCDP:
 
-- **Initial launch:** empty query and a launch fragment containing one bounded
-  CCDP version, ceremony ID, platform ID, and platform ceremony version.
-- **Provider callback:** the bounded raw query and fragment with exactly one
-  syntactically valid OAuth `state` in the form
-  `v<ccdpVersion>.<ceremonyId>`.
+- **Initial launch:** the cleared launch input.
+- **Provider callback:** the bounded raw provider return containing one routing
+  state.
 
 The callback recognizes only enough callback grammar to find that single routing
 value. The application client's selected platform/version client leaf later
 classifies success, denial, query/fragment placement, and fields. Unknown,
 ambiguous, or malformed input enters a fixed terminal failure state without
-releasing the captured value or performing credential-bearing work. The server
+releasing the captured value or performing credential-bearing work. The CCDP
 bootstrap rejects oversized input before package code runs.
 
 ## Two document lifetimes
@@ -100,9 +86,9 @@ no state.
 
 | Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
-| Initial launch | valid launch fragment; child `ProverPrefetchingAssets` | construct the ceremony transport over the opener, bind one `/ccdp/prover#prefetch?ccdpVersion=...&platformId=...&ceremonyVersion=...` child, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
+| Initial launch | valid launch input; child `ProverPrefetchingAssets` | construct the ceremony transport over the opener, bind the CCDP prefetch document, and send readiness through transport; missing profile or child load fails, ordinary fetch failure continues cold |
 | Provider return | one OAuth state and `CallbackDeliverParams` | construct a fresh ceremony transport; it exact-binds MessagePort or commits WebRTC without exposing the return to signaling |
-| Prover transition | carrier port is preserved | transport replaces this document with `/ccdp/prover#prove?ccdpVersion=1&ceremonyId=...` |
+| Prover transition | carrier port is preserved | transport replaces this document with the CCDP proof-generation location |
 
 Prefetch handles public assets and needs no application reply or timeout. The
 callback never constructs the provider URL. After provider return it releases
@@ -152,7 +138,8 @@ record is written.
 
 | Boundary | Owner |
 |---|---|
-| URL size, clearing order, immutable module root, embedded allowlist, and response policy | server bootstrap and response |
+| URL size, clearing order, immutable module root, and embedded allowlist | CCDP callback shell |
+| HTTP response and logging policy | ceremony server |
 | MessagePort bootstrap shape, application source/origin, ceremony continuity, carrier selection, and exact port count | concrete transport and MessagePort carrier |
 | RTC signaling origin, role, one-use ceremony binding, and ICE/DTLS continuity | concrete transport, WebRTC carrier, and signaling service |
 | CCDP shape, direction, order, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client and callback/prover participants |
@@ -166,9 +153,9 @@ to configuration.
 
 ## Compatibility and acceptance
 
-The clearing shell selects `CCDPVersion` from the launch fragment or OAuth
-`state` before importing the matching callback root; no callback message repeats
-it. Both carrier bindings independently exact-match the package's
+The CCDP shell selects the callback root before this participant runs; no
+callback message repeats its version. Both carrier bindings independently
+exact-match the package's
 `TransportVersion` before delivering the OAuth return. An unsupported version
 fails before package code loads. Version axes are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).

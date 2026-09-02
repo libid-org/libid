@@ -37,6 +37,96 @@ grammars, navigation order, and `Message` semantics. A message does not repeat
 the version selected before its module loads. The ceremony server API and
 transport controls are independently versioned.
 
+The version-1 browser roots have these exact filenames:
+
+| Document | Root module |
+|---|---|
+| Callback | `libid-ccdp-v1-callback.js` |
+| Prover | `libid-ccdp-v1-prover.js` |
+
+A later CCDP version uses the same pattern with its decimal version substituted
+for `1`. Root URLs are same-origin, immutable deployment assets. The stable
+HTML shells embed closed `CCDPVersion`-to-root maps; neither a request nor a
+CCDP message may supply a root URL.
+
+## Browser shells
+
+`GET /ccdp/callback` and `GET /ccdp/prover` serve the two stable CCDP HTML
+shells. They are browser documents, not JSON API routes. A shell update may add
+a supported CCDP version to its closed map, while an already published root
+remains immutable and available through its compatibility window.
+
+Both responses are request-invariant security shells containing one
+CSP-authorized inline clearing bootstrap and one empty mount point. They contain
+no application UI. Before storage, rendering, error reporting, module import,
+or subsequent network use, each bootstrap bounds and copies its URL input,
+clears the input with `history.replaceState`, exact-validates the grammar below,
+and imports the one root selected by `CCDPVersion`. Missing, conflicting,
+malformed, or unsupported versions import nothing and render only a fixed
+failure after clearing. Selection replaces the module request the document
+already needs; it adds no HTTP redirect, loader script, or document navigation.
+An oversized input is not retained. A root import failure is terminal for that
+document and is not retried against the browser's failed module-map entry; a
+user retry starts in a fresh document.
+
+### Callback shell
+
+The developer-configurable OAuth callback alias, default
+`/auth/v1/callback`, serves the byte-identical callback shell; it is an alias,
+not a redirect or another CCDP version. Application launch uses
+`/ccdp/callback`, while the registered OAuth `redirect_uri` uses the configured
+alias.
+
+The callback bootstrap accepts exactly two input modes:
+
+- initial launch: an empty query and the `launch` fragment defined below, whose
+  `ccdpVersion` selects the callback root; or
+- provider return: the bounded provider-defined query and fragment containing
+  exactly one OAuth `state` in the form `v<version>.<ceremonyId>`, whose version
+  selects the callback root.
+
+It bounds the combined raw query and fragment to
+`MAX_OAUTH_RETURN_BYTES = 32 KiB`, preserves the leading `?` and `#` when
+nonempty, and clears both. It parses no platform-specific return field beyond
+locating the single routing state. After root selection it invokes:
+
+```ts
+declare function startCallback(
+  oauthReturn: { query: string; fragment: string },
+  allowedAppOrigins: readonly string[],
+): void
+```
+
+`allowedAppOrigins` is immutable deployment data embedded in the shell. It is
+never derived from `Origin`, `Referer`, or URL input. Google credentials remain
+in the fragment and therefore never reach the server; provider-mandated query
+parameters are the only credential-bearing URL exception.
+
+### Prover shell
+
+The prover bootstrap accepts an empty query and exactly one of the `prefetch`
+or `prove` fragments defined below. Both modes receive byte-identical HTML,
+headers, embedded `ProverAssets`, and the same selected prover root. The
+bootstrap exact-validates those assets before package or network use. Prefetch
+is valid only in a child iframe and supplies no port; prove is valid only in the
+popup's top-level browsing context and claims the transport-preserved port
+before importing package code. Any other context imports nothing.
+
+After root selection it invokes the Window entrypoint:
+
+```ts
+declare function startProver(
+  fragment: string,
+  assets: ProverAssets,
+  port?: MessagePort,
+): void
+```
+
+The selected prover root is also evaluated as the module Service Worker for
+asset prefetch and short-lived transport continuity; its worker branch exports
+no CCDP entrypoint. The server-owned `ProverAssets` record and both shells'
+HTTP response policies are defined by the [server contract](SERVER.md).
+
 ## Protocol locations
 
 One live `Ceremony` freezes `serverOrigin`, `redirectUri`,
@@ -398,10 +488,16 @@ Opener authentication, Service Worker controls, SDP, and ICE candidates are not
 A loaded application client selects `CCDPVersion` in its launch fragment. The
 callback shell carries it through OAuth `state`, every later internal navigation
 repeats it in its fragment, and each shell loads that exact version's immutable
-root. Compatible implementation changes keep the version. A breaking fragment
-grammar, navigation order, message shape, direction, ordering, or validation
-rule publishes new callback/prover roots while old roots remain available for
-live ceremonies and a compatibility window. No CCDP message repeats the
+root. The stable `/ccdp/callback`, its configured alias, and `/ccdp/prover`
+paths do not select or encode a CCDP version.
+
+Compatible implementation changes keep the version. A breaking shell input
+grammar, root entrypoint contract, navigation order, message shape, direction,
+ordering, or validation rule increments `CCDPVersion` and publishes both new
+versioned roots. The shells add the new roots to their closed maps while old
+roots remain available for live ceremonies and a compatibility window. A root
+may gain immutable companion chunks without changing CCDP when its shell and
+protocol contracts remain compatible. No CCDP message repeats the
 already-selected version.
 
 `PlatformCeremonyVersion` remains independent and versions one platform's

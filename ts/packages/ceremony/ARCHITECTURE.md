@@ -150,9 +150,9 @@ Launch publishes one `@libid/ceremony` package:
 │   ├── carrier-message-port  window authentication and MessagePort delivery
 │   └── carrier-webrtc        signaling, ICE, serialization, and RTCDataChannel delivery
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
-├── callback    source entrypoint for libid-ccdp-v<version>-callback.js
+├── callback    source entrypoint for the CCDP callback root
 ├── prover
-│   ├── index          source entrypoint for libid-ccdp-v<version>-prover.js, workers, WASM, and prefetch
+│   ├── index          source entrypoint for the CCDP prover root, workers, WASM, and prefetch
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    client-safe platform/version catalog and derived public result types
@@ -178,9 +178,9 @@ catalog and public result types, and is re-exported by the package root and
 client API. Prover leaves are internal imports of the prover entrypoint and
 never enter the client catalog.
 Individual platform leaves never import the aggregator. `callback` and `prover`
-are build entrypoints, not separately versioned packages. They emit immutable
-callback/prover roots named by `CCDPVersion` plus worker/WASM assets from one
-compatible package release. The prover artifact runs in both Window and Service Worker
+are build entrypoints, not separately versioned packages. They emit the
+immutable roots whose filenames and shell selection are defined by CCDP, plus
+worker/WASM assets from one compatible package release. The prover artifact runs in both Window and Service Worker
 contexts: its Window branch runs iframe prefetch or the one active top-level
 prover, while its Service Worker branch owns shared asset single flights,
 cache, and the worker handlers used by the transport's short-lived
@@ -228,8 +228,8 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal `Message`, `Decoder`, `CCDPVersion`, direction/order rules, and concrete message-generic `CCDPTransport`; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) which emits `libid-ccdp-v<version>-callback.js` roots and exposes `startCallback(oauthReturn, allowedAppOrigins)` to the cleared callback shell |
-| `@libid/ceremony/prover` | dual-context browser entrypoint which emits `libid-ccdp-v<version>-prover.js` roots; its Window branch exports `startProver(fragment, assets, port?)`, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
+| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) implementing the CCDP-selected callback root |
+| `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch runs package-private asset-prefetch and `PortKeeper` handlers |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.
@@ -361,14 +361,14 @@ not a second authorization secret.
 `new` chooses the platform ceremony version, generates the fresh authorization
 nonce, derives the code verifier from it and the Authorization Digest by the
 normative Proof Key for Code Exchange (PKCE) construction where required, and
-constructs the authorization request with `state=v1.<ceremonyId>`, registers that ID
-to this live `Ceremony`, and returns only after its navigation data is ready.
-OAuth `state` carries the CCDP routing version plus `ceremonyId`; it is not a
-second identifier:
+constructs the authorization request with the [CCDP-defined OAuth
+state](CCDP.md#protocol-locations), registers that ID to this live `Ceremony`,
+and returns only after its navigation data is ready. OAuth `state` carries the
+CCDP routing version plus `ceremonyId`; it is not a second identifier:
 
 ```ts
 interface CeremonyNavigation {
-  href: string   // /ccdp/callback#launch?ccdpVersion=1&ceremonyId=...&platformId=...&ceremonyVersion=...
+  href: string   // CCDP initial callback location
   target: string
 }
 

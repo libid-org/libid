@@ -21,37 +21,30 @@ Normative proof relations and authorization semantics remain in the
 
 ## Component boundary
 
-One dual-context `libid-ccdp-v<version>-prover.js` root serves the
-prover shell and its Service Worker for the selected CCDP version. The document
-has two modes and exactly one active post-callback location:
+The selected dual-context CCDP prover root serves the prover shell and its
+Service Worker. CCDP defines its filename, shell entrypoint, and two document
+modes:
 
 ```text
-Before OAuth
-└── /ccdp/prover#prefetch?ccdpVersion=1&platformId=...&ceremonyVersion=...
-    ephemeral iframe starts selected-profile fetches
-             │
-             └── parent navigates to OAuth; this iframe is destroyed
+Before OAuth: ephemeral child starts selected-profile fetches
+                       │
+                       └── OAuth navigation destroys it
 
-After OAuth
-└── /ccdp/prover#prove?ccdpVersion=1&ceremonyId=...
-    same popup navigates here as a top-level document
-      ├── claims the preserved carrier port
-      ├── resumes MessagePort or opens WebRTC from its queued return
-      └── joins the same fetches and proves
+After OAuth: same popup becomes the isolated top-level prover
+             ├── claims the preserved carrier port
+             ├── resumes MessagePort or opens WebRTC from its queued return
+             └── joins the same fetches and proves
 
 Shared Service Worker
 ├── immutable-asset and CRS single flights survive document replacement
 └── one in-memory PortKeeper entry spans only callback-to-prover navigation
 ```
 
-These are modes of one document and Window entrypoint: each has the exact
-fragment grammar defined by CCDP, and prove mode is accepted only by the
-top-level prover. OAuth
-navigation prevents reuse of the first iframe; the worker and browser caches
-preserve its fetch work.
+OAuth navigation prevents reuse of the first iframe; the worker and browser
+caches preserve its fetch work.
 
-After the server bootstrap clears the URL, the Window branch starts through the
-single internal entrypoint defined by the [server contract](SERVER.md#prover-document).
+After the CCDP shell clears the URL, the Window branch starts through its single
+internal entrypoint.
 The same root evaluated as a Service Worker installs only its cache and
 short-lived `PortKeeper` handlers; it does not enter CCDP or a platform
 pipeline.
@@ -351,11 +344,10 @@ libID-owned circuit and notarization-client release locations; a ceremony
 fetches only its selected platform/version profile.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
-Their JavaScript is part of the prover build; whether the build emits one
-`libid-ccdp-v<version>-prover.js` file or immutable companion chunks is not deployment
-configuration. The build likewise owns every toolchain worker, WASM, and common
-reference string (CRS) location. A deployer cannot replace those dependencies
-through `ProverAssets`.
+Their JavaScript is part of the prover build; whether the CCDP-named root has
+immutable companion chunks is not deployment configuration. The build likewise
+owns every toolchain worker, WASM, and common reference string (CRS) location.
+A deployer cannot replace those dependencies through `ProverAssets`.
 
 The build enumerates the complete transitive execution graph: companion chunks,
 spawner and nested worker modules, WASM, and exact CRS resource paths. Every
@@ -431,9 +423,9 @@ semantics.
 
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
 behavior, not configuration or action input. The initial callback loads the fixed
-prover document, whose Window branch registers its own deployed
-selected `libid-ccdp-v<version>-prover.js` module URL as a module service worker and asks it to
-start only the selected platform/version profile's artifact single flights.
+prover document, whose Window branch registers the selected CCDP prover root as
+a module Service Worker and asks it to start only the selected
+platform/version profile's artifact single flights.
 There is no separate prefetch route, artifact, or mode flag.
 
 After registration, the Window branch selects the newest worker, waits for it
