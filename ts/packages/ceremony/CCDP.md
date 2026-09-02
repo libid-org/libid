@@ -92,16 +92,28 @@ nonempty, and clears both. It parses no platform-specific return field beyond
 locating the single routing state. After root selection it invokes:
 
 ```ts
+interface PopupEndpointOptions {
+  allowedApplicationOrigins: readonly string[]
+  fallback?: CarrierConstructor
+}
+
 declare function startCallback(
   oauthReturn: { query: string; fragment: string },
-  allowedAppOrigins: readonly string[],
+  popup: PopupEndpointOptions,
 ): void
 ```
 
-`allowedAppOrigins` is immutable deployment data embedded in the shell. It is
-never derived from `Origin`, `Referer`, or URL input. Google credentials remain
-in the fragment and therefore never reach the server; provider-mandated query
-parameters are the only credential-bearing URL exception.
+`PopupEndpointOptions` is an entrypoint dependency, not a CCDP message or an
+export of the pure `ccdp` module.
+
+`popup.allowedApplicationOrigins` is immutable deployment data embedded in the
+shell. It is never derived from `Origin`, `Referer`, or URL input. When
+configured, the shell also supplies the popup package's optional fallback
+constructor. The callback passes both unchanged to `PopupConnection.accept`;
+CCDP does not inspect the constructor. Omitting it fails closed if the preferred
+carrier cannot connect. Google credentials remain in the fragment and therefore
+never reach the server; provider-mandated query parameters are the only
+credential-bearing URL exception.
 
 ### Prover shell
 
@@ -118,16 +130,16 @@ After root selection it invokes the Window entrypoint:
 declare function startProver(
   fragment: string,
   assets: ProverAssets,
-  allowedAppOrigins: readonly string[],
+  popup: PopupEndpointOptions,
 ): void
 ```
 
 The selected prover root is also evaluated as the module Service Worker for
 asset prefetch and cache reuse; its worker branch exports no CCDP entrypoint or
-popup-connection API. `allowedAppOrigins` is immutable deployment data embedded
-in the prover shell for `PopupConnection.accept`. The server-owned
-`ProverAssets` record and both shells' HTTP response policies are defined by the
-[server contract](SERVER.md).
+popup-connection API. The top-level prover passes the immutable popup options to
+`PopupConnection.accept`; prefetch mode does not construct a popup connection
+or fallback. The server-owned `ProverAssets` record and both shells' HTTP
+response policies are defined by the [server contract](SERVER.md).
 
 ## Protocol locations
 

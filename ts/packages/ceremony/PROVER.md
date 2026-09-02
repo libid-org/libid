@@ -46,12 +46,13 @@ The same root evaluated as a Service Worker installs only its cache and
 prefetch handlers; it does not enter CCDP, popup connection, or a platform
 pipeline.
 
-The prover calls `PopupConnection.accept` after isolation and URL clearing.
-`@libid/popup` privately restores continuity or selects a fresh carrier before
-returning the same logical connection. Prover logic sees no carrier, worker
-handoff, or fallback configuration. It then consumes one exact
-`AppRequestProof` and returns only bounded platform steps, one exact platform
-proof delivery, or a sanitized technical failure.
+The prover calls `PopupConnection.accept` after isolation and URL clearing,
+passing the shell's immutable allowed application origins and optional fallback
+constructor. `@libid/popup` privately restores continuity or selects a fresh
+carrier before returning the same logical connection. Platform and proving
+logic see no carrier, worker handoff, or fallback configuration. It then
+consumes one exact `AppRequestProof` and returns only bounded platform steps,
+one exact platform proof delivery, or a sanitized technical failure.
 
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the

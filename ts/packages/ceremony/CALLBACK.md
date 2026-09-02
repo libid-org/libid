@@ -39,9 +39,11 @@ callback storage does not.
 ## Entrypoint and trusted inputs
 
 `oauthReturn` is the exact copied query and fragment, including their leading
-delimiter when nonempty. `allowedAppOrigins` is immutable deployment data
-embedded by the server. The CCDP shell passes both to `startCallback`; the
-callback copies and freezes them before installing listeners.
+delimiter when nonempty. The CCDP shell passes it and immutable popup endpoint
+options to `startCallback`. The callback copies and freezes the embedded allowed
+application origins and passes them plus the optional fallback constructor to
+`PopupConnection.accept` before installing ceremony listeners. It neither
+inspects nor selects that fallback.
 
 The callback accepts the two closed inputs defined by CCDP:
 
