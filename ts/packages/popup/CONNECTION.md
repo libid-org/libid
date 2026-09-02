@@ -153,7 +153,9 @@ Both endpoint records include the same caller-supplied connection ID. The
 package supplies `ConnectionVersion` internally. Connection uses the ID for
 authentication, continuity, and private signaling without recovering it from
 transported values. It exact-matches both values in private carrier and
-navigation controls but assigns neither caller-level semantics.
+navigation controls but assigns neither caller-level semantics. The connection
+ID lives for the logical connection; individual carrier attempts do not consume
+it.
 
 A popup endpoint constructed from `PopupWindow.current()` and an immutable
 target-origin set sends the MessagePort carrier's private handshake before
@@ -173,11 +175,12 @@ message. `PopupWindow.opened` is initially true only when scripted creation
 returned a handle and becomes true after successful fallback binding.
 
 When a document change cannot preserve the popup endpoint's current carrier,
-the connection closes that carrier, synchronously arms a replacement attempt,
-and retains its bound popup browsing context and any idle fallback subscription.
-The next participating popup document calls `accept` and installs the selected
-carrier under the same logical connection. These mechanics are transparent to
-the caller.
+the connection retains its logical state and bound popup browsing context while
+it prepares a replacement. An active WebRTC carrier privately asks the
+application endpoint to start the next one-use signaling round and waits for its
+readiness before the popup navigates. The next participating popup document
+calls `accept` and installs the selected carrier under the same logical
+connection. These mechanics are transparent to the caller.
 
 ### Popup creation and native-anchor fallback
 
@@ -303,9 +306,10 @@ promise without producing an unhandled rejection. `accept` invokes its supplied
 constructor only after MessagePort becomes unavailable. Connection passes only
 its internal abort signal; the constructor closes over every carrier-specific
 option. MessagePort selection aborts the current attempt's pending fallback.
-Before direct external navigation starts the next carrier attempt, the
-application invokes the supplied constructor again so opener-independent
-signaling is armed before the provider visit. Connection closure aborts it.
+Before direct external navigation, the application starts a fresh fallback
+attempt. Before popup-side navigation destroys an active WebRTC carrier, that
+carrier privately requests and awaits the same preparation from the application
+endpoint. Connection closure aborts every attempt.
 If no constructor was supplied when fallback becomes necessary, connection
 records stable code `fallback-unavailable` and closes.
 
@@ -364,8 +368,9 @@ that URL:
   retained `WindowProxy`;
 - after isolation severs direct control, the application endpoint sends
   `Navigate`; and
-- the receiving popup calls `keep` for its carrier port, awaits worker
-  ownership, and replaces its current document.
+- the receiving popup preserves a transferable carrier or privately prepares a
+  replacement for a non-transferable WebRTC carrier, then replaces its current
+  document.
 
 The first form may cross an arbitrary external document and wait for user
 interaction because no native carrier is retained across that gap. The next
@@ -434,9 +439,10 @@ A fresh popup endpoint chooses one physical path for that document:
 Connection first attempts MessagePort. If the opener path is unavailable, it
 commits the configured fallback. The application endpoint accepts the first
 valid selection for that popup document; late authentication, signaling, or
-values from another path are inert. A failed active carrier never migrates, but
-a later participating document selects a fresh carrier under the same logical
-connection.
+values from another path are inert. An unexpected failed active carrier never
+retries or migrates. A controlled document replacement may install a fresh
+carrier under the same logical connection only after its replacement path is
+prepared.
 
 In the MessagePort path, `send` uses the selected native port. In fallback, it
 queues one value on the connection-owned local port. Connection neither identifies
@@ -450,7 +456,7 @@ Only MessagePort is transferable:
 - an established `RTCDataChannel` is never handed across navigation.
 
 The destination endpoint consumes the fallback value, establishes the WebRTC
-carrier through the already-started signaling subscription, and forwards that
+carrier through the fresh already-started signaling round, and forwards that
 unchanged value first.
 
 ## Carrier continuity across document navigation

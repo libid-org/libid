@@ -54,10 +54,12 @@ operation and leaves that same activation's default navigation intact. While
 direct control is available, it uses the exact retained `WindowProxy`. After
 isolation severs it, the application endpoint sends
 `Navigate` over the selected connection; the receiving popup stops
-accepting controls and calls `location.replace(url)`. Replacement avoids adding
-the current document to popup history. It creates no browsing context and does
-not promise connection continuity into the destination. The caller commits its
-state and clears sensitive inputs before requesting navigation.
+accepting controls, prepares connection continuity when required, and calls
+`location.replace(url)`. Replacement avoids adding the current document to
+popup history and creates no browsing context. If the connection cannot preserve
+its carrier or prepare a replacement, it fails closed without invoking
+navigation. The caller commits its state and clears sensitive inputs before
+requesting navigation.
 
 While direct control is available, `close` calls `close()` on the exact retained
 `WindowProxy`. After isolation severs it, `close` sends `ClosePopup` over the
@@ -72,11 +74,11 @@ group switch. A same-tab or full-page presentation MUST NOT send
 `ClosePopup`. This is a window-creation invariant; there is no reliable post-COOP
 runtime probe for script closability.
 
-The first accepted popup control is terminal and one-shot. A duplicate,
-replay, race loser, unknown control, wrong-direction record, or record on another
-connection performs no browser operation. A caller protocol may reject later
-values while retaining the connection solely for this one control; popup control
-never revives or changes its result.
+The first accepted popup control is terminal and one-shot for its receiving
+document. `Navigate` may continue the logical connection in the destination;
+`ClosePopup` terminates it. A duplicate, replay, race loser, unknown control,
+wrong-direction record, or record on another connection performs no browser
+operation.
 
 Neither control message has a remote acknowledgement. A pending native-anchor
 call resolves after the connection accepts that the same activation owns the
