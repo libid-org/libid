@@ -61,14 +61,15 @@ The signaling service is a bounded rendezvous, not a carrier. For each round,
 the application subscribes as answerer and the destination popup publishes as
 offerer under the same valid
 [connection ID](connection.md#connection-id) and exact signaling round. The ID
-is the logical connection's rendezvous capability. Round is a
+is randomized rendezvous correlation combined with the authenticated endpoint
+origin and role; neither the ID nor round alone grants authority. Round is a
 non-secret unsigned 32-bit monotonic stale-signal discriminator: the initial
 round is zero and each replacement uses exactly the previous round plus one.
-The browser-stamped `Origin` restricts which browser role may present the tuple
-but is not a general client credential. The service exact-checks the application
-and popup origins. Signaled DTLS fingerprints bind the resulting channel to
-that round's descriptions but do not independently authenticate the signaling
-service. No second nonce is added.
+The browser-stamped `Origin` authenticates which allowed browser role may
+present the tuple but is not a general client credential. The service
+exact-checks the application and popup origins. Signaled DTLS fingerprints bind
+the resulting channel to that round's descriptions but do not independently
+authenticate the signaling service. No second nonce is added.
 
 The signaling contract accepts only:
 
@@ -228,10 +229,12 @@ fallback: signal => connectApplicationWebRTC({
 The popup calls `createPopupWebRTCFallback` with its immutable allowed
 application origins before `PopupConnection.accept` and supplies the returned
 constructor as `fallback`. The factory performs only the eager fragment
-bootstrap described above; it starts no signaling or peer work. Each initial
-`connectApplicationWebRTC` call
-synchronously starts bounded answerer round zero and returns its pending carrier
-promise. It creates the answering peer only after a valid fresh offer arrives.
+bootstrap described above; it starts no signaling or peer work.
+`PopupConnection.connect` invokes `connectApplicationWebRTC` exactly once for
+the logical connection. That call synchronously starts bounded answerer round
+zero and returns its pending carrier promise; no later fallback invocation can
+restart round zero. It creates the answering peer only after a valid fresh
+offer arrives.
 `connectPopupWebRTC` creates the offering peer and data channel, publishes its
 offer and candidates, and consumes the answer and remote candidates. Each
 function resolves with an authenticated carrier only after its local channel
@@ -340,11 +343,12 @@ logical connection; unexpected carrier failure closes the connection.
   `Origin`; the popup handshake requires the exact configured popup origin.
   Origin restricts browser callers but is not accepted as a standalone client
   credential.
-- The caller-generated, canonical UUIDv4 connection ID is the fresh,
-  unguessable logical rendezvous capability. It is exact-matched with the bounded
-  monotonic round for every signaling record and retired when the logical
-  connection closes. Round zero is initial; each replacement uses exactly the
-  previous round plus one. Round is not a capability.
+- The caller-generated, canonical UUIDv4 connection ID is randomized logical
+  rendezvous correlation, not a standalone capability. It is exact-matched with
+  the authenticated endpoint origin and role and the bounded monotonic round
+  for every signaling record, then retired when the logical connection closes.
+  Round zero is initial; each replacement uses exactly the previous round plus
+  one. Neither the connection ID nor round grants authority alone.
 - A private navigation control cannot reach caller code or another carrier, and
   cannot navigate until the application has armed the exact next round. The
   destination's popup WebRTC factory clears its package-owned round fragment
