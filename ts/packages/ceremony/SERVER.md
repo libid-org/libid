@@ -233,11 +233,13 @@ also fetches the global notarization client. The server schema does not
 redefine that platform inventory. A request, fragment, or browser message
 cannot add or replace any URL.
 
-The selected prover root is also the module Service Worker registration URL.
-Its response permits a scope covering `/ccdp/` and sets
+The selected prover root is also the single shared ceremony module Service
+Worker registration URL. Its worker branch composes the
+`@libid/popup/worker` continuity handler with ceremony prefetch and cache
+handlers. Its response permits a scope covering `/ccdp/` and sets
 `Service-Worker-Allowed: /ccdp/` when the script URL's default scope
-does not already cover it. Callback and prover perform no configuration
-request.
+does not already cover it, so the same registration serves callback and prover
+documents. Callback and prover perform no configuration request.
 
 ### Prover response policy
 

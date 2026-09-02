@@ -29,6 +29,15 @@ The callback owns:
 `@libid/popup` owns endpoint authentication, carrier selection,
 cross-document connection continuity, and popup replacement.
 
+The callback installs no separate Service Worker. During initial launch, its
+prover-prefetch child registers and activates the single ceremony worker scoped
+over `/ccdp/`; that worker composes the popup package's continuity handler with
+prover prefetch and cache. This happens before readiness and therefore before
+OAuth navigation. On provider return, `PopupConnection.accept` reuses the
+matching active registration. Once the returned callback has an accepted
+carrier, its navigation to the isolated prover can preserve a transferable port
+through that same worker; the prover claims it as its first connection step.
+
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
 Job, persist a checkpoint, or submit any downstream operation. Provider
@@ -71,7 +80,7 @@ initial launch
 
 provider callback
   validate OAuth state
-    -> accept the returned popup connection
+    -> accept the returned popup connection; claim a preserved port when present
     -> deliver the OAuth return
     -> navigate the same connection to /prover
 ```

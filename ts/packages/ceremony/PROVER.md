@@ -34,6 +34,7 @@ After OAuth: same popup becomes the isolated top-level prover
              └── joins the same fetches and proves
 
 Shared Service Worker
+├── popup MessagePort continuity survives immediate document replacement
 └── immutable-asset and CRS single flights survive document replacement
 ```
 
@@ -42,9 +43,9 @@ caches preserve its fetch work.
 
 After the CCDP shell clears the URL, the Window branch starts through its single
 internal entrypoint.
-The same root evaluated as a Service Worker installs only its cache and
-prefetch handlers; it does not enter CCDP, popup connection, or a platform
-pipeline.
+The same root evaluated as a Service Worker installs the
+`@libid/popup/worker` continuity handler beside its cache and prefetch handlers;
+it does not enter CCDP or a platform pipeline.
 
 The prover calls `PopupConnection.accept` after isolation and URL clearing,
 passing the shell's immutable allowed application origins and optional fallback
@@ -426,10 +427,11 @@ There is no separate prefetch route, artifact, or mode flag.
 
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
-without waiting for downloads. The worker owns only the selected immutable
-asset and CRS single flights; popup continuity uses the independent popup
-package worker. A worker which receives the prefetch request exact-validates it
-and attaches the fetch work to the message event with `event.waitUntil`.
+without waiting for downloads. The worker composes the popup package's bounded
+MessagePort keeper with the selected immutable-asset and CRS single flights; no
+second worker or registration exists. A worker which receives the prefetch
+request exact-validates it and attaches the fetch work to the message event with
+`event.waitUntil`.
 
 The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
@@ -444,8 +446,10 @@ closed platform implementation requires it, and combines those entries with
 the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
-The Service Worker branch contains no OAuth, application, or popup-connection
-state. It owns each selected immutable asset fetch from the first byte, keys
+The ceremony-owned prefetch branch contains no OAuth, application, or
+popup-connection state. The separately imported popup handler owns only its
+bounded temporary continuity entries. The prefetch branch owns each selected
+immutable asset fetch from the first byte, keys
 ordinary artifact single flights by canonical URL, starts the fixed launch
 bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single

@@ -145,7 +145,7 @@ Launch publishes one `@libid/ceremony` package:
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for the CCDP callback root
 ├── prover
-│   ├── index          source entrypoint for the CCDP prover root, workers, WASM, and prefetch
+│   ├── index          source entrypoint for the CCDP prover root, shared worker, WASM, and prefetch
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    client-safe platform/version catalog and derived public result types
@@ -176,7 +176,9 @@ immutable roots whose filenames and shell selection are defined by CCDP, plus
 worker/WASM assets from one compatible package release. The prover artifact
 runs in both Window and Service Worker contexts: its Window branch runs iframe
 prefetch or the one active top-level prover, while its Service Worker branch
-owns only shared asset single flights and cache.
+composes the `@libid/popup/worker` continuity handler with ceremony-owned asset
+single flights and cache. One registration scoped over `/ccdp/` serves both the
+callback and prover documents; ceremony registers no second worker.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
@@ -220,7 +222,7 @@ The package-facing API surface is:
 | `@libid/ceremony/ccdp` | internal CCDP `Message` union and decoders, `CCDPVersion`, and direction/order rules; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) implementing the CCDP-selected callback root |
-| `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch owns only package-private asset prefetch and cache |
+| `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch composes popup continuity with package-private asset prefetch and cache |
 
 The API below and the [CCDP records](CCDP.md#closed-message-union)
 are the launch surface.

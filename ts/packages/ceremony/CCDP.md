@@ -134,12 +134,15 @@ declare function startProver(
 ): void
 ```
 
-The selected prover root is also evaluated as the module Service Worker for
-asset prefetch and cache reuse; its worker branch exports no CCDP entrypoint or
-popup-connection API. The top-level prover passes the immutable popup options to
-`PopupConnection.accept`; prefetch mode does not construct a popup connection
-or fallback. The server-owned `ProverAssets` record and both shells' HTTP
-response policies are defined by the [server contract](SERVER.md).
+The selected prover root is also evaluated as the one module Service Worker
+scoped over both CCDP documents. Its worker branch composes the
+`@libid/popup/worker` continuity handler with asset prefetch and cache reuse; it
+executes no CCDP participant or platform pipeline. Prefetch mode registers and
+activates that worker but constructs no popup connection or fallback. The
+returned callback and top-level prover pass the immutable popup options to
+`PopupConnection.accept` and reuse the matching active registration. The
+server-owned `ProverAssets` record and both shells' HTTP response policies are
+defined by the [server contract](SERVER.md).
 
 ## Protocol locations
 
