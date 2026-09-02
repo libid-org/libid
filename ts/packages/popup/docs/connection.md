@@ -164,8 +164,8 @@ rule and excluding reserved keywords such as `_blank`, `_self`, `_parent`, and
 `PopupConnection.connect` composes over that exact object, synchronously arms
 fallback binding, and never accepts a caller-supplied `WindowProxy`. It never
 constructs a `PortKeeper`. `PopupWindow.current()` captures the popup document,
-its opener, and the host-registered Service Worker registration controlling
-that document.
+its opener, and the host-registered active Service Worker registration whose
+scope matches that document.
 `PopupConnection.accept` composes over that object. When an active registration is
 available, it privately constructs a keeper and attempts `claim` for the
 connection ID before selecting a new carrier. A matching entry restores its
@@ -297,7 +297,7 @@ interface PopupDiagnostic {
 }
 
 // @libid/popup/worker
-declare function installPortKeeper(scope: ServiceWorkerGlobalScope): void
+declare function installPortKeeper(): void
 
 declare const PopupConnection: {
   connect<M extends Message>(

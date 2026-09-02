@@ -52,8 +52,8 @@ declare class PopupWindow {
 `PopupWindow` exposes no direct navigation or closure; both go through
 `PopupConnection` so continuity and control rules always apply.
 `PopupWindow.current()` wraps the current popup document, its opener, and the
-Service Worker registration controlling that document. It adopts the existing
-popup and cannot create another one.
+active Service Worker registration whose scope matches that document. It
+adopts the existing popup and cannot create another one.
 
 ### Connect from the popup
 
@@ -166,12 +166,12 @@ nothing and the main entry exports no worker-global types:
 // popup-origin worker script
 import { installPortKeeper } from '@libid/popup/worker'
 
-installPortKeeper(self)
+installPortKeeper()
 ```
 
-`accept` claims a preserved port from the registration controlling the current
-document as its first step, so the host calls it before any other network
-work. See [continuity across navigations](docs/message-port.md#continuity-across-navigations).
+`accept` claims a preserved port from the active registration matching the
+current document as its first step, so the host calls it before any other
+network work. See [continuity across navigations](docs/message-port.md#continuity-across-navigations).
 
 ### Fallback carrier
 
