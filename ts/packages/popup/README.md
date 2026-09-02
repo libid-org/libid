@@ -2,10 +2,14 @@
 
 `@libid/popup` connects an application page to one popup browsing context across
 origins, external navigation, isolation boundaries, mobile suspension, and
-immediate popup-document replacement. It carries caller-defined messages
-without owning or naming a caller protocol. One logical connection installs a
-fresh carrier in each participating popup document; no MessagePort is retained
-through the external OAuth visit.
+popup-document replacement. It carries caller-defined messages without owning
+or naming a caller protocol.
+
+`PopupConnection` represents one logical connection. It retains a usable
+carrier for as long as possible and may preserve, transfer, or replace that
+carrier transparently across document changes. Carrier identity, count, and
+lifetime are not API guarantees. If no carrier can continue or be established,
+the logical connection fails closed.
 
 ## API
 

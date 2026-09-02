@@ -17,9 +17,11 @@ a live `WindowProxy`, while Cross-Origin-Opener-Policy can cause a
 [browsing-context-group switch](https://html.spec.whatwg.org/multipage/browsers.html#coop-bcg-switch)
 which severs the opener relationship. If that happens before a returned popup
 document binds its channel, this carrier is unavailable for that document. Each
-participating popup document establishes a fresh port. Once bound, the
-connection can preserve that port across one immediate participating-document
-replacement, but never across the external OAuth visit.
+participating popup document either claims a preserved port or establishes a
+fresh one. Connection retains a usable port for as long as possible and may
+preserve it across repeated participating-document replacements. If the port
+cannot continue across a document change, connection transparently establishes
+another carrier or fails closed.
 
 The controls below are package-private carrier mechanics, not caller messages,
 public APIs, extension points, or durable state.
@@ -132,18 +134,10 @@ declare function messagePortCarrier(port: MessagePort): Carrier
 a pending port promise for one popup document without sending anything. When `PopupWindow` retained a
 handle it requires that exact source. Otherwise it internally binds
 `PopupWindow` to the source of the first handshake that exact-matches the configured popup origin,
-connection version, and connection ID. Before direct navigation through an
-external document, the connection closes the current port and synchronously
-creates the next pending operation:
-
-```ts
-let portPromise = connectApplicationMessagePort(options)
-const initialPort = await portPromise
-initialPort.close()
-portPromise = connectApplicationMessagePort(options)
-connection.navigate(externalUrl)
-const callbackPort = await portPromise
-```
+connection version, and connection ID. When a document change cannot preserve
+the current port, the connection closes it and synchronously creates the next
+pending operation before navigating. This replacement is private connection
+machinery; callers continue using the same `PopupConnection`.
 
 When the popup endpoint is ready, it calls and awaits
 `connectPopupMessagePort`. It sends the handshake request; the pending
