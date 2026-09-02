@@ -1,7 +1,7 @@
 # Popup control
 
-This document defines the control protocol by which an application asks its
-connected popup to navigate or close itself.
+This document defines popup navigation and the control protocol by which an
+application asks its connected popup to navigate or close itself.
 It is independent of caller protocols: navigation and popup lifetime are
 composition decisions, not protocol results.
 
@@ -46,18 +46,19 @@ owns the generic message bound.
 
 ## Execution
 
-The application-facing operations are `PopupConnection.navigate(url)` and
-`PopupConnection.close()`.
+`PopupConnection.navigate(url)` is available on both endpoints.
+`PopupConnection.close()` is the application-facing lifetime operation.
 
 While native-anchor binding is pending, `navigate` performs no browser
 operation and leaves that same activation's default navigation intact. While
-direct control is available, it uses the exact retained `WindowProxy`. After
-isolation severs it, the application endpoint sends
-`Navigate` over the selected connection; the receiving popup stops
-accepting controls, prepares connection continuity when required, and calls
-`location.replace(url)`. Replacement avoids adding the current document to
-popup history and creates no browsing context. If the connection cannot preserve
-its carrier or prepare a replacement, it fails closed without invoking
+direct control is available, the application endpoint uses the exact retained
+`WindowProxy`. After isolation severs it, the application endpoint sends
+`Navigate` over the selected connection. A popup endpoint calling `navigate`
+acts locally and sends no `Navigate`. In either popup-side path, the endpoint
+stops accepting controls, prepares connection continuity when required, and
+calls `location.replace(url)`. Replacement avoids adding the current document
+to popup history and creates no browsing context. If the connection cannot
+preserve its carrier or prepare a replacement, it fails closed without invoking
 navigation. The caller commits its state and clears sensitive inputs before
 requesting navigation.
 

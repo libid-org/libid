@@ -384,12 +384,14 @@ or thrown decode closes the connection and delivers no message. The registered
 set therefore enforces participant direction without hardcoding protocol types
 in the connection; the handler still enforces state and order.
 
-`navigate` and `close` are application-endpoint controls defined by
-[popup control](control.md). They use the exact retained `WindowProxy` while it
-is available; after isolation severs direct control, they send their control
-messages over the selected connection. `close` is idempotent and closes both
-the logical connection and its popup. Internal failure cleanup releases
-resources without invoking this operation or controlling popup lifetime.
+`navigate` is available on both connection endpoints. The application endpoint
+uses its exact retained `WindowProxy` while available and sends the private
+control defined by [popup control](control.md) after isolation severs direct
+control. The popup endpoint prepares continuity and replaces its own document
+without sending that control. `close` is the application-endpoint control; it
+is idempotent and closes both the logical connection and its popup. Internal
+failure cleanup releases resources without invoking either operation or
+controlling popup lifetime.
 
 `navigate` accepts a caller-selected opaque URL. It does not select the route or
 interpret caller-owned fields:
@@ -399,9 +401,9 @@ interpret caller-owned fields:
   the current carrier, and navigates its exact retained `WindowProxy`;
 - after isolation severs direct control, the application endpoint sends
   `Navigate`; and
-- the receiving popup preserves a transferable carrier or privately prepares a
-  replacement for a non-transferable WebRTC carrier, then replaces its current
-  document.
+- either the popup endpoint calling `navigate` or the popup receiving that
+  control preserves a transferable carrier or privately prepares a replacement
+  for a non-transferable WebRTC carrier, then replaces its current document.
 
 For WebRTC replacement, connection gives the caller-selected target unchanged
 to the carrier's package-private preparation hook and navigates only to the
