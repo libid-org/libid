@@ -31,6 +31,22 @@ only the cost of the marks already needed for product progress and internal
 timeouts. Observer or exporter failure is inert and must not delay, fail, or
 retry the ceremony.
 
+### Undeliverable failures
+
+Every caught technical failure which cannot be delivered through CCDP because
+transport is unavailable emits one local `console.error` containing only a
+package-owned subsystem and stable error code. When a local diagnostics or
+metrics sink is available in that browser context, it also records the same
+sanitized failure best effort. This includes transport-construction failure,
+an unbound real-anchor source, transport loss, and context teardown before a
+terminal message can cross.
+
+Package-side local reporting initiates no network request, durable record,
+retry, recovery, or ceremony outcome. It never logs the raw exception object or
+any value forbidden by the privacy rules below. Failure to report locally is
+inert. An application observer may export the sanitized record under its normal
+policy.
+
 ## Instrumentation choice
 
 OpenTelemetry is an export adapter, not an internal ceremony dependency.
@@ -226,8 +242,9 @@ One terminal outcome contains only:
 - selected carrier class and relevant capability facts; and
 - whether cleanup completed.
 
-Raw exceptions and stacks remain local development data. They are not emitted
-by the package observer or placed in an OpenTelemetry event.
+Raw exceptions and stacks may be inspected in a debugger during development.
+Package console diagnostics, the package observer, and any OpenTelemetry adapter
+receive only the sanitized stable code.
 
 ## Privacy and cardinality
 

@@ -4,20 +4,11 @@ This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, callback, and isolated prover. It owns ceremony
 messages, their directions, ordering, and protocol compatibility.
 
-The concrete [CCDP transport](CCDP-TRANSPORT.md) authenticates, structurally
-decodes, and delivers messages, selects a carrier, and navigates the popup. Its
-browser-local [MessagePort](CCDP-CARRIER-MESSAGEPORT.md) and fallback
-[WebRTC](CCDP-CARRIER-WEBRTC.md) carriers are defined separately. The package
-API and result lifecycle are defined in [ARCHITECTURE.md](ARCHITECTURE.md),
-callback behavior in [CALLBACK.md](CALLBACK.md), proving in
-[PROVER.md](PROVER.md), and deployed routes in [SERVER.md](SERVER.md). These are
+The concrete [CCDP transport](CCDP-TRANSPORT.md) authenticates, decodes, and
+delivers these messages without interpreting them. Shared package types such as
+`PlatformId`, `PlatformCeremonyVersion`, and `PlatformStep` retain their
+definitions in [ARCHITECTURE.md](ARCHITECTURE.md). These documents are
 implementation architecture, not part of the normative proof specification.
-Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
-
-Shared package types such as `PlatformId`, `PlatformCeremonyVersion`, and
-`PlatformStep` retain their definitions in the architecture document.
-`CeremonyConfig` and deployed prover inputs retain theirs in the server
-contract.
 
 ## Protocol boundary
 
@@ -28,10 +19,10 @@ contract.
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
 CCDP is transport-neutral. It defines what each message means, which
-participant may send it, and its order. [CCDP-TRANSPORT.md](CCDP-TRANSPORT.md)
-owns how values cross browser documents and carriers and invokes CCDP's
-registered per-message `Decoder` before delivery. Callback, prover, and client
-code register only their permitted inbound messages and enforce state and order.
+participant may send it, and its order. Transport owns how values cross browser
+documents and carriers and invokes CCDP's registered per-message `Decoder`
+before delivery. Callback, prover, and client code register only their permitted
+inbound messages and enforce state and order.
 
 ## Protocol definition
 
@@ -67,8 +58,7 @@ of the bound popup to the provider URL already frozen by the live `Ceremony`.
 
 The application accepts it only when its ceremony ID and platform/version
 match that live ceremony and its browser-stamped source and origin match the
-expected callback. Callback and prefetch execution are defined in
-[CALLBACK.md](CALLBACK.md) and [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
+expected callback.
 
 ### OAuth-return delivery
 
@@ -156,8 +146,7 @@ bytes without control characters. `PlatformStep.progress` is finite,
 monotonic, and in `[0, 1)`. `timestamp` is the prover's finite nonnegative
 `performance.timeOrigin + performance.now()` value in milliseconds; it permits
 same-browser ordering and duration diagnostics but grants no authority.
-Progress is advisory; detailed semantics live in
-[PROVER.md](PROVER.md#platform-progress).
+Progress is advisory.
 
 ### Cancellation and technical failure
 
@@ -182,9 +171,10 @@ prover code. Its reason is a bounded sanitized diagnostic string, not a stable
 code or raw exception. Exact reason enums may emerge from implementation
 experience. The application rejects the live ceremony for every observable
 abort. It requires a constructed transport but not an authenticated carrier.
-Transport-construction failure has no CCDP path and remains local diagnostics
-or metrics. Before a real-anchor launch binds its popup source, a callback
-failure likewise cannot be correlated safely and remains local.
+Transport-construction failure has no CCDP path. Before a real-anchor launch
+binds its popup source, a callback failure likewise cannot be correlated
+safely. Both follow the
+[undeliverable-failure rule](METRICS.md#undeliverable-failures).
 
 ### Closed message union
 
@@ -262,8 +252,7 @@ registration, import-time self-registration, or plugin API. Direction is the
 registered decoder set; order and participant state remain handler checks.
 
 Opener authentication, Service Worker controls, SDP, and ICE candidates are not
-`Message`. The transport and carrier documents define those private
-controls.
+`Message`. Transport owns those private controls.
 
 ## Ceremony sequence
 
@@ -329,5 +318,4 @@ ordering, authentication, transport-binding, or validation rule increments
 
 `PlatformCeremonyVersion` remains independent and versions one platform's
 authorization, OAuth, proof, and output semantics. The server HTTP namespace is
-also independent. Version axes and rollout rules are summarized in
-[ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
+also independent. The package versioning and rollout model applies.
