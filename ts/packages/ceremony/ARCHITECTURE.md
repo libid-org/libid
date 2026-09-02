@@ -368,7 +368,7 @@ identifier:
 
 ```ts
 interface CeremonyNavigation {
-  href: string   // /api/v1/ceremony/callback#launch(ceremonyId, platformId, ceremonyVersion)
+  href: string   // /api/v1/ceremony/callback#launch?ceremonyId=...&platformId=...&ceremonyVersion=...
   target: string
 }
 

@@ -187,10 +187,10 @@ A root import failure is terminal for that document. The bootstrap does not
 retry the same module URL because browsers retain a failed module-map entry; a
 user retry starts in a fresh callback document.
 
-The bootstrap does not parse platform fields or derive an allowlist. The callback
-module owns the closed launch/callback grammar and local lifecycle after URL
-clearing, as defined in [CALLBACK.md](CALLBACK.md#entrypoint-and-trusted-inputs).
-CCDP owns its cross-document messages and ordering.
+The bootstrap does not parse platform fields or derive an allowlist.
+[CCDP](CCDP.md#protocol-locations) owns the closed browser-location grammar,
+navigations, and message ordering; the callback module implements its
+participant lifecycle after URL clearing.
 
 Google returns its credential in the fragment, which is never sent to the
 server. X and GitHub return provider-mandated callback parameters in the query.
@@ -220,9 +220,9 @@ The shared callback response uses:
 `GET /api/v1/ceremony/prover` serves one deployment-generated response for all
 platforms:
 
-- `#prefetch(ceremonyId, platformId, ceremonyVersion)` starts selected-profile
-  asset prefetch;
-- a bare ceremony ID is accepted only in the popup's promoted top-level
+- `#prefetch?platformId=<id>&ceremonyVersion=<uint>` starts selected-profile
+  asset prefetch; and
+- `#prove?ceremonyId=<uuid>` is accepted only in the popup's promoted top-level
   browsing context, where the isolated prover claims the application port.
 
 Fragments do not reach the server. Both roles therefore receive identical HTML,
@@ -287,7 +287,7 @@ declare function startProver(
 ): void
 ```
 
-For a bare ceremony ID, the clearing bootstrap requires
+For a `prove` fragment, the clearing bootstrap requires
 `window.top === window`, obtains the transport-preserved port before importing
 the root, and supplies it as `port`. Prefetch requires `window.top !== window`
 and supplies no port. Any other combination fails before package code or

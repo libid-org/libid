@@ -2,7 +2,7 @@
 
 This document defines the closed browser protocol used by `@libid/ceremony`
 across the application, callback, and isolated prover. It owns ceremony
-messages, their directions, ordering, and protocol compatibility.
+locations, navigations, messages, ordering, and protocol compatibility.
 
 The concrete [CCDP transport](CCDP-TRANSPORT.md) authenticates, decodes, and
 delivers these messages without interpreting them. Shared package types such as
@@ -15,30 +15,122 @@ implementation architecture, not part of the normative proof specification.
 | Context | Owns | Browser constraint |
 |---|---|---|
 | Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from the ceremony server |
-| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated until the returned transport endpoint selects a carrier; its configured alias is the registered server-hosted `redirect_uri` |
+| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated; it either selects MessagePort or queues the return for WebRTC before the isolated prover replaces it, and its configured alias is the registered server-hosted `redirect_uri` |
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
-CCDP is transport-neutral. It defines what each message means, which
-participant may send it, and its order. Transport owns how values cross browser
-documents and carriers and invokes CCDP's registered per-message `Decoder`
-before delivery. Callback, prover, and client code register only their permitted
-inbound messages and enforce state and order.
+CCDP is transport-neutral. It defines which document runs at each location,
+which participant initiates each navigation, what each message means, and their
+order. Transport owns how values cross browser documents and carriers and
+invokes CCDP's registered per-message `Decoder` before delivery. Callback,
+prover, and client code execute the defined transitions, register only their
+permitted inbound messages, and enforce state and order.
 
-## Protocol definition
-
-### Version
+## Version
 
 ```ts
 type CCDPVersion = 1
 ```
 
-`CCDPVersion` covers `Message`, its direction, ordering, validation, and
-transport-binding semantics. Ceremony code supplies it as the transport's
-`applicationVersion`; transport exact-matches but does not interpret it.
-Same-release carrier and navigation controls have no independent negotiated
-version.
+`CCDPVersion` covers internal locations, navigation order, `Message`, its
+direction, validation, and transport-binding semantics. Ceremony code supplies
+it as the transport's `applicationVersion`; transport exact-matches but does
+not interpret it. Same-release carrier and navigation controls have no
+independent negotiated version.
 
-### Prefetch readiness
+## Protocol locations
+
+One live `Ceremony` freezes `serverOrigin`, `redirectUri`,
+`providerAuthorizationUrl`, ceremony ID, platform ID, and platform ceremony
+version before launch. CCDP uses the following browser locations:
+
+| Location | Browser context | Exact form |
+|---|---|---|
+| Popup reservation | popup | `about:blank` |
+| Initial callback | popup | `${serverOrigin}/api/v1/ceremony/callback#launch?ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
+| Selected-profile prefetch | callback child iframe | `${serverOrigin}/api/v1/ceremony/prover#prefetch?platformId=<id>&ceremonyVersion=<uint>` |
+| Platform authorization | popup | the frozen `providerAuthorizationUrl` defined by the selected platform ceremony version |
+| Provider return | popup | the frozen `redirectUri` followed by the provider-defined query or fragment return |
+| Proof generation | popup | `${serverOrigin}/api/v1/ceremony/prover#prove?ceremonyId=<uuid>` |
+
+Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
+shown above. Producers emit each named field exactly once in the displayed
+order. Receivers require the exact field set, reject duplicates, and otherwise
+do not depend on parameter order. Ceremony IDs are lowercase UUIDv4 values;
+platform IDs and version bounds are defined by the package catalog.
+
+The launch and prover routes have no query. Their fragments never reach the
+server and are copied and cleared before rendering, module import, storage, or
+network use. The receiving participant exact-validates the cleared copy before
+any protocol action. No OAuth return, credential, proof input, or proof is
+placed in an internal fragment. The provider-mandated query on `redirectUri`
+is the only protocol exception.
+
+The prefetch location carries only the selected public profile. It needs no
+ceremony ID: the callback binds its one child by browser source, and the child
+does not join the application transport.
+
+The selected platform ceremony version owns the exact provider authorization
+and return grammar. Where the platform uses them, the authorization request
+contains the live ceremony ID as OAuth `state` and the frozen `redirectUri` as
+`redirect_uri`. CCDP owns the surrounding popup navigation but does not
+duplicate platform fields. `redirectUri` is the exact absolute configured
+callback alias for that platform; its default path is `/auth/v1/callback`.
+
+## End-to-end sequence
+
+```mermaid
+sequenceDiagram
+    participant A as Application / Ceremony Client
+    participant C as Callback document
+    participant F as Prefetch iframe
+    participant O as OAuth provider
+    participant P as Top-level prover
+
+    A->>C: Open popup at callback + launch fragment
+    C->>F: Load prover + prefetch fragment
+    F-->>C: ProverPrefetchingAssets
+    C-->>A: ProverPrefetchingAssets
+    A->>O: Navigate same popup to providerAuthorizationUrl
+    O->>C: Return same popup to redirectUri
+    alt Retained opener selects MessagePort
+        C-->>A: CallbackDeliverParams
+        C->>P: Preserve carrier and navigate to prover + prove fragment
+    else Severed opener requires WebRTC
+        C->>P: Preserve queued return and navigate to prover + prove fragment
+        P-->>A: Establish WebRTC and deliver CallbackDeliverParams
+    end
+    Note over C,P: The prover replaces callback in the same popup
+    alt Application does not proceed
+        A-->>P: AppCancelCeremony
+    else Application requests proof
+        A-->>P: AppRequestProof
+        loop Zero or more progress events
+            P-->>A: ProverNotifyEvent
+        end
+        alt Technical failure
+            P-->>A: AbortCeremony
+        else Proof generated
+            P-->>A: ProverDeliverProof
+        end
+    end
+```
+
+Private carrier handshakes and URL clearing are omitted from the diagram but
+are required at the transitions below.
+
+## Protocol phases
+
+### 1. Launch and prefetch
+
+The scripted launch reserves the named popup at `about:blank`, then application
+transport navigates that exact `WindowProxy` to the initial callback location.
+The real-anchor fallback navigates directly to the same location and binds its
+browser-stamped source through the authenticated initial WindowProxy delivery.
+
+The callback clears and validates the launch fragment, constructs transport,
+and loads exactly one selected-profile prefetch iframe. The iframe clears and
+validates its own fragment, dispatches prefetch, and reports readiness to its
+exact parent. The callback forwards the same logical value to the application:
 
 ```ts
 interface ProverPrefetchingAssets {
@@ -57,7 +149,15 @@ binds the browser-stamped source accepted by the client. Acceptance may cause
 only navigation of that popup to the provider URL already frozen by the live
 `Ceremony`.
 
-### OAuth-return delivery
+After acceptance, application transport navigates the retained popup to the
+frozen `providerAuthorizationUrl`. That navigation destroys the initial
+callback and prefetch iframe.
+
+### 2. Provider authorization and return
+
+The provider owns the popup until it navigates to the frozen `redirectUri`.
+The returned callback is a fresh instance of the same callback document. Its
+bootstrap bounds and clears both URL components before package code runs.
 
 ```ts
 interface CallbackDeliverParams {
@@ -84,7 +184,21 @@ transport and its platform/version parser to exact-validate response location,
 fields, state, client, redirect, success, and provider denial. A stale,
 replayed, retired, or post-reload delivery changes no live state.
 
-### Proof request
+### 3. Prover activation and application decision
+
+With a retained opener, the returned callback authenticates MessagePort and
+delivers `CallbackDeliverParams` before preserving that carrier endpoint. With
+a severed opener, it instead queues the same message on a local port for RTC
+bootstrap without exposing it to signaling. In both cases transport preserves
+one port and replaces callback with the exact proof-generation location.
+
+The isolated top-level prover clears its fragment, constructs its ceremony
+transport, and claims the preserved port. It either resumes MessagePort or
+establishes WebRTC and delivers the queued callback value first.
+
+The application classifies the already-delivered OAuth return using the live
+ceremony's selected platform/version. It either cancels or sends one proof
+request to the active prover:
 
 ```ts
 interface AppRequestProof {
@@ -117,7 +231,7 @@ the exact selected platform/version parser before credential use. The callback
 and transport have no platform configuration and cannot perform that second
 validation. The one-shot ceremony accepts no duplicate request or late result.
 
-### Progress and proof delivery
+### 4. Proof execution
 
 ```ts
 interface ProverNotifyEvent {
@@ -145,7 +259,7 @@ monotonic, and in `[0, 1)`. `timestamp` is the prover's finite nonnegative
 same-browser ordering and duration diagnostics but grants no authority.
 Progress is advisory.
 
-### Cancellation and technical failure
+### 5. Terminal control and failure
 
 ```ts
 interface AppCancelCeremony {
@@ -171,7 +285,7 @@ abort. It requires a constructed transport but not an authenticated carrier.
 Transport-construction failure has no CCDP path and follows the
 [undeliverable-failure rule](METRICS.md#undeliverable-failures).
 
-### Closed message union
+## Closed message union
 
 ```ts
 type Message =
@@ -184,7 +298,7 @@ type Message =
   | AbortCeremony
 ```
 
-### Direction and ordering
+## Direction and ordering
 
 | Message | Created by | Received by | Valid position and cardinality |
 |---|---|---|---|
@@ -200,7 +314,7 @@ Messages outside these directions or positions are invalid. Cancellation,
 proof delivery, and abort make later messages inert even when they race in
 transit.
 
-### Structural decoding
+## Structural decoding
 
 Each message interface has a same-named `Decoder` companion containing its
 literal discriminator and structural decoder. The shared assertion owns the
@@ -249,38 +363,6 @@ registered decoder set; order and participant state remain handler checks.
 Opener authentication, Service Worker controls, SDP, and ICE candidates are not
 `Message`. Transport owns those private controls.
 
-## Ceremony sequence
-
-```mermaid
-sequenceDiagram
-    participant A as Application / Ceremony Client
-    participant C as Callback document
-    participant P as Top-level prover
-
-    C-->>A: ProverPrefetchingAssets
-    A->>C: Navigate retained popup to provider
-    Note over A,C: Provider authorization returns to callback
-    C-->>A: CallbackDeliverParams
-    Note over C,P: Transport activates prover in the same popup
-    alt Application does not proceed
-        A-->>P: AppCancelCeremony
-    else Application requests proof
-        A-->>P: AppRequestProof
-        loop Zero or more progress events
-            P-->>A: ProverNotifyEvent
-        end
-        alt Technical failure
-            P-->>A: AbortCeremony
-        else Proof generated
-            P-->>A: ProverDeliverProof
-        end
-    end
-    Note over A,P: Observable callback or prover failure may instead send AbortCeremony
-```
-
-The diagram is the logical CCDP sequence. Transport establishment, continuity,
-navigation, URL clearing, and participant UI do not alter it.
-
 ## Shared invariants
 
 - One live ceremony accepts one prefetch readiness and one
@@ -291,6 +373,8 @@ navigation, URL clearing, and participant UI do not alter it.
   values change no state.
 - No CCDP message carries ceremony ID or application version because transport
   ownership already supplies both.
+- Callback and prover accept only the locations and fragments defined above;
+  received CCDP values never select a navigation destination.
 - Progress remains advisory and cannot authorize, cancel, or complete a
   ceremony.
 - Transport state, navigation, popup closure, and progress are never a ceremony
@@ -304,9 +388,9 @@ navigation, URL clearing, and participant UI do not alter it.
 A loaded application client and server browser artifacts must share
 `CCDPVersion`. A compatible release may change internal carrier code, worker
 controls, ICE policy, cache mechanics, or equivalent framing without changing
-the logical transport or messages. A breaking message shape, direction,
-ordering, authentication, transport-binding, or validation rule increments
-`CCDPVersion`.
+the logical transport or protocol. A breaking internal location, fragment
+grammar, navigation order, message shape, direction, ordering, authentication,
+transport-binding, or validation rule increments `CCDPVersion`.
 
 `PlatformCeremonyVersion` remains independent and versions one platform's
 authorization, OAuth, proof, and output semantics. The server HTTP namespace is

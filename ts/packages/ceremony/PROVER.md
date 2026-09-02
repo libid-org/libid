@@ -27,13 +27,13 @@ post-callback location:
 
 ```text
 Before OAuth
-└── /api/v1/ceremony/prover#prefetch(...)
+└── /api/v1/ceremony/prover#prefetch?platformId=...&ceremonyVersion=...
     ephemeral iframe starts selected-profile fetches
              │
              └── parent navigates to OAuth; this iframe is destroyed
 
 After OAuth
-└── /api/v1/ceremony/prover#<ceremonyId>
+└── /api/v1/ceremony/prover#prove?ceremonyId=...
     same popup navigates here as a top-level document
       ├── claims the preserved carrier port
       ├── resumes MessagePort or opens WebRTC from its queued return
@@ -44,8 +44,9 @@ Shared Service Worker
 └── one in-memory PortKeeper entry spans only callback-to-prover navigation
 ```
 
-These are modes of one document and Window entrypoint: the prefetch grammar is
-explicit, while a bare ID is accepted only by the top-level prover. OAuth
+These are modes of one document and Window entrypoint: each has the exact
+fragment grammar defined by CCDP, and prove mode is accepted only by the
+top-level prover. OAuth
 navigation prevents reuse of the first iframe; the worker and browser caches
 preserve its fetch work.
 
