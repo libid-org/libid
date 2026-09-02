@@ -1,7 +1,7 @@
 # MessagePort carrier
 
 This document defines the preferred browser-local carrier used by the
-[popup connection](CONNECTION.md) while the returned popup retains its
+[popup connection](connection.md) while the returned popup retains its
 application opener.
 
 `MessagePort` is the simplest carrier for this job. One `window.postMessage`

@@ -6,9 +6,9 @@ origins, external navigation, isolation boundaries, mobile suspension, and
 popup-document replacement, carrying caller-defined messages without owning or
 naming the caller protocol.
 
-The detailed design is split into the [popup connection](CONNECTION.md), its
-[MessagePort](CONNECTION-MESSAGEPORT.md) and
-[WebRTC](CONNECTION-WEBRTC.md) carriers, and [popup control](CONTROL.md).
+The detailed design is split into the [popup connection](docs/connection.md),
+its [MessagePort](docs/message-port.md) and [WebRTC](docs/webrtc.md) carriers,
+and [popup control](docs/control.md).
 Acceptance is indexed by the [test plan](TEST_PLAN.md), while
 [metrics and diagnostics](METRICS.md) defines local observability.
 
@@ -37,7 +37,7 @@ if (popupWindow.opened) event.preventDefault()
 `window.open('about:blank', target)` and returns a wrapper even when the browser
 returns no handle. In that case the connection binds the popup created by the
 same action's real anchor. See [popup creation and native-anchor
-fallback](CONNECTION.md#popup-creation-and-native-anchor-fallback).
+fallback](docs/connection.md#popup-creation-and-native-anchor-fallback).
 
 ```ts
 interface PopupWindow {
