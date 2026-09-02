@@ -180,9 +180,11 @@ it.
 A popup endpoint constructed from `PopupWindow.current()` and an immutable
 target-origin set sends the MessagePort carrier's private handshake before
 carrier selection. For that carrier, its connection ID and connection version
-are correlation metadata, not capabilities or caller values; WebRTC additionally
-uses the connection ID as its rendezvous capability. The application endpoint
-validates and consumes the control without exposing it to caller code.
+are correlation metadata, not capabilities or caller values. WebRTC uses the
+randomized connection ID only as rendezvous correlation combined with the
+authenticated endpoint origin and role; the ID alone grants no authority. The
+application endpoint validates and consumes the control without exposing it to
+caller code.
 
 `PopupWindow.open(target)` binds a returned handle privately. When the browser
 returns no handle, `PopupConnection.connect` listens for the popup created by the
