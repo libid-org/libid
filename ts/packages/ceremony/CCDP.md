@@ -49,12 +49,11 @@ interface ProverPrefetchingAssets {
 }
 ```
 
-`ProverPrefetchingAssets` is the sole nonterminal CCDP message before carrier
-authentication; an already-constructed transport may instead send terminal
-`AbortCeremony`. Readiness states that prefetch for the selected public profile
-has been dispatched; it does not promise that downloads completed. Its fields
-are public correlation data, grant no authority, and may cause only navigation
-of the bound popup to the provider URL already frozen by the live `Ceremony`.
+`ProverPrefetchingAssets` may be sent before carrier authentication. It states
+that prefetch for the selected public profile has been dispatched; it does not
+promise that downloads completed. Its fields are public correlation data,
+grant no authority, and may cause only navigation of the bound popup to the
+provider URL already frozen by the live `Ceremony`.
 
 The application accepts it only when its ceremony ID and platform/version
 match that live ceremony and its browser-stamped source and origin match the
@@ -288,9 +287,6 @@ navigation, URL clearing, and participant UI do not alter it.
 
 ## Shared invariants
 
-- `ProverPrefetchingAssets` is the only nonterminal pre-carrier message and
-  carries no credential, proof input, proof, or authority; `AbortCeremony` is
-  the only terminal exception.
 - One live ceremony accepts one prefetch readiness and one
   `CallbackDeliverParams`.
 - Transport authenticates before any OAuth return reaches the application and
