@@ -21,6 +21,26 @@ type ConnectionVersion = 1
 carrier, signaling, framing, and continuity controls. It does not version or
 describe any caller protocol.
 
+### Connection ID
+
+`connectionId` is a caller-supplied string with this exact canonical lowercase
+RFC 4122 UUIDv4 grammar:
+
+```text
+^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+```
+
+The caller generates it with a cryptographically secure random-number
+generator, normally `crypto.randomUUID()`. It must be fresh for every logical
+popup connection and must never be reused, including after failure or closure.
+Every participating document in that logical connection receives the same
+exact value.
+
+Connection constructors validate the grammar before starting carrier,
+continuity, or signaling work. They do not normalize uppercase or other UUID
+spellings. Freshness is a caller invariant: the package keeps no durable reuse
+registry.
+
 The topology is an ordinary browser tab running the application and one
 adjacent popup. The application and popup may be cross-origin and cross-site.
 

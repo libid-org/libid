@@ -71,6 +71,10 @@ const connection = await PopupConnection.accept<Messages>(popupWindow, {
 })
 ```
 
+The caller supplies a fresh `crypto.randomUUID()` value for each logical
+connection; the exact accepted grammar and non-reuse rule are defined by the
+[connection ID contract](docs/connection.md#connection-id).
+
 `PopupConnection` retains a usable carrier for as long as possible and may
 preserve, transfer, or replace it transparently across document changes. If no
 carrier can continue or be established, the logical connection fails closed.
