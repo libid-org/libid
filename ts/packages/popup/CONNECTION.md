@@ -4,9 +4,14 @@ This document defines the popup connection architecture. A `PopupWindow`
 owns one popup from creation through closure. A `PopupConnection` composes over it,
 establishes a bidirectional channel to an application page, moves caller-defined
 values, selects one carrier for each participating popup document, and preserves
-a transferable native resource across an immediate participating-document
-replacement. It is not a generic
+a transferable native resource across participating-document replacement. It is not a generic
 document-to-document abstraction.
+
+`PopupConnection` represents one logical connection. It retains a usable
+carrier for as long as possible and may preserve, transfer, or replace that
+carrier transparently across document changes. Carrier identity, count, and
+lifetime are not API guarantees. If no carrier can continue or be established,
+the logical connection fails closed.
 
 ```ts
 type ConnectionVersion = 1
@@ -167,11 +172,12 @@ connection. `bind` is package-internal and never accepts or interprets a caller
 message. `PopupWindow.opened` is initially true only when scripted creation
 returned a handle and becomes true after successful fallback binding.
 
-External navigation destroys the popup endpoint and its carrier. Before direct
-navigation, the application endpoint closes that carrier, synchronously arms a
-fresh MessagePort handshake, and retains its bound popup browsing context and
-any idle fallback subscription. The next participating popup document calls
-`accept` and installs a fresh carrier under the same logical connection.
+When a document change cannot preserve the popup endpoint's current carrier,
+the connection closes that carrier, synchronously arms a replacement attempt,
+and retains its bound popup browsing context and any idle fallback subscription.
+The next participating popup document calls `accept` and installs the selected
+carrier under the same logical connection. These mechanics are transparent to
+the caller.
 
 ### Popup creation and native-anchor fallback
 
@@ -323,11 +329,12 @@ Public `send` and `on` expose only `M`. `navigate` and `close` create the
 controls. Their discriminators are reserved; sending or registering a caller
 message with either discriminator rejects.
 
-On the popup side, `navigate` preserves the selected carrier and replaces the
-current document; `close` closes the current popup and connection. Neither can
-create another browsing context. On the application side, the same operations
-delegate to `PopupWindow` for direct control or use the control messages
-described below after isolation.
+On the popup side, `navigate` coordinates carrier continuity and replaces the
+current document, preserving or replacing the carrier internally as needed;
+`close` closes the current popup and connection. Neither can create another
+browsing context. On the application side, the same operations delegate to
+`PopupWindow` for direct control or use the control messages described below
+after isolation. Callers never manage carrier reconnection.
 
 `send` accepts the composition-owned union `M` and is not a delivery
 acknowledgement. Apart from rejecting reserved control discriminators, the
@@ -362,9 +369,8 @@ that URL:
 
 The first form may cross an arbitrary external document and wait for user
 interaction because no native carrier is retained across that gap. The next
-participating document establishes a new carrier. The connected form can
-preserve a transferable port only across the immediate bounded replacement
-defined below.
+participating document establishes a new carrier. The connected form may
+preserve a transferable port across the bounded replacements defined below.
 
 The factory installs the appropriate operation from the native resource it
 owns, never from the URL. A popup endpoint without the required carrier port
@@ -450,9 +456,9 @@ unchanged value first.
 ## Carrier continuity across document navigation
 
 Carrier continuity means that the logical connection can preserve one active
-carrier while the popup immediately replaces one participating document with
-another. It does not preserve the old JavaScript heap or an `RTCDataChannel`,
-and it is not used across an external OAuth navigation.
+carrier while the popup replaces one participating document with another. It
+does not preserve the old JavaScript heap or an `RTCDataChannel`. A current
+carrier which cannot survive a document change is replaced transparently.
 
 Replacing a popup document normally destroys its side of the communication
 channel together with its JavaScript heap. Any live `MessagePort` owned only by
@@ -483,11 +489,13 @@ channel.
 
 ### Timing assumptions and browser limits
 
-The bridge covers only one immediate popup-document replacement. After the
-worker acknowledges preservation, the source starts navigation immediately and
-the destination claims in its clearing bootstrap before package import or
-network use. It never holds a port across external navigation, user interaction,
-or an intentional background wait.
+For every participating-document replacement, the bridge must complete within
+its bounded interval. The same logical connection may use it repeatedly. After
+the worker acknowledges preservation, the source starts navigation immediately
+and the destination claims in its clearing bootstrap before package import or
+network use. It never holds a port while an unrelated document, user
+interaction, or intentional background wait owns the popup; a later
+participating document establishes a replacement carrier.
 
 The `keep` handler uses `event.waitUntil()` to keep its message event active
 until the port is claimed or its short deadline expires. Its acknowledgement
