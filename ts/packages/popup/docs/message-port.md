@@ -29,8 +29,9 @@ public APIs, extension points, or durable state.
 ## Boundary
 
 The carrier begins with connection-supplied browser handles, expected origins,
-connection version, connection ID, and internal cancellation signal. It ends with one
-authenticated local `MessagePort` at each endpoint.
+connection version, the already-validated
+[connection ID](connection.md#connection-id), and internal cancellation signal.
+It ends with one authenticated local `MessagePort` at each endpoint.
 
 Within that boundary it owns:
 

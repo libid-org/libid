@@ -57,8 +57,9 @@ creates a fresh matching answer.
 
 The signaling service is a bounded rendezvous, not a carrier. For each round,
 the application subscribes as answerer and the destination popup publishes as
-offerer under the same fresh, unguessable connection ID and exact signaling
-round. The ID is the logical connection's rendezvous capability. Round is a
+offerer under the same valid
+[connection ID](connection.md#connection-id) and exact signaling round. The ID
+is the logical connection's rendezvous capability. Round is a
 non-secret unsigned 32-bit monotonic stale-signal discriminator: the initial
 round is zero and each replacement uses exactly the previous round plus one.
 The browser-stamped `Origin` restricts which browser role may present the tuple
@@ -333,11 +334,11 @@ logical connection; unexpected carrier failure closes the connection.
   `Origin`; the popup handshake requires the exact configured popup origin.
   Origin restricts browser callers but is not accepted as a standalone client
   credential.
-- Connection ID is the fresh, unguessable logical rendezvous capability. It is
-  exact-matched with the bounded monotonic round for every signaling record and
-  retired when the logical connection closes. Round zero is initial; each
-  replacement uses exactly the previous round plus one. Round is not a
-  capability.
+- The caller-generated, canonical UUIDv4 connection ID is the fresh,
+  unguessable logical rendezvous capability. It is exact-matched with the bounded
+  monotonic round for every signaling record and retired when the logical
+  connection closes. Round zero is initial; each replacement uses exactly the
+  previous round plus one. Round is not a capability.
 - A private navigation control cannot reach caller code or another carrier, and
   cannot navigate until the application has armed the exact next round. The
   destination's popup WebRTC factory clears its package-owned round fragment
