@@ -181,9 +181,10 @@ sequenceDiagram
     participant P as Top-level prover
 
     A->>C: Open popup at callback + launch fragment
+    Note over A,C: Popup connection acceptance begins
     C->>F: Load prover + prefetch fragment
     F-->>C: ProverPrefetchingAssets
-    C-->>A: ProverPrefetchingAssets
+    C-->>A: ProverPrefetchingAssets after connection acceptance
     A->>O: Navigate same popup to providerAuthorizationUrl
     O->>C: Return same popup to redirectUri
     Note over C: Clear return and select callback root by state version
@@ -218,11 +219,13 @@ The application composition constructs one named `PopupWindow` and
 The popup package uses the retained handle when scripted opening succeeded and
 otherwise leaves the same activation's real-anchor navigation intact.
 
-The callback clears and validates the launch fragment, accepts the popup
-connection, and loads exactly one selected-profile prefetch iframe. The iframe
-clears and validates its own fragment, dispatches prefetch, and reports
-readiness to its exact parent. The callback forwards the same logical value to
-the application:
+After clearing and validating the launch fragment, the callback starts popup
+connection acceptance and loads exactly one selected-profile prefetch iframe
+concurrently. Neither operation waits for the other. The iframe clears and
+validates its own fragment, dispatches prefetch, and reports readiness to its
+exact parent. If readiness arrives first, the callback retains that fact only
+in its current heap. It forwards the same logical value to the application only
+after the popup connection is accepted:
 
 ```ts
 interface ProverPrefetchingAssets {
@@ -236,8 +239,10 @@ profile has been dispatched; it does not promise that downloads completed and
 grants no authority. The callback already received and validated the selected
 profile through its cleared launch input; echoing it would compare the
 application with its own values. Popup connection authentication and
-correlation are independent of CCDP. Acceptance may cause only navigation of
-that popup to the provider URL already frozen by the live `Ceremony`.
+correlation are independent of CCDP. Prefetch may start before carrier
+establishment, but no CCDP message crosses that boundary. Acceptance may cause
+only navigation of that popup to the provider URL already frozen by the live
+`Ceremony`.
 
 After acceptance, the application connection navigates the retained popup to
 the frozen `providerAuthorizationUrl`. That navigation destroys the initial
@@ -462,6 +467,8 @@ Endpoint authentication, continuity controls, and carrier records are not
 
 - One live ceremony accepts one prefetch readiness and one
   `CallbackDeliverParams`.
+- Prefetch work may start while the popup connection is being accepted, but no
+  CCDP message reaches the application before connection authentication.
 - The popup connection authenticates before any OAuth return reaches the
   application and does not interpret or alter message meaning.
 - Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal

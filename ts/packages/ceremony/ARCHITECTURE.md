@@ -53,6 +53,7 @@ sequenceDiagram
     A->>C: Create Ceremony from Job operation + connection
     A->>C: Call proveUserIdentity
     C->>P: Navigate connection to callback
+    Note over C,P: Popup connection acceptance and prefetch start concurrently
     P->>R: Start selected-profile prefetch
     P-->>C: Report prefetch readiness
     C->>P: Continue with frozen provider URL

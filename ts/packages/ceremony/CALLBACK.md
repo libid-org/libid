@@ -62,7 +62,10 @@ The callback state machine has two independent browser-document lifetimes:
 
 ```text
 initial launch
-  validate launch -> start prover prefetch -> report readiness -> OAuth navigation
+  validate launch
+    -> start connection acceptance and prover prefetch concurrently
+    -> after both complete, report readiness
+    -> OAuth navigation
 
 provider callback
   validate OAuth state
@@ -84,20 +87,23 @@ no state.
 
 | Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
-| Initial launch | valid launch input; child `ProverPrefetchingAssets` | accept the popup connection, bind the prefetch child, and forward readiness; missing profile or child load fails, ordinary fetch failure continues cold |
+| Initial launch | valid launch input; child `ProverPrefetchingAssets` | start popup-connection acceptance and bind the prefetch child concurrently; forward readiness only after both complete; missing profile or child load fails, ordinary fetch failure continues cold |
 | Provider return | one OAuth state and `CallbackDeliverParams` | accept the popup connection and deliver the unchanged return |
 | Prover transition | delivered `CallbackDeliverParams` | ask the popup connection to replace this document with the CCDP proof-generation location |
 
-Prefetch handles public assets and needs no application reply or timeout. The
-callback never constructs the provider URL. After provider return it releases
-no OAuth return until `PopupConnection.accept` succeeds. Carrier deadlines,
-selection, and fallback are popup-package concerns. A connection-continuity
-failure clears the return and renders the fixed prover-load failure instead of
-navigating.
+Prefetch handles public assets and needs no application reply or timeout. It
+starts without awaiting carrier establishment, while connection acceptance
+does not await prefetch. If the child reports first, the callback retains only
+that local readiness until `PopupConnection.accept` succeeds. No CCDP value
+crosses to the application before connection authentication. The callback
+never constructs the provider URL. After provider return it likewise releases
+no OAuth return until acceptance succeeds. Carrier deadlines, selection, and
+fallback are popup-package concerns. A connection-continuity failure clears the
+return and renders the fixed prover-load failure instead of navigating.
 
-During initial launch, an accepted connection may report an observable
-prefetch failure with terminal `AbortCeremony`. After provider return, an
-observable abort uses the accepted connection. Failure to accept a connection
+During initial launch, a prefetch failure waits for an accepted connection
+before reporting terminal `AbortCeremony`. After provider return, an observable
+abort likewise uses the accepted connection. Failure to accept a connection
 has no CCDP path, follows
 the [undeliverable-failure rule](METRICS.md#undeliverable-failures), and renders
 the fixed failure view.
