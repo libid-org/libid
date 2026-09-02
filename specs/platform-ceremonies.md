@@ -23,14 +23,14 @@ Terms are imported from
 ## 2. Ceremony profiles
 
 Each platform ceremony has an independently versioned immutable profile:
-`google/v1`, `x/v1`, `github/v1`. Every profile fixes the exact Platform
+`google`, `x`, `github`. Every profile fixes the exact Platform
 Verifier Version carried in its Authorization Digest and submission; launch
 profiles use `platformVerifierVersion = 1`.
 
 Each profile also fixes the attestation list of common REQ-COMMON-41 and the
-digest-binding method of common REQ-COMMON-02C. `google/v1` verifies no
-attestation and binds the digest as a public proof input; `x/v1` and
-`github/v1` each verify two attestations — a token or token-exchange session
+digest-binding method of common REQ-COMMON-02C. `google` verifies no
+attestation and binds the digest as a public proof input; `x` and
+`github` each verify two attestations — a token or token-exchange session
 and an identity session — and bind the digest through the revealed
 `code_verifier` of common REQ-COMMON-15A.
 
@@ -368,7 +368,7 @@ notary-to-platform path assumption and notary egress exposure, but it requires
 qualification of browser bandwidth, latency, memory, battery,
 WebSocket-to-TCP bridging, and mobile suspension. Adopting it requires a new
 ceremony profile whenever it changes the verifier, artifacts, or security
-assumptions; it is not deployment configuration under `x/v1` or `github/v1`.
+assumptions; it is not deployment configuration under `x` or `github`.
 
 ## 5. X ceremony
 
@@ -447,7 +447,7 @@ range indistinguishable from a `refresh_token` value.
 
 Those reveals and the in-circuit `code_verifier` opening of REQ-COMMON-15
 reduce the hidden request surface, but revealing a range does not reject a form
-delimiter inside it. `x/v1` therefore retains ASM-PROV-07 as a soundness
+delimiter inside it. `x` therefore retains ASM-PROV-07 as a soundness
 dependency.
 
 - REQ-PLAT-29A (upholds SP-CLIENT-01):
@@ -762,7 +762,7 @@ The Token-Exchange Service, which holds the client secret, runs the exchange
 inside a notarized TLS session and returns the resulting attestation. The
 `client_secret` range stays redacted behind that attestation's range
 commitment, so the browser never receives the secret. The attestation is
-verified under the pinned `github/v1` Notary Service, exactly
+verified under the pinned `github` Notary Service, exactly
 as the `/user` attestation is.
 
 The token-exchange attestation reveals exactly the ranges needed to bind it to
@@ -821,16 +821,16 @@ response header. Revealing more would widen exposure without adding a check.
   the bearer and are what ties the circuit to the two verified attestations.
 
 - REQ-PLAT-44 (upholds SP-EXCHANGE-01):
-  The Canonical Runtime MUST verify the returned token-exchange attestation
-  locally against the `github/v1` profile's pinned notary key and attestation
-  format before using the bearer. Necessity: the browser checks what it got
-  back before spending a `/user` session on it; the Notary Service decision
-  the chain relies on is separate.
+  The Canonical Runtime MUST validate the returned token-exchange attestation's
+  exact format and correlation before using the bearer. It MAY additionally
+  verify the signature locally when it has an independently trusted notary
+  key. This local signature check is defense in depth; the Platform Verifier's
+  verification remains authoritative.
 - REQ-PLAT-45 (upholds SP-EXCHANGE-01):
   The Token-Exchange Service MUST return an attestation carrying the
   configured notary's signature and revealing the token request's method and
   path. The Platform Verifier MUST compare those two revealed values with the
-  `github/v1` profile. The Platform Verifier MUST compare the authority that
+  `github` profile. The Platform Verifier MUST compare the authority that
   attestation authenticates with the same profile, per common REQ-COMMON-21A.
   Necessity: the authority is never a revealed range,
   because the transcript carries it only in a prover-composed `Host` header.
@@ -864,7 +864,7 @@ while GitHub consumes a duplicate. The layout tiling accounts for every
 transcript byte, every body range other than the secret is revealed, and the
 opened secret is delimiter-free per REQ-PLAT-35. These checks reduce hidden
 surface but do not prove the decoded form grammar or reject duplicates inside
-revealed values. `github/v1` therefore retains ASM-PROV-07 as a soundness
+revealed values. `github` therefore retains ASM-PROV-07 as a soundness
 dependency. The server-produced token-exchange attestation carries the
 commitments while
 keeping the client secret from the browser.
@@ -919,7 +919,7 @@ REQ-COMMON-18A requires.
   response bytes by their full field delimiters, rejecting a transcript in
   which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. The Platform Verifier MUST reject a noncanonical `id`
-  encoding. The `github/v1` profile fixes the structural byte following the
+  encoding. The `github` profile fixes the structural byte following the
   `id` integer token, which common REQ-COMMON-19D leaves to the profile, as
   `,` or `}` and no other byte. The Platform Verifier MUST reject any other
   following byte. Necessity: the terminator is what proves the revealed digits
@@ -937,7 +937,7 @@ REQ-COMMON-18A requires.
   bearer commitment of the token-exchange attestation and the
   `Authorization` bearer commitment of the `/user` attestation. The Platform
   Verifier MUST compare the method and path revealed in each attestation, and
-  the authority each attestation authenticates, with the `github/v1` profile.
+  the authority each attestation authenticates, with the `github` profile.
 
 - REQ-PLAT-52A (upholds SP-EXCHANGE-01):
   The Proving Circuit MUST expose exactly these two GitHub public inputs:
@@ -1076,11 +1076,13 @@ Platform Verifier, Notary Service, Consumer.
   or revealing the bearer range instead of committing it, is rejected; and no proof exposes the bearer or a value it can be recovered
   from.
 - TEST-PLAT-15 (exercises REQ-PLAT-44, REQ-PLAT-45, REQ-PLAT-47, REQ-PLAT-48, REQ-PLAT-48A, REQ-PLAT-49, REQ-PLAT-50):
-  A token-exchange attestation with a bad notary signature, a foreign
-  endpoint, a foreign client, a foreign `code_verifier`, a foreign serialized
-  `redirect_uri`, or a bearer that does not
-  open the commitment under the returned `bearerOpening` is discarded in each
-  case, and no resume record is written.
+  A token-exchange attestation with malformed encoding or correlation, a
+  foreign endpoint, a foreign client, a foreign `code_verifier`, a foreign
+  serialized `redirect_uri`, or a bearer that does not open the commitment
+  under the returned `bearerOpening` is discarded in each case, and no resume
+  record is written. When optional local signature verification is enabled, a
+  bad notary signature is discarded at the same point; otherwise the Platform
+  Verifier rejects it authoritatively.
 - TEST-PLAT-15A (exercises REQ-PLAT-52, REQ-PLAT-52A, REQ-PLAT-52B):
   A GitHub proof whose bearer commitment public input differs from the
   commitment in either submitted attestation is rejected; substituting one
