@@ -106,7 +106,7 @@ message.
 - A carrier is selectable only after it authenticates both endpoints.
 - One connection admits at most one popup browsing context and one active
   carrier. Each participating popup document authenticates and selects its own
-  carrier; stale carriers and losing races are inert.
+  carrier; stale carrier results are inert.
 - Application-level messages travel only over the active end-to-end carrier.
   Rendezvous and continuity
   controls carry none; neither do cookies, durable storage, request data, or
@@ -315,26 +315,30 @@ declare const PopupConnection: {
 }
 ```
 
-`PopupConnection` owns internal cancellation for each carrier attempt and for
-the whole logical connection. Carrier selection, pending handshakes, signaling,
-and race losers use those signals; `close()` aborts all of that work.
-Cancellation machinery is not part of the public API.
+`PopupConnection` owns one connection-lifetime cancellation signal and
+document-local MessagePort cancellation. Pending handshakes, signaling, carrier
+replacement, and connection closure use those signals; `close()` aborts all of
+that work. Cancellation machinery is not part of the public API.
 
-`fallback` constructs one ordinary `Carrier` and is not another connection
-abstraction. `connect` invokes a supplied constructor immediately so an
-opener-independent carrier can arm signaling before navigation; it retains the
-promise without producing an unhandled rejection. `accept` invokes its supplied
+`fallback` constructs one ordinary authenticated `Carrier` and is not another
+connection abstraction. `connect` invokes a supplied constructor exactly once
+for the logical connection so opener-independent signaling is armed before
+navigation. It retains and observes the pending promise without awaiting it or
+producing an unhandled rejection. Selecting MessagePort does not abort this
+standby: it remains armed until it is consumed by a later participating popup
+document, fails, or the logical connection closes. `accept` invokes its supplied
 constructor only after MessagePort becomes unavailable. A carrier module may
 perform synchronous, networkless destination bootstrap while producing that
 constructor; in particular, the popup-side WebRTC factory consumes its private
 navigation metadata before `accept` begins carrier selection. Connection passes
-only its internal abort signal; the constructor closes over every
-carrier-specific option. MessagePort selection aborts the current attempt's
-pending fallback.
-Before direct external navigation, the application starts a fresh fallback
-attempt. Before popup-side navigation destroys an active WebRTC carrier, that
-carrier privately requests and awaits the same preparation from the application
-endpoint. Connection closure aborts every attempt.
+its connection-lifetime abort signal; the constructor closes over every
+carrier-specific option.
+
+Before direct external navigation, the application starts the next
+document-local MessagePort operation while retaining any unused fallback.
+Before popup-side navigation destroys an active WebRTC carrier, that carrier
+privately requests and awaits preparation of its next signaling round from the
+application endpoint. Connection closure aborts every pending operation.
 If no constructor was supplied when fallback becomes necessary, connection
 records stable code `fallback-unavailable` and closes.
 
@@ -388,9 +392,9 @@ resources without invoking this operation or controlling popup lifetime.
 `navigate` accepts a caller-selected opaque URL. It does not select the route or
 interpret caller-owned fields:
 
-- while direct control remains available, the application endpoint closes the
-  current carrier, arms the next carrier attempt, and navigates its exact
-  retained `WindowProxy`;
+- while direct control remains available, the application endpoint arms the
+  next document-local MessagePort operation, retains an unused fallback, closes
+  the current carrier, and navigates its exact retained `WindowProxy`;
 - after isolation severs direct control, the application endpoint sends
   `Navigate`; and
 - the receiving popup preserves a transferable carrier or privately prepares a
@@ -401,8 +405,9 @@ For WebRTC replacement, connection gives the caller-selected target unchanged
 to the carrier's package-private preparation hook and navigates only to the
 prepared target returned by that hook. Connection does not inspect or construct
 the carrier's private navigation metadata. The destination's popup-side WebRTC
-factory copies, validates, and clears that metadata before `accept` races its
-returned constructor against MessagePort. Invalid metadata or preparation
+factory copies, validates, and clears that metadata before `accept` attempts
+MessagePort and, only if unavailable, commits that constructor. Invalid
+metadata or preparation
 rejects popup construction before carrier selection; preparation failure closes
 the connection without navigation.
 
@@ -485,21 +490,29 @@ invoke, register, or replace either hook.
 
 ### Selection
 
-A fresh popup endpoint chooses one physical path for that document:
+The popup endpoint chooses one physical path for each participating document;
+the application does not run an independent first-promise-wins race:
 
-1. A usable retained opener completes the MessagePort carrier's exact
-   source/origin authentication. Its native result is a `MessagePort`.
-2. An absent, severed, invalid, or timed-out opener commits the configured
-   fallback constructor and waits for its authenticated `Carrier`. The default
-   unavailable fallback instead terminates.
+1. The application keeps one document-local MessagePort operation and the
+   connection-lifetime fallback armed.
+2. A popup with a usable opener completes exact source/origin authentication,
+   validates the transferred port, and echoes the existing private MessagePort
+   handshake over that port. Only that echo makes MessagePort selectable on the
+   application endpoint. The fallback remains pending and unused.
+3. A popup with an absent, severed, or timed-out opener commits its configured
+   fallback. The authenticated fallback resolving on the application endpoint
+   confirms that choice and replaces any carrier belonging to the preceding
+   popup document. An authentication failure is terminal rather than a reason
+   to downgrade; an unavailable fallback also terminates.
 
-Connection first attempts MessagePort. If the opener path is unavailable, it
-commits the configured fallback. The application endpoint accepts the first
-valid selection for that popup document; late authentication, signaling, or
-values from another path are inert. An unexpected failed active carrier never
-retries or migrates. A controlled document replacement may install a fresh
-carrier under the same logical connection only after its replacement path is
-prepared.
+Selection is atomic. Installing an authenticated carrier closes the obsolete
+carrier and document-local operation, while the unused connection-lifetime
+fallback remains armed. Stale acknowledgements, carrier completions, signaling,
+or values from an earlier popup document are inert. An unexpected failure of
+the current document's active carrier never initiates fallback by itself; a
+fresh participating document must authenticate its own selection. A controlled
+document replacement may install a fresh carrier under the same logical
+connection only after its replacement path is prepared.
 
 `send` always uses the selected authenticated carrier. Only MessagePort is
 transferable: connection may preserve its selected native port, while an
