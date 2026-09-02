@@ -32,10 +32,8 @@ type CCDPVersion = 1
 ```
 
 `CCDPVersion` covers internal locations, navigation order, `Message`, its
-direction, validation, and transport-binding semantics. Ceremony code supplies
-it as the transport's `applicationVersion`; transport exact-matches but does
-not interpret it. Same-release carrier and navigation controls have no
-independent negotiated version.
+direction, validation, and transport-binding semantics. The transport's private
+controls are independently exact-bound by `TransportVersion`.
 
 ## Protocol locations
 
@@ -144,7 +142,7 @@ profile has been dispatched; it does not promise that downloads completed and
 grants no authority. The callback already received and validated the selected
 profile through its cleared launch input; echoing it would compare the
 application with its own values. Transport exact-matches connection ID,
-application version, and origin; it exact-matches a supplied popup source or
+transport version, and origin; it exact-matches a supplied popup source or
 binds the browser-stamped source accepted by the client. Acceptance may cause
 only navigation of that popup to the provider URL already frozen by the live
 `Ceremony`.
@@ -372,7 +370,7 @@ Opener authentication, Service Worker controls, SDP, and ICE candidates are not
   does not interpret or alter message meaning.
 - Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal
   values change no state.
-- No CCDP message carries ceremony ID or application version because transport
+- No CCDP message carries ceremony ID or transport version because transport
   ownership already supplies both.
 - Callback and prover accept only the locations and fragments defined above;
   received CCDP values never select a navigation destination.

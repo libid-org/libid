@@ -401,7 +401,7 @@ present, `proveUserIdentity()` immediately navigates that `WindowProxy` to
 `navigation.href` and exact-matches the first callback message against it. When
 absent, the package opens or navigates nothing; the real anchor reaches the
 same URL and transport binds its browser-stamped `MessageEvent.source` only
-after exact-matching the private connection ID and application version and the
+after exact-matching the private connection ID and transport version and the
 client accepts `ProverPrefetchingAssets`. Both paths then retain the same source
 through OAuth. There is no nullable popup value or mutable `setPopup` API.
 
@@ -696,8 +696,8 @@ public compatibility axis. One package release may retain older platform-version
 validators during its compatibility window.
 
 [`CCDPVersion`](CCDP.md#version) independently versions the browser message
-protocol. Ceremony code supplies it as the transport's opaque compatibility
-tag; transport defines no version axis of its own. Local Job schema versioning
+protocol. [`TransportVersion`](CCDP-TRANSPORT.md#versioning) independently
+versions private transport controls. Local Job schema versioning
 remains owned by the client store; deployment route and asset versioning remain
 release concerns. A Job which has already committed Identity has left the
 ceremony and remains usable under its composition's own compatibility rules.

@@ -5,6 +5,14 @@ bidirectional communication channel between two browser documents, moves
 caller-defined values, selects a carrier, and preserves a transferable native
 resource across document navigation.
 
+```ts
+type TransportVersion = 1
+```
+
+`TransportVersion` exact-matches the transport's private authentication,
+carrier, signaling, framing, and continuity controls. It does not version or
+describe any caller protocol.
+
 The topology is an ordinary browser tab running the application and one
 adjacent popup. The two documents may be cross-origin and cross-site.
 
@@ -42,7 +50,7 @@ The transport must:
 Transport owns:
 
 - one logical connection bound to the caller-supplied connection ID and
-  application version;
+  transport version;
 - the popup navigation handle;
 - selection and ownership of one authenticated carrier;
 - ordered delivery and continuity across popup document replacement;
@@ -65,7 +73,7 @@ dispatch but does not interpret the resulting message.
   cross-document continuation; losing races are inert.
 - Before carrier selection, authenticated WindowProxy delivery wraps an opaque
   caller value in a private control exact-bound to the transport's connection
-  ID and application version. After selection, application-level messages
+  ID and transport version. After selection, application-level messages
   travel only over the selected end-to-end carrier. Rendezvous and continuity
   controls carry none; neither do cookies, durable storage, request data, or
   URLs.
@@ -110,16 +118,16 @@ These are construction-specific implementations of the same API, not a public
 role field or a branch performed for each operation. Callers never supply a
 keeper, continuity purpose, route, or phase.
 
-Both resource records include the same ceremony ID and numeric
-`applicationVersion`. The ceremony ID is the caller-supplied connection ID;
+Both resource records include the same ceremony ID and `transportVersion`.
+The ceremony ID is the caller-supplied connection ID;
 transport uses it for authentication, continuity, and private signaling without
-recovering it from transported values. The application version identifies the
-caller's application protocol. Transport exact-matches both in private carrier
-and navigation controls but never interprets either.
+recovering it from transported values. Transport exact-matches both values in
+private carrier and navigation controls but assigns neither caller-level
+semantics.
 
 A ceremony endpoint constructed from `window.opener` and an immutable
 target-origin set can send an opaque value over `WindowProxy` before carrier
-selection. Transport wraps it with its exact connection ID and application
+selection. Transport wraps it with its exact connection ID and transport
 version; these fields are private control metadata and never enter the caller
 value. The application endpoint validates and removes that control before
 decoding or exposing the value.
@@ -133,7 +141,7 @@ applicationTransport.bindPopup(
 ): Promise<void>
 ```
 
-`bindPopup` considers only controls with the exact connection ID and application
+`bindPopup` considers only controls with the exact connection ID and transport
 version from the configured remote origin, then commits the browser-stamped
 source of the first decoded value accepted by the caller predicate. Controls
 for another connection are unrelated and bind nothing. Transport never
@@ -334,7 +342,7 @@ interprets its purpose.
 declare class PortKeeper {
   constructor(
     registration: ServiceWorkerRegistration,
-    applicationVersion: number,
+    transportVersion: TransportVersion,
   )
 
   keep(
@@ -350,8 +358,8 @@ declare class PortKeeper {
 }
 ```
 
-The constructor fixes the active registration and caller-owned application
-version for both operations. `keep` resolves only after the worker owns the exact
+The constructor fixes the active registration and transport version for both
+operations. `keep` resolves only after the worker owns the exact
 port, after which transport may replace the source document. `claim` atomically
 returns and removes the unchanged purpose and port, or returns `null` when no
 entry exists. `null` authenticates and selects nothing; popup construction
@@ -362,7 +370,7 @@ queued value used before the destination establishes its data channel.
 The two acknowledged calls are necessary because the worker must own the port
 before the source document destroys itself and the destination document does
 not yet exist. The Service Worker record and control-message encoding are
-implementation details. Application version, ceremony ID, purpose bounds,
+implementation details. Transport version, ceremony ID, purpose bounds,
 transferable count, duplicate ownership, expiry, and one-use claim are checked
 before ownership changes. A malformed, mismatched, duplicate, or post-terminal
 record rejects and closes every reachable port; absence is the sole `null`
@@ -372,9 +380,7 @@ carries the port, purpose, or queued value.
 
 ## Versioning
 
-Transport has no independently negotiated version. Its caller supplies one
-numeric `applicationVersion`, which transport exact-matches without assigning
-application semantics. Compatible releases may change internal encoding,
-framing, ICE policy, worker controls, or equivalent browser mechanics without
-changing that behavior. An independently incompatible transport change requires
-its own version; it does not repurpose the application version.
+The package supplies one `TransportVersion` to both endpoints; there is no
+runtime negotiation. Compatible implementation changes keep the version.
+Breaking private authentication, carrier, signaling, framing, or continuity
+controls increment it independently of every caller protocol.

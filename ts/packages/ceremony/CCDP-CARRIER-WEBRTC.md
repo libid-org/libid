@@ -60,7 +60,7 @@ The signaling contract accepts only:
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
-The live subscription exact-matches the caller-supplied application version,
+The live subscription exact-matches the caller-supplied transport version,
 ceremony ID, and role and lasts only for that ceremony. Once RTC fallback starts,
 offer, answer, and candidate state is transient and is deleted when the channel
 opens, either side fails or disconnects, MessagePort wins, or the ceremony ends.
@@ -99,7 +99,7 @@ fallback:
 interface WebRTCOptions {
   signalingServiceUrl: string
   stunUrls: readonly string[]
-  applicationVersion: number
+  transportVersion: TransportVersion
   ceremonyId: string
   signal: AbortSignal
 }
