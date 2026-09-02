@@ -159,9 +159,10 @@ it.
 
 A popup endpoint constructed from `PopupWindow.current()` and an immutable
 target-origin set sends the MessagePort carrier's private handshake before
-carrier selection. Its connection ID and connection version are correlation
-metadata, not capabilities or caller values. The application endpoint validates
-and consumes that control without exposing it to caller code.
+carrier selection. For that carrier, its connection ID and connection version
+are correlation metadata, not capabilities or caller values; WebRTC additionally
+uses the connection ID as its rendezvous capability. The application endpoint
+validates and consumes the control without exposing it to caller code.
 
 `PopupWindow.open(target)` binds a returned handle privately. When the browser
 returns no handle, `PopupConnection.connect` listens for the popup created by the
@@ -360,8 +361,8 @@ messages over the selected connection. `close` is idempotent and closes both
 the logical connection and its popup. Internal failure cleanup releases
 resources without invoking this operation or controlling popup lifetime.
 
-`navigate` accepts a caller-selected opaque URL. It never parses or builds
-that URL:
+`navigate` accepts a caller-selected opaque URL. It does not select the route or
+interpret caller-owned fields:
 
 - while direct control remains available, the application endpoint closes the
   current carrier, arms the next carrier attempt, and navigates its exact
@@ -371,6 +372,13 @@ that URL:
 - the receiving popup preserves a transferable carrier or privately prepares a
   replacement for a non-transferable WebRTC carrier, then replaces its current
   document.
+
+For WebRTC replacement, connection gives the caller-selected target unchanged
+to the carrier's package-private preparation hook and navigates only to the
+prepared target returned by that hook. Connection does not inspect or construct
+the carrier's private navigation metadata. The destination WebRTC carrier
+copies and clears that metadata before fallback construction. Invalid metadata
+or preparation failure closes the connection without navigation.
 
 The first form may cross an arbitrary external document and wait for user
 interaction because no native carrier is retained across that gap. The next
@@ -413,6 +421,14 @@ interface Carrier {
   on(handler: (value: unknown) => void): () => void
   close(): void
 }
+
+declare const prepareNavigation: unique symbol
+declare const onReplacement: unique symbol
+
+interface NavigationCarrier extends Carrier {
+  [prepareNavigation](target: string): Promise<string>
+  [onReplacement](handler: (carrier: Promise<Carrier>) => void): () => void
+}
 ```
 
 Local sends satisfy the base `Message` shape without making the carrier
@@ -424,6 +440,22 @@ The adapter does not own navigation policy. Connection retains a transferable
 `MessagePort` only when navigation moves ownership; the WebRTC carrier retains
 and closes its own peer and channel.
 
+The two symbol-keyed hooks are package-private RTC lifecycle hooks, not caller
+messages or public controls. On the selected application carrier, connection
+registers one `onReplacement` handler and retains the authenticated carrier
+promise it receives. On the popup carrier, connection calls
+`prepareNavigation` with the caller-selected target and navigates only to the
+prepared target it resolves. The RTC carrier internally starts and authenticates
+the exact next signaling round, adds and consumes its private navigation
+metadata, and reports the resulting replacement carrier without exposing any of
+those mechanics to connection. Each endpoint installs the resolved carrier for
+the same logical connection. Any hook, constructor, timeout, metadata, or
+replacement failure closes without navigation or caller delivery.
+
+Only a carrier implementing both exact symbol-keyed functions supports this
+path. MessagePort implements neither and uses `PortKeeper`. Callers cannot
+invoke, register, or replace either hook.
+
 ### Selection
 
 A fresh popup endpoint chooses one physical path for that document:
@@ -431,10 +463,8 @@ A fresh popup endpoint chooses one physical path for that document:
 1. A usable retained opener completes the MessagePort carrier's exact
    source/origin authentication. Its native result is a `MessagePort`.
 2. An absent, severed, invalid, or timed-out opener commits the configured
-   fallback. With WebRTC, there is no carrier yet because the next document
-   navigation would destroy it. Connection creates a local `MessageChannel`
-   and queues the first opaque outbound value on one endpoint. The default
-   unavailable fallback instead terminates before navigation.
+   fallback constructor and waits for its authenticated `Carrier`. The default
+   unavailable fallback instead terminates.
 
 Connection first attempts MessagePort. If the opener path is unavailable, it
 commits the configured fallback. The application endpoint accepts the first
@@ -444,133 +474,29 @@ retries or migrates. A controlled document replacement may install a fresh
 carrier under the same logical connection only after its replacement path is
 prepared.
 
-In the MessagePort path, `send` uses the selected native port. In fallback, it
-queues one value on the connection-owned local port. Connection neither identifies
-nor parses that value.
+`send` always uses the selected authenticated carrier. Only MessagePort is
+transferable: connection may preserve its selected native port, while an
+established `RTCDataChannel` is never handed across navigation. WebRTC
+replacement establishes a fresh authenticated carrier in the destination
+through the already-armed exact signaling round.
 
-Only MessagePort is transferable:
-
-- connection preserves a selected MessagePort as the active carrier resource;
-- WebRTC fallback uses a connection-created `MessageChannel` only to carry the
-  queued value to the destination document; and
-- an established `RTCDataChannel` is never handed across navigation.
-
-The destination endpoint consumes the fallback value, establishes the WebRTC
-carrier through the fresh already-started signaling round, and forwards that
-unchanged value first.
-
-## Carrier continuity across document navigation
+## Continuity across navigations
 
 Carrier continuity means that the logical connection can preserve one active
 carrier while the popup replaces one participating document with another. It
 does not preserve the old JavaScript heap or an `RTCDataChannel`. A current
 carrier which cannot survive a document change is replaced transparently.
 
-Replacing a popup document normally destroys its side of the communication
-channel together with its JavaScript heap. Any live `MessagePort` owned only by
-that document becomes unreachable, while the destination document does not
-exist yet and therefore cannot receive it directly. Carrier continuity gives
-the port a temporary same-origin owner across that gap:
+A transferable carrier may preserve its authenticated native resource across
+an immediate participating-document replacement. A nontransferable carrier
+instead prepares its replacement before navigation and installs it after the
+destination authenticates. The caller observes neither mechanism and cannot
+recover from continuity loss.
 
-```text
-source document          Service Worker          destination document
-      |                         |                           |
-      |--- keep(port) --------->|                           |
-      |<-- ownership accepted --|                           |
-      |--- navigate --------------------------------------->|
-      |                         |<-------- claim(port) ------|
-      |                         |-------- port ------------->|
-```
-
-The source navigates only after the worker acknowledges ownership. The
-destination claims before loading caller code or using the network. For the
-MessagePort carrier, this preserves the already authenticated channel without
-repeating its handshake. For WebRTC fallback, it preserves the single queued
-value until the destination establishes the data channel. Both paths avoid
-another popup, user action, or data relay.
-
-This is a short in-memory continuity bridge, not persistence or recovery.
-Worker loss breaks continuity; no later document can reconstruct or resume the
-channel.
-
-### Timing assumptions and browser limits
-
-For every participating-document replacement, the bridge must complete within
-its bounded interval. The same logical connection may use it repeatedly. After
-the worker acknowledges preservation, the source starts navigation immediately
-and the destination claims in its clearing bootstrap before package import or
-network use. It never holds a port while an unrelated document, user
-interaction, or intentional background wait owns the popup; a later
-participating document establishes a replacement carrier.
-
-The `keep` handler uses `event.waitUntil()` to keep its message event active
-until the port is claimed or its short deadline expires. Its acknowledgement
-therefore confirms worker ownership but does not end the event. `claim`
-atomically transfers the port and settles that event. The Service Worker
-lifetime model remains event-based: registrations persist, but a worker heap
-may be terminated when no event is pending or under abnormal resource pressure.
-
-There is no portable browser-specific minimum lifetime. The PoC observed:
-
-| Browser engine | Empirical hold result |
-|---|---|
-| Chromium | More than 60 seconds; the upper boundary was not found. |
-| Firefox | Approximately 60 seconds. |
-| Playwright WebKit | Seven seconds succeeded and eight seconds lost the port. |
-
-These are observations, not guaranteed browser contracts. Connection uses one
-conservative `CARRIER_CLAIM_TIMEOUT_MS = 5_000` across engines, below the
-observed WebKit boundary. Connection does not sniff the user agent or select a
-browser-specific deadline. Suspension, process loss, memory pressure, or
-expiry may still break continuity; failure is terminal and never selects a
-weaker path.
-
-### Internal PortKeeper API
-
-`PortKeeper` is the connection's package-private continuity component. It
-encapsulates Service Worker communication, temporary ownership, event lifetime,
-the claim deadline, one-use transfer, and cleanup. It neither reads the port nor
-interprets its purpose.
-
-```ts
-declare class PortKeeper {
-  constructor(
-    registration: ServiceWorkerRegistration,
-    connectionVersion: ConnectionVersion,
-  )
-
-  keep(
-    connectionId: string,
-    purpose: string,
-    port: MessagePort,
-  ): Promise<void>
-
-  claim(connectionId: string): Promise<{
-    purpose: string
-    port: MessagePort
-  } | null>
-}
-```
-
-The constructor fixes the active registration and connection version for both
-operations. `keep` resolves only after the worker owns the exact
-port, after which connection may replace the source document. `claim` atomically
-returns and removes the unchanged purpose and port, or returns `null` when no
-entry exists. `null` authenticates and selects nothing; popup construction
-continues with its available browser resources. For MessagePort, a returned port
-is the selected carrier endpoint. For WebRTC fallback, it contains the one
-queued value used before the destination establishes its data channel.
-
-The two acknowledged calls are necessary because the worker must own the port
-before the source document destroys itself and the destination document does
-not yet exist. The Service Worker record and control-message encoding are
-implementation details. Connection version, connection ID, purpose bounds,
-transferable count, duplicate ownership, expiry, and one-use claim are checked
-before ownership changes. A malformed, mismatched, duplicate, or post-terminal
-record rejects and closes every reachable port; absence is the sole `null`
-result. Worker loss or a failed `keep` acknowledgement prevents navigation with
-live state. No `BroadcastChannel`, cookie, IndexedDB record, request, or URL
-carries the port, purpose, or queued value.
+The [MessagePort carrier](CONNECTION-MESSAGEPORT.md)
+owns transferable-port preservation, its Service Worker bridge, timing, and
+failure rules. The [WebRTC carrier](CONNECTION-WEBRTC.md#private-navigation-preparation)
+owns fresh-round preparation for its nontransferable data channel.
 
 ## Document-Isolation-Policy evolution
 
