@@ -42,37 +42,58 @@ Application connection      Signaling service      Destination popup connection
 ```
 
 The application connection starts one bounded, one-use signaling subscription
-before caller-controlled popup navigation. This creates no peer connection,
-SDP, ICE candidate, or transported-value record. The application connection
-closes it unused when MessagePort wins. When RTC is committed, the destination
-popup creates the offer and the application answers.
+before each popup navigation which may require RTC in the destination. This
+creates no peer connection, SDP, ICE candidate, or transported-value record.
+The application closes the subscription unused when MessagePort wins. When RTC
+is committed, the destination popup creates a fresh offer and the application
+creates a fresh matching answer.
 
 ## Signaling service
 
-The signaling service is a bounded rendezvous, not a carrier. The application
-subscribes as answerer and the popup publishes as offerer under the same fresh,
-unguessable, one-use connection ID. The ID is the rendezvous
-capability; the browser-stamped `Origin` restricts which browser role may present
-it but is not a general client credential. The service exact-checks the
-application and popup origins. Signaled DTLS fingerprints bind the
-resulting channel to the exchanged descriptions but do not independently
-authenticate the signaling service. No second nonce is added.
+The signaling service is a bounded rendezvous, not a carrier. For each round,
+the application subscribes as answerer and the destination popup publishes as
+offerer under the same fresh, unguessable connection ID. The ID is the logical
+connection's rendezvous capability and may be reused only by its sequential
+rounds; the browser-stamped `Origin` restricts which browser role may present it
+but is not a general client credential. The service exact-checks the application
+and popup origins. Signaled DTLS fingerprints bind the resulting channel to
+that round's descriptions but do not independently authenticate the signaling
+service. No second nonce is added.
 
 The signaling contract accepts only:
 
 - one application subscription from an allowed application origin;
 - one popup offer from the configured popup origin;
-- one answer;
+- one fresh application answer;
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
 
 The live subscription exact-matches the caller-supplied connection version,
-connection ID, and role and lasts only for that connection. Once RTC fallback starts,
-offer, answer, and candidate state is transient and is deleted when the
-channel opens, either side fails or disconnects, MessagePort wins, or connection
-closes.
-Signaling records are consumed once and never enter signaling URLs, logs,
-analytics, or durable storage.
+connection ID, and role and lasts only for that round. Offer, answer, and
+candidate state is transient and is deleted when the channel opens, either side
+fails, MessagePort wins, or the round is abandoned. Only after that deletion may
+the same live logical connection start another round under the same connection
+ID. At most one round for that ID may be live. Signaling records are consumed
+once and never enter signaling URLs, logs, analytics, or durable storage.
+
+The signaling service handles independent one-shot rounds. It does not retain a
+subscription for the logical connection, detect popup navigation, or understand
+carrier continuity.
+
+### Private navigation preparation
+
+When popup-side navigation would destroy an active RTC carrier, the popup sends
+package-private `PrepareNavigation` over that carrier. The application starts a
+fresh one-use answerer subscription and replies with package-private
+`NavigationReady` only after it is armed. The popup then navigates, and the
+destination popup starts the new round with a fresh offer. Failure or timeout
+closes the logical connection without navigating.
+
+These controls exist only in the WebRTC carrier. They are consumed before the
+generic carrier value stream and never enter `PopupControl`, the caller message
+union, or another carrier. A MessagePort which can be transferred across an
+immediate participating-document replacement uses `PortKeeper` instead and
+emits neither control.
 
 An honest service is not on the data path and cannot read DTLS-protected framed
 values. A compromised service can replace exchanged fingerprints and
@@ -141,9 +162,9 @@ fallback: signal => connectApplicationWebRTC({
 ```
 
 The popup supplies `connectPopupWebRTC` in the same form with its immutable
-allowed application origins. `connectApplicationWebRTC` synchronously starts
-the bounded answerer subscription and returns a pending carrier promise. It
-creates the answering peer only after a valid offer arrives.
+allowed application origins. Each `connectApplicationWebRTC` call synchronously
+starts one bounded answerer subscription and returns a pending carrier promise.
+It creates the answering peer only after a valid fresh offer arrives.
 `connectPopupWebRTC` creates the offering peer and data channel, publishes its
 offer and candidates, and consumes the answer and remote candidates. Each
 resolves with an authenticated carrier only after its local channel opens.
@@ -151,12 +172,14 @@ Internally they retain the peer connection and channel and own every signaling
 request, trickled candidate update, origin-bound role, timeout, codec, framing,
 pressure, and cleanup operation.
 
-The application connection observes and retains the promise for the current
-carrier attempt without awaiting it during popup navigation, so an early
-failure produces no unhandled rejection. MessagePort selection aborts it.
-Before direct external navigation, the logical connection starts a fresh
-application fallback attempt for the next popup document. Under RTC selection each endpoint awaits its
-own operation and exposes only the common carrier API. Abort, carrier closure,
+The application connection observes the promise for each attempt without
+awaiting it during popup navigation, so an early failure produces no unhandled
+rejection. MessagePort selection aborts that attempt. A controlled replacement
+from an active RTC carrier starts the next application attempt through the
+private preparation handshake while the old channel remains usable. Each popup
+fallback creates a new physical peer; the application creates a new peer and
+answer rather than reusing an earlier description. Under RTC selection each
+endpoint exposes only the common carrier API. Abort, logical connection closure,
 or establishment failure closes every reachable signaling, peer, and channel
 resource and releases no transported value. No signaling API or native RTC
 resource is exposed to caller protocols or package consumers.
@@ -176,11 +199,11 @@ The deployment configures no TURN server. Networks whose NAT or firewall prevent
 direct path fail closed; this is an explicit availability tradeoff, not a
 connection downgrade or recovery signal.
 
-The selected SDP and DTLS fingerprints are immutable for the connection.
+The selected SDP and DTLS fingerprints are immutable for one signaling round.
 Duplicate signaling records are idempotent; candidate records append only exact
 new candidates. Changed descriptions, roles, fingerprints, or accepted
 candidates fail. Signaling state is deleted when the channel opens, either side
-fails or disconnects, MessagePort wins, or connection closes.
+fails, MessagePort wins, or the round is abandoned.
 
 ## Message delivery
 
@@ -204,34 +227,39 @@ dependency or custom codec without changing the protocol boundary. The JSON
 encoding is not canonical and is never hashed, signed, or otherwise treated as
 proof bytes; only each byte tag's base64url spelling is canonical.
 
-One serialized message is sent completely before the next. The ordered reliable
-channel needs only two frame forms:
+One framed item is sent completely before the next. The ordered reliable channel
+uses two value frame forms and two package-private navigation controls:
 
 ```text
 first:         0x01 | uint32be totalLength | payload
 continuation:  0x00 | payload
+prepare-nav:   0x02
+nav-ready:     0x03
 ```
 
 The first frame may complete the message. Otherwise continuation payloads append
 until exactly `totalLength` bytes have arrived. The carrier fragments below the
 retained peer connection's `RTCSctpTransport.maxMessageSize` and its own bounded
 chunk cap, and pauses its bounded send queue using `bufferedAmount` and
-`bufferedamountlow`. Ordering and the noninterleaving send queue remove the need
-for message IDs, chunk indexes, acknowledgements, or a checksum.
+`bufferedamountlow`. Private navigation controls are valid only between complete
+values, in their defined direction, and once per replacement. Ordering and the
+noninterleaving send queue remove the need for message IDs, chunk indexes,
+acknowledgements, or a checksum.
 
 On receipt the channel uses `binaryType = 'arraybuffer'`. The carrier exact-checks
 the frame sequence and total length, decodes UTF-8 fatally, parses JSON, restores
 exact canonical byte tags to `Uint8Array`, validates the generic value domain,
 and gives the resulting `unknown` to the connection. The connection then selects
-and calls its registered `MessageType`; the carrier never reads a message
-discriminator.
+and calls its registered `MessageType`. The carrier recognizes only its two
+private frame tags; it never reads a caller message discriminator.
 
 An unexpected start or continuation, incomplete or excess body, oversized
 message, invalid UTF-8 or JSON, malformed or noncanonical byte tag, unsupported
 value, decode failure, or send-buffer overflow closes the carrier before any
 value reaches a handler. The connection functions return the carrier and retain
-the native peer and channel privately. There is one connection, with no
-reconnection, carrier switch, or message resend.
+the native peer and channel privately. A physical carrier never reconnects,
+switches, or resends. Only a controlled navigation may replace it under the
+logical connection; unexpected carrier failure closes the connection.
 
 ## Failure and security invariants
 
@@ -240,9 +268,11 @@ reconnection, carrier switch, or message resend.
   `Origin`; the popup handshake requires the exact configured popup origin.
   Origin restricts browser callers but is not accepted as a standalone client
   credential.
-- Connection ID is the fresh, unguessable, one-use rendezvous capability. It is
-  exact-matched to the live application connection and retired when either carrier
-  wins.
+- Connection ID is the fresh, unguessable logical rendezvous capability. It is
+  exact-matched to the live application connection, reused only for sequential
+  one-use signaling rounds, and retired when the logical connection closes.
+- A private navigation control cannot reach caller code or another carrier, and
+  cannot navigate until the application has armed the next round.
 - `RTCDataChannel` message encoding and framing are bounded and cannot add a
   value outside its authenticated connection.
 - Signaling loss, ICE failure, channel loss, popup closure, or context
@@ -252,8 +282,8 @@ reconnection, carrier switch, or message resend.
 
 ## Connection establishment
 
-This diagram shows the logical RTC fallback establishment; it does not define
-the signaling-service wire records or show transported values.
+These diagrams show initial RTC fallback and controlled RTC replacement. They do
+not define signaling-service wire records or show transported values.
 
 ```mermaid
 sequenceDiagram
@@ -267,5 +297,24 @@ sequenceDiagram
     A->>G: Answer + trickled ICE candidates
     G-->>P: Deliver answer and candidates
     P-->>A: Ordered reliable RTCDataChannel opens
+    Note over A,G: Delete signaling state
+```
+
+```mermaid
+sequenceDiagram
+    participant A as Application connection
+    participant G as Signaling service
+    participant P as Popup connection
+    participant N as Next popup document
+
+    P-->>A: Private PrepareNavigation over RTC
+    A->>G: Arm fresh one-use subscription
+    A-->>P: Private NavigationReady over RTC
+    P->>N: Navigate
+    N->>G: Fresh offer + trickled ICE candidates
+    G-->>A: Deliver offer and candidates
+    A->>G: Fresh answer + trickled ICE candidates
+    G-->>N: Deliver answer and candidates
+    N-->>A: New ordered reliable RTCDataChannel opens
     Note over A,G: Delete signaling state
 ```
