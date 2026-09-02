@@ -23,8 +23,8 @@ contract.
 
 | Context | Owns | Browser constraint |
 |---|---|---|
-| Application page | operation inputs, live `Ceremony`, durable application Job, and final result commit | has application-defined headers and lifecycle; may be cross-site from the ceremony server |
-| Callback | OAuth navigation and return, initial opener authentication when available, and transition to proving | remains top-level and non-isolated until the returned transport endpoint selects a carrier; its configured alias is the registered server-hosted `redirect_uri` |
+| Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from the ceremony server |
+| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated until the returned transport endpoint selects a carrier; its configured alias is the registered server-hosted `redirect_uri` |
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
 CCDP is transport-neutral. It defines what each message means, which
@@ -58,27 +58,16 @@ interface ProverPrefetchingAssets {
 }
 ```
 
-`ProverPrefetchingAssets` is the first CCDP message. The initial top-level
-callback loads the same-origin prover prefetch child. That child
-clears and exact-validates its bootstrap fragment, resolves the selected
-profile, activates the prover Service Worker, starts the profile's public
-fetches, and emits readiness after registration and dispatch settle. It does
-not wait for downloads.
+`ProverPrefetchingAssets` is the sole CCDP message before carrier
+authentication. It states that prefetch for the selected public profile has
+been dispatched; it does not promise that downloads completed. Its fields are
+public correlation data, grant no authority, and may cause only navigation of
+the bound popup to the provider URL already frozen by the live `Ceremony`.
 
-The callback accepts the message only from its exact child at the configured
-server origin and passes it unchanged to its ceremony transport. The transport
-sends it over `WindowProxy` using each configured allowed application origin as
-an exact `targetOrigin`. The application exact-matches ceremony ID, platform ID
-and version, callback origin, and browser-stamped popup source. A real-anchor
-launch binds the observed source here. The application transport then navigates
-that popup to the frozen provider URL.
-
-The top-level callback visit places the child, Service Worker, and caches in the
-ceremony server's first-party partition, which the later top-level prover
-reuses. An application-hosted iframe may occupy another storage partition and
-is not a launch dependency. Missing profile, document load, registration, or
-activation fails before OAuth; an ordinary artifact-fetch failure continues on
-the cold proving path.
+The application accepts it only when its ceremony ID and platform/version
+match that live ceremony and its browser-stamped source and origin match the
+expected callback. Callback and prefetch execution are defined in
+[CALLBACK.md](CALLBACK.md) and [PROVER.md](PROVER.md#prefetch-and-cache-lifecycle).
 
 ### OAuth-return delivery
 
@@ -97,16 +86,15 @@ cleared by the server bootstrap. It extracts only the single OAuth state needed
 for ceremony routing and does not classify approval, denial, transport, or
 platform fields.
 
-`CallbackDeliverParams` is the first CCDP message after provider return. On
-MessagePort it comes directly from the authenticated callback before the
-endpoint moves. On RTC the callback queues the same message locally and the
-replacement prover forwards it unchanged after the `RTCDataChannel` opens. The
-`Callback` prefix records its creator, even when the prover forwards it.
+On the successful path, `CallbackDeliverParams` is the first CCDP message after
+provider return and reaches the application only through the authenticated
+ceremony transport. The `Callback` prefix records its creator even when
+transport continuity delivers it after callback replacement.
 
 The application-scoped client uses the live `Ceremony` already bound to that
-transport and its platform/version parser to exact-validate transport, fields,
-state, client, redirect, success, and provider denial. A stale, replayed,
-retired, or post-reload delivery changes no live state.
+transport and its platform/version parser to exact-validate response location,
+fields, state, client, redirect, success, and provider denial. A stale,
+replayed, retired, or post-reload delivery changes no live state.
 
 ### Proof request
 
@@ -136,12 +124,10 @@ nonce; only its derived code verifier crosses this boundary. No authorization
 digest, operation field, separate OAuth state, Job revision, composition kind,
 wallet state, connector, or transport kind enters the request.
 
-Transport validates generic CCDP shape and bounds. The prover then applies the
-exact selected platform/version parser before credential use. The callback and
-transport have no platform configuration and cannot perform that second
-validation. The one-shot ceremony and transport prevent duplicate proving; the
-composition's final Job CAS prevents a late result from producing an application
-effect.
+The registered decoder validates CCDP shape and bounds. The prover then applies
+the exact selected platform/version parser before credential use. The callback
+and transport have no platform configuration and cannot perform that second
+validation. The one-shot ceremony accepts no duplicate request or late result.
 
 ### Progress and proof delivery
 
@@ -166,8 +152,10 @@ it. Adding a platform does not change CCDP, the transport, or either carrier.
 
 `PlatformStep.label` is nonempty package-owned display text of at most 96 UTF-8
 bytes without control characters. `PlatformStep.progress` is finite,
-monotonic, and in `[0, 1)`. Only local handling of `ProverDeliverProof` renders
-completion as `1`. Progress is advisory; detailed semantics live in
+monotonic, and in `[0, 1)`. `timestamp` is the prover's finite nonnegative
+`performance.timeOrigin + performance.now()` value in milliseconds; it permits
+same-browser ordering and duration diagnostics but grants no authority.
+Progress is advisory; detailed semantics live in
 [PROVER.md](PROVER.md#platform-progress).
 
 ### Cancellation and technical failure
@@ -192,7 +180,8 @@ attempts to close; no acknowledgement or platform-specific cancel path exists.
 prover code. Its reason is a bounded sanitized diagnostic string, not a stable
 code or raw exception. Exact reason enums may emerge from implementation
 experience. The application rejects the live ceremony for every observable
-abort. Context or transport loss may produce no message.
+abort. It is sent only through authenticated transport; an earlier callback,
+context, or transport failure may produce no message.
 
 ### Closed message union
 
@@ -206,6 +195,22 @@ type Message =
   | ProverDeliverProof
   | AbortCeremony
 ```
+
+### Direction and ordering
+
+| Message | Created by | Received by | Valid position and cardinality |
+|---|---|---|---|
+| `ProverPrefetchingAssets` | prover prefetch child, forwarded unchanged by callback | application | exactly once before provider navigation and carrier authentication |
+| `CallbackDeliverParams` | callback | application | exactly once after provider return and transport authentication, before the application decision |
+| `AppRequestProof` | application | active prover | exactly once after an accepted callback result; starts proving |
+| `AppCancelCeremony` | application | active callback or prover endpoint | at most once before another terminal message; makes later messages inert and requests downstream cleanup |
+| `ProverNotifyEvent` | prover | application | zero or more after `AppRequestProof` and before a terminal message |
+| `ProverDeliverProof` | prover | application | at most once after `AppRequestProof`; ends the prover run |
+| `AbortCeremony` | callback or prover | application | at most once after transport authentication for an observable technical failure before another terminal message |
+
+Messages outside these directions or positions are invalid. Cancellation,
+proof delivery, and abort make later messages inert even when they race in
+transit.
 
 ### Structural decoding
 
@@ -255,7 +260,7 @@ registered decoder set; order and participant state remain handler checks.
 
 Opener authentication, Service Worker controls, SDP, and ICE candidates are not
 `Message`. The transport and carrier documents define those private
-controls. Exact signaling-service records remain part of later server work.
+controls.
 
 ## Ceremony sequence
 
@@ -267,16 +272,9 @@ sequenceDiagram
 
     C-->>A: ProverPrefetchingAssets
     A->>C: Navigate retained popup to provider
-    Note over A,C: Provider authorization returns to the cleared callback
-    alt Retained opener authenticates
-        Note over A,C: MessagePort carrier binds
-        C-->>A: CallbackDeliverParams
-        C->>P: Move transport endpoint and replace popup
-    else Opener path unavailable
-        C->>P: Move cleared return and replace popup
-        Note over A,P: WebRTC carrier binds through signaling-only service
-        P-->>A: CallbackDeliverParams
-    end
+    Note over A,C: Provider authorization returns to callback
+    C-->>A: CallbackDeliverParams
+    Note over C,P: Transport activates prover in the same popup
     alt Application does not proceed
         A-->>P: AppCancelCeremony
     else Application requests proof
@@ -290,32 +288,31 @@ sequenceDiagram
             P-->>A: ProverDeliverProof
         end
     end
+    Note over A,P: Observable callback or prover failure may instead send AbortCeremony
 ```
 
-The diagram intentionally hides MessagePort transfer, worker receipts, SDP,
-ICE, framing, URL clearing, and callback/prover UI. Those mechanics are
-transport or participant concerns and do not alter the logical sequence.
+The diagram is the logical CCDP sequence. Transport establishment, continuity,
+navigation, URL clearing, and participant UI do not alter it.
 
 ## Shared invariants
 
-- One live ceremony accepts one prefetch readiness, one carrier, and one
+- `ProverPrefetchingAssets` is the only pre-carrier message and carries no
+  credential, proof input, proof, or authority.
+- One live ceremony accepts one prefetch readiness and one
   `CallbackDeliverParams`.
-- A carrier authenticates and binds under the concrete transport before any
-  OAuth return reaches the application or signaling carries data.
-- Carriers cannot inspect or invent meaning for an opaque transport value.
+- Transport authenticates before any OAuth return reaches the application and
+  does not interpret or alter message meaning.
 - Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal
   values change no state.
 - Every CCDP message after prefetch readiness omits ceremony ID because
   transport ownership already supplies it.
 - Progress remains advisory and cannot authorize, cancel, or complete a
   ceremony.
-- Cancellation and context-loss handling are best effort; closure is never a
+- Transport state, navigation, popup closure, and progress are never a ceremony
   result.
+- Cancellation and context-loss cleanup are best effort.
 - No ceremony recovery, durable browser checkpoint, or transport migration
   exists.
-- Callback owns return capture and transition UI; prover owns credentials,
-  workers, visible proving UI, and proof behavior; the transport owns binding,
-  selection, and navigation while carriers own delivery.
 
 ## Versioning and compatibility
 
