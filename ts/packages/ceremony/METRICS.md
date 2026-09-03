@@ -208,7 +208,7 @@ and connection/context cleanup separately. Record duplicate or late delivery,
 discarded result, ignored progress, and close failure as stable counters or
 codes.
 
-No diagnostic success precedes local proof-shape validation. Consumer proof
+No diagnostic success precedes local proof-shape validation. Ledger Verifier proof
 verification and every post-ceremony application action remain outside this
 catalog.
 

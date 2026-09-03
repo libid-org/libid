@@ -30,10 +30,10 @@ The callback owns:
 cross-document connection continuity, and popup replacement.
 
 The callback installs no Service Worker. During initial launch, its
-cross-origin prover-prefetch child registers and activates the prover origin's
+cross-origin prover-prefetch child registers and activates the proving origin's
 worker for prefetch and cache. On provider return, the callback accepts its
 application connection, delivers the OAuth return, and navigates the same popup
-to the configured prover origin. A MessagePort cannot cross that origin change:
+to the configured proving origin. A MessagePort cannot cross that origin change:
 the prover establishes a fresh carrier through its opener or the configured
 fallback under the same logical popup connection.
 
@@ -49,7 +49,7 @@ callback storage does not.
 `locationInput` is the exact copied query and fragment, including their leading
 delimiter when nonempty. The shell passes it first, followed by the selected
 CCDP root's opaque, immutable resolved input tuple. The version-1 callback exact-validates
-its allowed application origins and prover origin arguments, then passes the
+its allowed application origins and proving origin arguments, then passes the
 copied origins to `PopupConnection.accept` before installing ceremony listeners.
 The selected callback root owns any package-supported fallback construction;
 the shell passes data, never a function.

@@ -3,8 +3,7 @@
 `@libid/ceremony` runs an identity-proof ceremony in the browser. An
 application supplies an operation to authorize; the package obtains and proves
 platform identity evidence, then returns a locally checked identity preview and
-the proof-bearing `OAuthProof` for a Consumer (the downstream proof verifier)
-to verify.
+the proof-bearing `OAuthProof` for the downstream Ledger Verifier.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
@@ -36,6 +35,31 @@ client, callback, prover, and platform implementation as a whole. Its
 running inside it are the callback and prover. `@libid/popup` owns the window
 and connection but is not a ceremony-protocol participant.
 
+## Actors and origins
+
+An actor is an operator or external system. An origin is the exact
+scheme/host/port authority used by browser security checks. A site is only the
+browser's schemeful registrable-domain grouping: same-site actors may remain
+cross-origin and do not gain authority over each other.
+
+| Actor | Browser authority | Responsibility |
+|---|---|---|
+| Application | application origin | hosts the application document, owns the operation and Job, and runs the Ceremony Client |
+| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback document, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
+| Proving Host | proving origin | hosts the prefetch and isolated prover documents, prover roots, Service Worker, and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
+| OAuth Provider | platform-owned origin set | hosts authorization/login documents and issues the provider return |
+| Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
+
+The Application, OAuth Bridge, and Proving Host may be operated together or
+independently and may be same-origin, same-site, or cross-site. The protocol
+assumes none of those relationships. Browser authority is always established
+against an exact origin. In particular, the Proving Host is not a wallet: both
+external-wallet and native-wallet compositions consume the same independently
+hosted proving boundary.
+
+CCDP defines the concrete browser documents served by these actors and how one
+popup browsing context moves between them.
+
 ## System boundary
 
 One ceremony turns an application-owned operation into a locally checked
@@ -45,10 +69,11 @@ identity preview and the exact proof-bearing `OAuthProof`:
 sequenceDiagram
     actor U as User
     participant A as Application composition
-    participant C as Ceremony Client
-    participant P as Callback document
-    participant O as OAuth provider
-    participant R as Prover document
+    participant C as Application-side client
+    participant P as Callback document / OAuth Bridge
+    participant F as Prefetch document / Proving Host
+    participant O as Authorization document / OAuth Provider
+    participant R as Prover document / Proving Host
 
     U->>A: Activate identity action
     A->>A: Create popup window and connection
@@ -56,7 +81,8 @@ sequenceDiagram
     A->>C: Call proveUserIdentity
     C->>P: Navigate connection to callback
     Note over C,P: Popup connection acceptance and prefetch start concurrently
-    P->>R: Start selected-profile prefetch
+    P->>F: Start selected-profile prefetch
+    F-->>P: Prefetch dispatched
     P-->>C: Report prefetch readiness
     C->>P: Continue with frozen provider URL
     P->>O: Navigate through platform authorization
@@ -179,12 +205,12 @@ worker/WASM assets from one compatible package release. The prover artifact
 runs in both Window and Service Worker contexts: its Window branch runs iframe
 prefetch or the one active top-level prover, while its Service Worker branch
 composes popup continuity with ceremony-owned asset single flights and cache.
-That registration belongs only to the prover origin; the OAuth-bridge
+That registration belongs only to the proving origin; the OAuth-bridge
 callback installs no shared worker.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
-Identity bridge implementations are outside the package. The GitHub version's
+OAuth Bridge implementations are outside the package. The GitHub version's
 prover leaf implements only the bridge-contract browser request/response codecs
 and validation; the bridge implements the required confidential endpoint.
 
@@ -437,11 +463,11 @@ popup. Losing the application document loses the in-memory ceremony map and
 therefore requires fresh OAuth, as already required by the
 no-ceremony-recovery launch scope.
 
-### Identity bridge configuration
+### OAuth Bridge configuration
 
 The client fetches and validates the origin-controlled
 [`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
-the chosen platform, version, client ID, redirect URI, and prover origin.
+the chosen platform, version, client ID, redirect URI, and proving origin.
 Callback and prover never fetch it.
 
 ## Result and lifecycle
@@ -582,7 +608,7 @@ record from those retained fields after `validateProofMessage` returns the
 platform-and-version-typed proof value.
 The ceremony validates with its retained platform/version and recomputes the
 authorization digest before resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
-classified the provider parameters as success and local checks succeeded; only Consumer
+classified the provider parameters as success and local checks succeeded; only Ledger Verifier
 acceptance makes Identity authoritative. Callers cannot supply or override
 Identity fields.
 

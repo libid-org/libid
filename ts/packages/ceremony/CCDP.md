@@ -11,13 +11,27 @@ Shared package types such as
 definitions in [ARCHITECTURE.md](ARCHITECTURE.md). These documents are
 implementation architecture, not part of the normative proof specification.
 
-## Protocol boundary
+## Browser documents and contexts
 
-| Context | Owns | Browser constraint |
-|---|---|---|
-| Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from both OAuth bridge and prover |
-| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated; its one configured OAuth-bridge URL serves initial launch and is the registered `redirect_uri` |
-| Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
+[ARCHITECTURE.md](ARCHITECTURE.md#actors-and-origins) defines the Application,
+OAuth Bridge, Proving Host, and OAuth Provider actors. CCDP runs across these
+concrete browser documents:
+
+| Document | Served by | Browser context | Responsibility and lifetime |
+|---|---|---|---|
+| Application document | application origin | ordinary top-level application tab | owns the live `Ceremony`, operation inputs, message order, and result; remains open independently of the popup |
+| Callback document | OAuth Bridge at the OAuth bridge origin | ceremony popup, top-level and non-isolated | runs once for initial launch and again as a fresh document on OAuth return; the same configured URL is the registered `redirect_uri` |
+| Authorization document | OAuth Provider's platform-owned origins | ceremony popup | renders provider login/consent and navigates back to the callback URL; it is not a CCDP participant |
+| Prefetch document | Proving Host at the proving origin | child iframe of the initial callback document | loads `/ccdp/prover#prefetch`, starts selected-profile asset fetching, then disappears with its parent callback document |
+| Prover document | Proving Host at the proving origin | ceremony popup, top-level and COOP/COEP-isolated | loads `/ccdp/prover#prove`, receives the validated OAuth result, exposes visible progress, and generates the proof |
+
+The **ceremony popup** is a reusable browsing context, not an actor or document.
+It sequentially contains Callback → Authorization → a new Callback → Prover.
+The Prefetch document is a distinct iframe instance of the same stable prover
+shell and never becomes the top-level Prover document. Navigation creates a new
+JavaScript heap each time; no participant relies on document-local state
+surviving it. The application, OAuth bridge, provider, and proving origins may
+all be cross-site, and same-site placement grants no protocol authority.
 
 CCDP is connection-neutral. It defines which document runs at each location,
 which participant initiates each navigation, what each message means, and their
@@ -101,14 +115,14 @@ interface CallbackLocationInput {
 declare function startCallback(
   locationInput: CallbackLocationInput,
   allowedApplicationOrigins: readonly string[],
-  proverOrigin: string,
+  provingOrigin: string,
 ): void
 ```
 
 The unversioned shell invokes this as
 `startCallback(locationInput, ...(selected.inputs ?? defaultInputs))` without
 interpreting the resolved tuple. The version-1 root exact-validates each argument. Application
-origins and prover origin are immutable deployment data, never derived from
+origins and proving origin are immutable deployment data, never derived from
 `Origin`, `Referer`, or URL input. The entrypoint is not a CCDP message or pure
 `ccdp` export. The OAuth bridge owns its concrete shell, default inputs, and
 optional per-root overrides in
@@ -143,7 +157,7 @@ declare function startProver(
 ): void
 ```
 
-The selected prover root is also evaluated as the prover origin's module
+The selected prover root is also evaluated as the proving origin's module
 Service Worker. Its worker branch composes popup continuity with asset prefetch
 and cache reuse; it executes no CCDP participant or platform pipeline. Prefetch
 mode registers and activates that worker but constructs no popup connection or
@@ -154,7 +168,7 @@ fallback. Callback deployment and response policy are defined by the
 
 ## Protocol locations
 
-One live `Ceremony` freezes `proverOrigin`, `redirectUri`,
+One live `Ceremony` freezes `provingOrigin`, `redirectUri`,
 `providerAuthorizationUrl`, ceremony ID, platform ID, and platform ceremony
 version before launch. CCDP uses the following browser locations:
 
@@ -162,10 +176,10 @@ version before launch. CCDP uses the following browser locations:
 |---|---|---|
 | Popup reservation | popup | `about:blank` |
 | Initial callback | popup | `${redirectUri}#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
-| Selected-profile prefetch | callback child iframe | `${proverOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
+| Selected-profile prefetch | callback child iframe | `${provingOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
 | Platform authorization | popup | the frozen `providerAuthorizationUrl` defined by the selected platform ceremony version |
 | Provider return | popup | the frozen `redirectUri` followed by the provider-defined query or fragment return |
-| Proof generation | popup | `${proverOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
+| Proof generation | popup | `${provingOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
 
 Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
 shown above. Producers emit each named field exactly once in the displayed

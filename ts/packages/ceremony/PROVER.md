@@ -58,11 +58,11 @@ one exact platform proof delivery, or a sanitized technical failure.
 The prover does not receive the operation domain, chain ID, transaction data,
 authorization nonce, or expected Authorization Digest. Google exposes the
 signed token nonce as a proof public input; X and GitHub expose the attested
-code verifier. The Consumer verification path matches that binding to the
+code verifier. The Ledger Verifier matches that binding to the
 Authorization Digest it recomputes from `OAuthProof`.
 
 The prover does not assemble or verify `OAuthProof`, construct `Identity`, call
-a Consumer, or persist credential-bearing state. The Ceremony Client combines
+a Ledger Verifier, or persist credential-bearing state. The Ceremony Client combines
 the selected delivery variant with its retained ceremony fields and derives the
 locally checked, non-authoritative preview. Prover inputs, workers, witnesses,
 and outputs are cleared after delivery, `AbortCeremony`, failure, or context
@@ -156,7 +156,7 @@ ABI, and manifest from a
 [`libid-circuits` release](https://github.com/libid-org/libid-circuits/releases),
 not source or an application-selected URL. A profile is available when the
 ceremony package and its matching circuit release are deployed. Whether a
-chain-specific Consumer accepts the resulting `OAuthProof` is independent.
+chain-specific Ledger Verifier accepts the resulting `OAuthProof` is independent.
 
 All pipelines use one proving engine. The platform module builds the closed
 Noir input map, the Noir ACIR virtual machine (ACVM) runtime solves the witness,
@@ -203,7 +203,7 @@ with the exact signed audience, subject, email and expiry plus the selected JWK
 modulus as `GoogleProofV1`, with no attestation or flattened public-input array. The
 Ceremony Client exact-validates their shape, matches the audience to its
 retained client identifier, and derives the local identity preview without
-verifying the Honk proof. Only Consumer verification makes the fields
+verifying the Honk proof. Only Ledger Verifier verification makes the fields
 authoritative.
 
 ### X
@@ -336,7 +336,7 @@ application composition may retain it for a larger wallet flow.
 
 ## Shared toolchain and assets
 
-The prover deployment embeds this exact record:
+The Proving Host embeds this exact record:
 
 ```ts
 interface ProverProfile {
@@ -377,7 +377,7 @@ same-origin emitted resource intended to reuse prefetch sits under the prover
 service worker's controlled scope; every external resource is prefetched under
 the exact immutable URL later used by the runtime. The root bootstrap graph
 which installs that worker cannot depend on the worker during its first
-evaluation; it is self-contained or loaded through the prover deployment's
+evaluation; it is self-contained or loaded through the Proving Host's
 immutable root-module path.
 
 Each closed platform/version prover leaf pins its circuit release. The ceremony
@@ -462,7 +462,7 @@ The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
 stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
-prover deployment contract.
+Proving Host deployment contract.
 
 The prover bootstrap exact-validates its deployment-embedded `ProverAssets`. For
 prefetch, its Window branch accepts only the closed, cleared profile selected by
@@ -484,7 +484,7 @@ cache. Merely importing bb.js is not CRS prefetch.
 
 Manifest prefetches use `credentials: 'same-origin'`, matching native
 same-origin module and worker requests while still omitting credentials from
-cross-origin asset requests. The prover origin is cookie-free. Fetch-event
+cross-origin asset requests. The proving origin is cookie-free. Fetch-event
 handling preserves the admitted request's URL and response semantics so Firefox
 can reuse a prefetched worker response rather than refetching or synthesizing a
 different module.

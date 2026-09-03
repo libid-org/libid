@@ -330,7 +330,7 @@ and locally extracted identity fields do not enter the platform proof.
 
 Malformed signed data, range ordering, coverage, commitment correlation,
 same-channel framing, cancellation, or a partial result rejects the call.
-Authoritative signature and platform-profile acceptance remains the Consumer's
+Authoritative signature and platform-profile acceptance remains the Ledger Verifier's
 responsibility.
 
 [TEST_PLAN.md](TEST_PLAN.md) owns the executable notarization requirements.

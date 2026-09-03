@@ -30,7 +30,7 @@ recovery state. Google and X require no confidential bridge route.
 
 The OAuth bridge and prover may use different origins or sites. The bridge
 origin is a code-supply-chain boundary for OAuth callback code and public
-configuration; the prover origin is an independent code-supply-chain boundary
+configuration; the proving origin is an independent code-supply-chain boundary
 for proof generation. Supplying the bridge origin to the prover at runtime does
 not make the prover response deployment-specific.
 
@@ -42,7 +42,7 @@ One bridge deployment has these inputs:
 |---|---|
 | Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted to fetch configuration and authenticate the callback popup connection |
-| Prover origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID prover deployment |
+| Proving origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID Proving Host |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; the same URL is used for initial launch and registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback roots | Closed CCDP root map, immutable filenames, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-shell) |
@@ -53,14 +53,14 @@ deployment error rather than something the bridge normalizes. The set drives
 configuration CORS and is embedded into the callback document. It is never
 inferred from a request's `Origin`, `Referer`, query, fragment, or body.
 
-The prover origin is likewise deployment data. It is returned to the
+The proving origin is likewise deployment data. It is returned to the
 application in public configuration and embedded into the callback document so
 the callback can start selected-profile prefetch and later navigate the popup to
 the prover. It does not identify an artifact, circuit, or notary endpoint.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
-platform/version pairs supported by its selected prover deployment.
+platform/version pairs supported by its selected Proving Host.
 
 ## Route surface
 
@@ -70,7 +70,7 @@ The bridge exposes only:
 |---|---|---|---|---|
 | `GET` | `/api/v1/ceremony/config` | always | public platform and prover configuration | exact request `Origin` member of `allowedAppOrigins`; exact noncredentialed CORS |
 | `GET` | configured callback path, default `/auth/callback` | always | callback shell for initial launch and registered OAuth `redirect_uri` | none at HTTP ingress; callback authenticates its popup connection after clearing and classifying its input |
-| `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured prover origin; exact noncredentialed CORS |
+| `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured proving origin; exact noncredentialed CORS |
 
 Top-level and iframe navigation may omit `Origin`, and a provider callback may
 identify the provider rather than the application. `Referer` is never an
@@ -104,7 +104,7 @@ interface PlatformConfig {
 
 interface CeremonyConfig {
   redirectUri: string
-  proverOrigin: string
+  provingOrigin: string
   platforms: Readonly<Record<string, PlatformConfig>>
 }
 ```
@@ -114,7 +114,7 @@ The response rules are:
 - `PlatformCeremonyVersion` is an unsigned 16-bit integer.
 - `redirectUri` is the canonical registered URL on the bridge origin. It
   contains no credentials, query, or fragment.
-- `proverOrigin` is the configured canonical HTTPS origin with no credentials,
+- `provingOrigin` is the configured canonical HTTPS origin with no credentials,
   path, query, or fragment.
 - Each platform entry has one public client ID and a nonempty, duplicate-free
   list of supported ceremony versions. List order has no meaning.
@@ -132,7 +132,7 @@ The request must carry an `Origin` which exactly matches an
 returning configuration. Request values do not alter the response record.
 
 The application-scoped `CeremonyClient` fetches and validates this record once
-at creation. It freezes the selected client ID, redirect URI, prover origin,
+at creation. It freezes the selected client ID, redirect URI, proving origin,
 and mutually supported platform ceremony version in each live ceremony.
 Callback and prover documents never fetch bridge configuration.
 
@@ -144,14 +144,14 @@ application registers the same URL as its `redirect_uri`. There is no callback
 alias or HTTP redirect.
 
 The response is invariant across requests. Its HTML, headers, root map, CSP,
-embedded `allowedAppOrigins`, and prover origin do not depend on request
+embedded `allowedAppOrigins`, and proving origin do not depend on request
 `Origin`, `Referer`, query, fragment, platform, or ceremony. The document is
 top-level, non-isolated, and non-frameable so it preserves the application
 opener whenever provider policy permits.
 
 [CCDP](CCDP.md#callback-shell) owns the shell's input modes, clearing and root
 selection. The bridge embeds only that closed root map, `allowedAppOrigins`,
-the configured prover origin, stylesheet hash, and fixed CSP sources.
+the configured proving origin, stylesheet hash, and fixed CSP sources.
 
 ### Shell document
 
@@ -228,7 +228,7 @@ CCDP version 1, the root defines and exact-validates this signature:
 declare function startCallback(
   locationInput: CallbackLocationInput,
   allowedApplicationOrigins: readonly string[],
-  proverOrigin: string,
+  provingOrigin: string,
 ): void
 ```
 
@@ -273,7 +273,7 @@ The callback response uses:
   `Cache-Control: no-store`, and `Referrer-Policy: no-referrer`;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
-- `frame-src` admitting only the exact configured prover origin;
+- `frame-src` admitting only the exact configured proving origin;
 - `connect-src` admitting only fixed sources required by the configured popup
   fallback;
 - `style-src` permitting only the exact package stylesheet hash;
@@ -341,7 +341,7 @@ authoritative.
 The endpoint contract is:
 
 - the query is empty and the request media type is exactly `application/json`;
-- preflight and POST `Origin` exactly equal the configured prover origin;
+- preflight and POST `Origin` exactly equal the configured proving origin;
 - successful preflight admits only `POST` and `Content-Type`, uses no
   credentials, and returns no ceremony data;
 - malformed UTF-8, JSON, or fields fail before token exchange;
