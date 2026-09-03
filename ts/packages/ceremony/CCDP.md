@@ -23,8 +23,8 @@ the distinction is immaterial.
 | Actor | Browser authority | Responsibility |
 |---|---|---|
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
-| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback document, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
-| CCDP Host | CCDP origin | owns and hosts the versioned Prefetch, Airlock, Prover, and Worker implementations and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
+| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback shell, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
+| CCDP Host | CCDP origin | owns and hosts the versioned Prefetch, Callback, Airlock, Prover, and Worker implementations and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
 | OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
 | Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
 
@@ -35,9 +35,10 @@ an exact origin. In particular, the CCDP Host is not a wallet: both
 external-wallet and native-wallet compositions consume the same independently
 hosted CCDP boundary.
 
-CCDP owns Callback behavior. The OAuth Bridge owns the registered callback
-document and shell, then dynamically loads CCDP's same-origin Callback module
-because the registered OAuth redirect URI must terminate on the bridge origin.
+The OAuth Bridge owns the registered callback shell because the OAuth redirect
+URI must terminate on the bridge origin. After clearing the OAuth return, that
+shell dynamically loads CCDP's versioned Callback module from the configured
+CCDP origin.
 
 ## Documents and Routes
 
@@ -63,9 +64,9 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 | Property | Contract |
 |---|---|
-| Host and context | Same-origin module dynamically loaded by the OAuth Bridge's top-level, non-isolated callback shell |
+| Host and context | CCDP Host; versioned, request-invariant, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
 | Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
-| Response policy | The OAuth Bridge contract alone defines the shell, registered `redirectUri`, URL clearing, version selection, response policy, and module invocation. |
+| Response policy | JavaScript media type; `X-Content-Type-Options: nosniff`; noncredentialed `Access-Control-Allow-Origin: *`; `Cross-Origin-Resource-Policy: cross-origin`; `Cache-Control: no-cache`; and strong `ETag`. The OAuth Bridge contract independently defines the shell, registered `redirectUri`, URL clearing, version selection, document policy, and module invocation. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
 ### Airlock `GET /airlock`
@@ -109,9 +110,9 @@ Prover iframe without that top-level navigation.
 
 #### Paths and versioning
 
-The CCDP routes above are relative to `/ccdp/v{CCDPVersion}`. Prefetch, Airlock,
-Prover, and Worker resolve against `ccdpOrigin`; Callback resolves against the
-OAuth Bridge origin. Authorization is the external frozen
+The CCDP routes above are relative to `/ccdp/v{CCDPVersion}`. Prefetch,
+Callback, Airlock, Prover, and Worker resolve against `ccdpOrigin`.
+Authorization is the external frozen
 `platformAuthorizationUrl`, not a CCDP route.
 
 Before launch, the Application freezes the CCDP origin, redirect URI, platform
@@ -128,9 +129,9 @@ Callback version to the OAuth Bridge shell's closed supported-version map. Old
 resources remain available for live ceremonies and a compatibility window.
 
 A later CCDP version substitutes its decimal version in the common path. The
-OAuth Bridge dynamically loads the matching Callback module; the CCDP Host
-documents execute their implementations directly. Internal bundle names are
-not protocol surface. The Prefetch, Airlock, and Prover documents and Worker
+OAuth Bridge dynamically loads the matching Callback module from the CCDP Host;
+the CCDP Host documents execute their implementations directly. Internal bundle
+names are not protocol surface. Callback, Prefetch, Airlock, Prover, and Worker
 share the CCDP origin.
 
 The Prefetch, Airlock, and Prover paths select both CCDP version and document

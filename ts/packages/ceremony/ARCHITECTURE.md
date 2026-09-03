@@ -207,11 +207,11 @@ client API. Prover leaves are internal imports of the prover entrypoint and
 never enter the client catalog.
 Individual platform leaves never import the aggregator. `callback`, `airlock`,
 `prefetch`, and `prover` are build entrypoints, not separately versioned
-packages. Callback supplies the implementation served by the OAuth Bridge's
-versioned route. The CCDP Host embeds Prefetch, Airlock, and Prover entry code
-directly into their versioned documents and serves the Prefetch Service Worker
-at CCDP's versioned worker path; internal bundle filenames are deployment
-details. The Prefetch entrypoint runs in Window and Service Worker contexts: its
+packages. The CCDP Host serves Callback as a cross-origin-loadable module,
+embeds Prefetch, Airlock, and Prover entry code directly into their versioned
+documents, and serves the Prefetch Service Worker at CCDP's versioned worker
+path; internal bundle filenames are deployment details. The Prefetch entrypoint
+runs in Window and Service Worker contexts: its
 Window branch dispatches the selected asset profile, while its Service Worker
 branch composes popup continuity with ceremony-owned asset single flights and
 cache. Airlock accepts a fresh carrier on the CCDP origin and navigates the same
@@ -259,7 +259,7 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-callbackjs) served as the versioned CCDP Callback implementation |
+| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-callbackjs) served by the CCDP Host as the versioned Callback implementation |
 | `@libid/ceremony/airlock` | [browser entrypoint](CCDP.md#airlock-get-airlock) embedded by the non-isolated Airlock document |
 | `@libid/ceremony/prefetch` | dual-context browser entrypoint embedded by the versioned Prefetch document and served at the versioned Worker path |
 | `@libid/ceremony/prover` | [browser entrypoint](CCDP.md#prover-get-prover) embedded by the versioned isolated Prover document |
