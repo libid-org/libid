@@ -1,10 +1,10 @@
 # @libid/popup
 
 `@libid/popup` owns one popup browsing context from creation or adoption through
-navigation and closure. It connects that popup to an application page across
-origins, external navigation, isolation boundaries, mobile suspension, and
-popup-document replacement, carrying caller-defined messages without owning or
-naming the caller protocol.
+navigation and closure. It connects that popup to an application page across a
+caller-approved set of origins, external navigation, isolation boundaries,
+mobile suspension, and popup-document replacement, carrying caller-defined
+messages without owning or naming the caller protocol.
 
 The detailed design is split into the [popup connection](docs/connection.md),
 its [MessagePort](docs/message-port.md) and [WebRTC](docs/webrtc.md) carriers,
@@ -24,7 +24,7 @@ native navigation:
 const popupWindow = PopupWindow.open(anchor.target)
 const connection = PopupConnection.connect<Messages>(popupWindow, {
   connectionId,
-  popupOrigin,
+  allowedPopupOrigins,
   fallback,
   onDiagnostic,
 })
@@ -77,6 +77,10 @@ connection; the exact accepted grammar and non-reuse rule are defined by the
 `PopupConnection` retains a usable carrier for as long as possible and may
 preserve, transfer, or replace it transparently across document changes. If no
 carrier can continue or be established, the logical connection fails closed.
+Same-origin replacement may preserve a `MessagePort` through the continuity
+worker. Cross-origin replacement never transfers a port between Service
+Workers: the next participating document authenticates a fresh carrier through
+its opener or the configured fallback.
 
 ```ts
 interface PopupConnection<M extends Message> {
@@ -156,11 +160,11 @@ interface PopupDiagnostic {
 
 ### Continuity worker
 
-Connected navigation between participating popup documents preserves the
-MessagePort through a same-origin Service Worker. The host, the deployment
-serving the popup documents, registers that worker and calls the handler from
-the `@libid/popup/worker` subpath in its worker script; the package registers
-nothing and the main entry exports no worker-global types:
+Connected same-origin navigation between participating popup documents
+preserves the MessagePort through a Service Worker on that origin. The host,
+the deployment serving the popup documents, registers that worker and calls
+the handler from the `@libid/popup/worker` subpath in its worker script; the
+package registers nothing and the main entry exports no worker-global types:
 
 ```ts
 // popup-origin worker script

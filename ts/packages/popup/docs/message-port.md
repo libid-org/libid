@@ -59,8 +59,9 @@ The carrier neither interprets those values nor persists or recovers them.
   `WindowProxy` after binding), record shape, direction, and connection
   version. The popup additionally requires exactly one transferred port.
 - The wildcard-targeted request contains no capability or application-level
-  value. The response uses the exact popup origin, transfers only the new popup
-  endpoint, and never exposes the application's retained endpoint. After
+  value. The response targets the request's exact browser-stamped allowed popup
+  origin, transfers only the new popup endpoint, and never exposes the
+  application's retained endpoint. After
   validating that response, the popup echoes the same handshake record over the
   transferred port; the application does not select the port before that echo.
 - Any handshake attempt which fails those checks rejects the binding and closes
@@ -94,7 +95,8 @@ The returned popup sends the record with its connection ID and no transferable.
 The ID is public correlation, not a capability or caller-level value. The
 application accepts it only from its retained popup source, or binds the
 browser-stamped source once in the native-anchor fallback, and only when the
-configured popup origin, connection version, and connection ID exact-match.
+browser-stamped origin is in its immutable allowed popup-origin set and the
+connection version and connection ID exact-match.
 
 The application creates one `MessageChannel`, retains one endpoint, and sends
 the same record back with the live connection ID and the other endpoint as its
@@ -112,7 +114,8 @@ malformed, duplicate, or mismatched acknowledgement closes both reachable
 endpoints and selects no carrier.
 
 The request may use an unrestricted target origin because it contains no
-capability or application value. The response targets the exact popup origin.
+capability or application value. The response targets the exact observed popup
+origin after admission.
 Application-level delivery starts only after the final acknowledgement; its
 position on the ordered port keeps every later caller value behind it.
 
@@ -150,6 +153,11 @@ destination claims before loading caller code or using the network. This
 preserves the already authenticated port without repeating its handshake.
 `PortKeeper` never receives an RTC resource, substitute carrier, or caller
 value.
+
+This path is strictly same-origin: the source and destination must resolve the
+same Service Worker registration. Before cross-origin navigation, connection
+does not call `keep`; it releases the old popup endpoint and an allowed
+destination performs a fresh handshake through its opener or fallback.
 
 This is a short in-memory continuity bridge, not persistence or recovery.
 Worker loss breaks continuity; no later document can reconstruct or resume the
@@ -246,7 +254,7 @@ The application starts listening before the popup endpoint is ready:
 declare function listenForPopupPorts(
   options: {
     popupWindow: PopupWindow
-    popupOrigin: string
+    allowedPopupOrigins: readonly string[]
     connectionVersion: ConnectionVersion
     connectionId: string
     signal: AbortSignal
@@ -272,11 +280,11 @@ declare class PortCarrier implements Carrier {
 `listenForPopupPorts` installs one window listener synchronously for the
 connection lifetime and sends nothing. When `PopupWindow` retained a handle it
 requires that exact source; otherwise it binds `PopupWindow` to the source of
-the first handshake that exact-matches the configured popup origin, connection
-version, and connection ID, and requires that source afterwards. Each accepted
-handshake creates one channel, responds with the popup endpoint, awaits the
-echo, and then reports the retained endpoint through `onPort`; the connection
-installs it and closes the previous carrier. A newer accepted handshake
+the first handshake whose observed origin is allowed and which exact-matches
+the connection version and connection ID, and requires that source afterwards.
+Each accepted handshake creates one channel, responds with the popup endpoint,
+awaits the echo, and then reports the retained endpoint through `onPort`; the
+connection installs it and closes the previous carrier. A newer accepted handshake
 supersedes one still awaiting its echo. This replacement is private connection
 machinery; callers continue using the same `PopupConnection`.
 
