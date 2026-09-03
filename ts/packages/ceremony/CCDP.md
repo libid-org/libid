@@ -74,7 +74,7 @@ user retry starts in a fresh document.
 ### Callback shell
 
 The identity bridge serves the callback shell at one developer-configurable
-path whose default is `/auth/v1/callback`. The application uses its absolute
+path whose default is `/auth/callback`. The application uses its absolute
 URL for initial launch, and every enabled OAuth application registers that same
 URL as its `redirect_uri`. It is not an HTTP redirect and does not encode a
 CCDP version.
@@ -190,7 +190,7 @@ UUIDv4 suffix remains the popup connection ID. The authorization request
 uses that state and the frozen `redirectUri`; CCDP owns the surrounding popup
 navigation but does not duplicate platform fields. `redirectUri` is the exact
 absolute configured callback URL for that platform; its default path is
-`/auth/v1/callback` and does not change between CCDP versions.
+`/auth/callback` and does not change between CCDP versions.
 
 ## End-to-end sequence
 

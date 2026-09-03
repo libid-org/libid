@@ -43,7 +43,7 @@ One bridge deployment has these inputs:
 | Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted to fetch configuration and authenticate the callback popup connection |
 | Prover origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID prover deployment |
-| Callback path | Developer-configurable fixed path whose default is `/auth/v1/callback`; the same URL is used for initial launch and registered as every enabled platform's OAuth `redirect_uri` |
+| Callback path | Developer-configurable fixed path whose default is `/auth/callback`; the same URL is used for initial launch and registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback roots | Closed CCDP root map, immutable filenames, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-shell) |
 | GitHub settings | Client secret, redirect URI, token endpoint settings, and server-side notary settings when GitHub is enabled |
@@ -69,7 +69,7 @@ The bridge exposes only:
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
 | `GET` | `/api/v1/ceremony/config` | always | public platform and prover configuration | exact request `Origin` member of `allowedAppOrigins`; exact noncredentialed CORS |
-| `GET` | configured callback path, default `/auth/v1/callback` | always | callback shell for initial launch and registered OAuth `redirect_uri` | none at HTTP ingress; callback authenticates its popup connection after clearing and classifying its input |
+| `GET` | configured callback path, default `/auth/callback` | always | callback shell for initial launch and registered OAuth `redirect_uri` | none at HTTP ingress; callback authenticates its popup connection after clearing and classifying its input |
 | `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured prover origin; exact noncredentialed CORS |
 
 Top-level and iframe navigation may omit `Origin`, and a provider callback may
