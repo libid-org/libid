@@ -174,12 +174,14 @@ connection ID before selecting a new carrier. A matching entry restores its
 native port; no entry leaves the fresh endpoint to use its available opener or
 signaling resources normally.
 
-`connect` copies a nonempty, duplicate-free set of canonical HTTPS
-`allowedPopupOrigins`. Every initial or later participating popup document must
-authenticate from one exact member, and the selected carrier binds that observed
-origin. The set admits participants; it neither selects navigation destinations
-nor turns an external document into a participant. Each popup endpoint likewise
-copies its nonempty `allowedApplicationOrigins` and binds one observed member.
+`connect` copies `allowedPopupOrigins`, and `accept` copies
+`allowedApplicationOrigins`. Both must be nonempty, duplicate-free sets of
+canonical HTTPS origins; either constructor rejects an invalid member or
+duplicate. Every initial or later participating popup document must authenticate
+from one exact popup-origin member, and each popup endpoint binds one exact
+observed application-origin member. The sets admit participants; they neither
+select navigation destinations nor turn an external document into a
+participant.
 
 There is no public role field or per-operation role branch. Callers never
 supply a keeper, route, or phase.
@@ -443,8 +445,9 @@ retires that popup endpoint and leaves the application listener armed; an
 allowed destination establishes a fresh MessagePort through its surviving
 opener. If isolation removes that opener, only the configured fallback can
 establish the destination carrier. The logical connection ID and caller
-registrations remain unchanged, but caller values sent before the replacement
-carrier is selected are not queued.
+registrations remain unchanged. While replacement is pending, caller values
+sent by the application succeed locally and are lost, as during any other
+non-participating window; the application cannot observe the retirement.
 
 For WebRTC replacement, connection gives the caller-selected target unchanged
 to the carrier's package-private preparation hook and navigates only to the

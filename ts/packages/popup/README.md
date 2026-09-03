@@ -81,6 +81,8 @@ Same-origin replacement may preserve a `MessagePort` through the continuity
 worker. Cross-origin replacement, including navigation to another site, never
 transfers a port between Service Workers: the next participating document
 authenticates a fresh carrier through its opener or the configured fallback.
+A cross-origin destination whose isolation policy severs its opener therefore
+requires a fallback constructor; without one, the connection fails closed.
 
 ```ts
 interface PopupConnection<M extends Message> {
