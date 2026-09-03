@@ -2,15 +2,13 @@
 
 Part of the [libID protocol specification](libid.md).
 
-Status: proposed normative specification of the browser transport beneath
-libID's popup-based protocols.
 
 ## 1. Scope
 
 This document is the normative owner of the logical connection between an
 application document and a sequence of popup documents: how endpoints are
-identified and allowlisted, what a message is, what delivery guarantees a
-protocol above may rely on, how navigation and closure behave, what
+identified and allowlisted, what a message is, what delivery guarantees the
+Carried Protocol may rely on, how navigation and closure behave, what
 continuity is guaranteed across popup-document replacement, and how failure
 is reported. A Carried Protocol cites these rules instead of restating
 browser mechanics.
@@ -146,7 +144,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
 - REQ-POPUP-ID-03:
   Every Participating Document of one Logical Connection MUST receive the
   same exact Connection ID. How it reaches the document is owned by the
-  protocol above.
+  Carried Protocol.
 - REQ-POPUP-ID-04:
   An implementation MUST use the Connection ID only for correlation and
   authentication of its own controls. It MUST NOT treat possession of the
