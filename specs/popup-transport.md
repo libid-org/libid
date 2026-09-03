@@ -261,7 +261,11 @@ unmodified implementation and user agent (ASM-POPUP-01).
   then navigates, or the Popup navigates only after receiving the reply. The
   transport buffers nothing and retransmits nothing; navigation away by the
   Application Endpoint does not wait for the Carrier and MUST NOT be used to
-  deliver a reply.
+  deliver a reply. After the Application Endpoint sends a navigation Control,
+  Protocol Messages it sends cannot reach the departing document: across a
+  same-origin replacement they wait in the preserved Carrier and reach the
+  destination once it accepts, provided it registered their handlers before
+  yielding; across a cross-origin replacement they are lost.
 
 ## 9. Lifecycle, navigation, and control
 
