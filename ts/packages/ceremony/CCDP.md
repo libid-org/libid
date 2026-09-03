@@ -95,7 +95,7 @@ Prover iframe without that top-level navigation.
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, COOP/COEP-isolated ceremony-popup document |
 | Role | Claims the carrier preserved by Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, assets, notarization, and caching. |
-| Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: same-origin`; and `Cross-Origin-Embedder-Policy: require-corp`. CSP denies by default and admits only the exact inline entry code, Worker, `blob:`, WebAssembly, styles, toolchain resources, and network classes required by the closed implementation. Proving starts only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
+| Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: same-origin`; and `Cross-Origin-Embedder-Policy: require-corp`. CSP denies by default and admits only the exact inline entry code, Worker, `blob:`, WebAssembly, styles, same-origin proving resources, and network classes required by the closed implementation. Proving starts only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
 | Presentation and cleanup | Renders a persistent inline libID logo and one accessible milestone progress bar. It begins at **Preparing proof**, advances only from valid platform events, and reaches 100% only on proof delivery. After `SLOW_PROVING_HINT_MS = 15_000`, it adds a nonblocking **Still proving** notice which may suggest enabling JavaScript JIT in Vanadium site controls. It accepts no Application markup or renderer, presents no ETA, and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
 
 ### Worker `GET /worker.js`
@@ -145,6 +145,13 @@ version at these paths. Prefetch, Airlock, Prover, and Worker responses use
 normal HTTP cache revalidation, including an ETag, while implementation-private
 content-addressed assets remain long-lived and immutable. A breaking change
 uses a new CCDP-version path.
+
+The CCDP Host also serves every browser-fetched proving module, worker, WASM,
+circuit, and CRS resource from `ccdpOrigin`. Their immutable paths are
+implementation details rather than CCDP routes. A deployment may obtain the
+bytes from upstream releases or local files, but those source locations are
+never browser inputs. OAuth Platform, OAuth Bridge, and Notary Service requests
+are protocol traffic, not proving assets.
 
 Platform Ceremony Version independently versions one platform's authorization,
 OAuth, proof, and output semantics. Popup connection controls and the OAuth
