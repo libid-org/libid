@@ -35,31 +35,6 @@ client, callback, prover, and platform implementation as a whole. Its
 running inside it are the callback and prover. `@libid/popup` owns the window
 and connection but is not a ceremony-protocol participant.
 
-## Actors and origins
-
-An actor is an operator or external system. An origin is the exact
-scheme/host/port authority used by browser security checks. A site is only the
-browser's schemeful registrable-domain grouping: same-site actors may remain
-cross-origin and do not gain authority over each other.
-
-| Actor | Browser authority | Responsibility |
-|---|---|---|
-| Application | application origin | hosts the application document, owns the operation and Job, and runs the Ceremony Client |
-| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback document, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
-| Proving Host | proving origin | hosts the prefetch and isolated prover documents, prover roots, Service Worker, and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
-| OAuth Provider | platform-owned origin set | hosts authorization/login documents and issues the provider return |
-| Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
-
-The Application, OAuth Bridge, and Proving Host may be operated together or
-independently and may be same-origin, same-site, or cross-site. The protocol
-assumes none of those relationships. Browser authority is always established
-against an exact origin. In particular, the Proving Host is not a wallet: both
-external-wallet and native-wallet compositions consume the same independently
-hosted proving boundary.
-
-CCDP defines the concrete browser documents served by these actors and how one
-popup browsing context moves between them.
-
 ## System boundary
 
 One ceremony turns an application-owned operation into a locally checked

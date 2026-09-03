@@ -11,11 +11,31 @@ Shared package types such as
 definitions in [ARCHITECTURE.md](ARCHITECTURE.md). These documents are
 implementation architecture, not part of the normative proof specification.
 
+## Actors and origins
+
+An actor is an operator or external system. An origin is the exact
+scheme/host/port authority used by browser security checks. A site is only the
+browser's schemeful registrable-domain grouping: same-site actors may remain
+cross-origin and do not gain authority over each other.
+
+| Actor | Browser authority | Responsibility |
+|---|---|---|
+| Application | application origin | hosts the application document, owns the operation and Job, and runs the Ceremony Client |
+| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback document, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
+| Proving Host | proving origin | hosts the prefetch and isolated prover documents, prover roots, Service Worker, and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
+| OAuth Provider | platform-owned origin set | hosts authorization/login documents and issues the provider return |
+| Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
+
+The Application, OAuth Bridge, and Proving Host may be operated together or
+independently and may be same-origin, same-site, or cross-site. CCDP assumes
+none of those relationships. Browser authority is always established against
+an exact origin. In particular, the Proving Host is not a wallet: both
+external-wallet and native-wallet compositions consume the same independently
+hosted proving boundary.
+
 ## Browser documents and contexts
 
-[ARCHITECTURE.md](ARCHITECTURE.md#actors-and-origins) defines the Application,
-OAuth Bridge, Proving Host, and OAuth Provider actors. CCDP runs across these
-concrete browser documents:
+CCDP runs across these concrete browser documents:
 
 | Document | Served by | Browser context | Responsibility and lifetime |
 |---|---|---|---|
