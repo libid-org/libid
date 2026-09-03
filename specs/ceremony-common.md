@@ -874,11 +874,13 @@ exposes a minimal set of public inputs, which never includes a credential.
   rule does not reach it.
 - REQ-COMMON-38:
   The Platform Profile MUST pin the hash algorithm of every range commitment
-  its pinned attestation format carries. The Platform Verifier MUST reject an
-  attestation whose range commitments use any other algorithm. Launch
-  profiles pin SHA-256. Necessity: the notarization library's default commit
-  algorithm is BLAKE3 while the Proving Circuit computes SHA-256, so a prover
-  left on library defaults produces commitments the circuit cannot open.
+  its pinned attestation format carries. The Proving Circuit MUST open each
+  range commitment with that algorithm and no other, so a commitment made any
+  other way fails the proof the Platform Verifier checks under
+  REQ-COMMON-45. Launch profiles pin SHA-256. Necessity: the notarization
+  library's default commit algorithm is BLAKE3 while the Proving Circuit
+  computes SHA-256, so a prover left on library defaults produces
+  commitments the circuit cannot open.
 - REQ-COMMON-44:
   The Implementation MUST draw the blinder of every range commitment
   independently for each notarized session, from a cryptographically secure
@@ -1176,12 +1178,14 @@ Service.
   value. The Implementation MUST NOT infer it from an HTTP `Date` header or a
   local clock.
 - REQ-COMMON-25A (upholds SP-FRESH-01):
-  The Consumer MUST complete an otherwise valid authority operation even when
-  its mutable metadata is stale. The Consumer MUST update
-  mutable metadata and its watermark only when `metadataObservedAt` is strictly
-  newer than the stored watermark. The Consumer MUST leave both
-  unchanged for older or equal evidence, including equal evidence carrying
-  conflicting metadata.
+  The Consumer MUST update mutable metadata and its watermark only when
+  `metadataObservedAt` is strictly newer than the stored watermark. The
+  Consumer MUST leave both unchanged otherwise, including for equal evidence
+  carrying conflicting metadata. The Consumer MUST complete an otherwise
+  valid operation with a further authoritative effect even when the metadata
+  is stale. The Consumer MUST reject stale evidence when the metadata write
+  is its only authoritative effect. Necessity: such an operation would spend
+  the Authorization Digest for no effect.
 - REQ-COMMON-26 (upholds SP-FRESH-01):
   The Platform Verifier MUST derive `proofValidUntil` from the platform profile's
   authenticated validity input and any current protocol parameter that profile
@@ -1273,10 +1277,11 @@ the constructions that role implements.
   an evidence time taken from an HTTP `Date` header or a local clock rather
   than the platform-profile value is rejected.
 - TEST-COMMON-13 (exercises REQ-COMMON-25A, REQ-COMMON-26, REQ-COMMON-27, REQ-COMMON-28):
-  An Submission at or after `proofValidUntil` is rejected, a caller-supplied
+  A Submission at or after `proofValidUntil` is rejected, a caller-supplied
   validity bound has no effect, and reverse-order older or equal-conflicting
-  metadata does not change the newer stored metadata or watermark while the
-  otherwise valid authority operation succeeds.
+  metadata does not change the newer stored metadata or watermark: an
+  operation with a further authoritative effect succeeds, and a Consumer whose
+  only effect is the metadata write rejects the Submission.
 - TEST-COMMON-14 (exercises REQ-COMMON-30, REQ-COMMON-31):
   Each of two configured application origins can complete its own authenticated
   live channel; an unlisted origin is rejected, and a redirect request carrying
