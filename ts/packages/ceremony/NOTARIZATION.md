@@ -4,8 +4,9 @@ This document defines the browser-side `prover/notarization` module: how it
 runs a TLSNotary session, applies platform-selected transcript disclosures, and
 returns a byte-exact attestation plus private commitment openings. The enclosing
 pipeline is defined in [PROVING.md](PROVING.md), browser placement in
-[CCDP.md](CCDP.md), and bridge inputs in
-[OAUTH_BRIDGE.md](OAUTH_BRIDGE.md). Exact
+[CCDP.md](CCDP.md), browser notary deployment input in
+[CCDP_HOST.md](CCDP_HOST.md#prover-configuration), and GitHub's confidential
+exchange in [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md#github-token-endpoint). Exact
 proof semantics remain normative in the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md).
@@ -26,10 +27,10 @@ churn from platform code. It ships inside the selected versioned prover root; th
 separately fetched notarization client is the pinned `tlsn_wasm.js` module and
 its deterministic sibling `tlsn_wasm_bg.wasm`.
 
-The enclosing prover supplies the deployment's common `notaryAddress` when the
-module starts. Applications, ceremony inputs, OAuth responses, and CCDP
-messages cannot replace that address or select an OAuth-platform request, disclosure
-layout, or Notary Service behavior.
+The enclosing prover supplies the CCDP Host deployment's common `notaryAddress`
+when the module starts. Applications, ceremony inputs, OAuth responses, and
+CCDP messages cannot replace that address or select an OAuth-platform request,
+disclosure layout, or Notary Service behavior.
 
 ## Internal contract
 

@@ -7,7 +7,8 @@ the proof-bearing `OAuthProof` for the downstream Ledger Verifier.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md); popup lifecycle and communication are supplied by
+in [CCDP.md](CCDP.md), and its HTTP deployment contract in
+[CCDP_HOST.md](CCDP_HOST.md); popup lifecycle and communication are supplied by
 [`@libid/popup`](../popup/README.md). Proof-generation internals are defined in
 [PROVING.md](PROVING.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
@@ -654,9 +655,10 @@ noncanonical encodings fail before use.
 
 ## Proof-generation subsystem
 
-[PROVING.md](PROVING.md) defines pipelines, assets, workers, caching, and proof
-delivery. After `ProverReady`, the client sends one `AppRequestProof`, validates
-the returned platform proof, and assembles `OAuthProof` and `Identity`.
+[PROVING.md](PROVING.md) defines pipelines, asset use, workers, caching, and
+proof delivery; [CCDP_HOST.md](CCDP_HOST.md) defines asset deployment. After
+`ProverReady`, the client sends one `AppRequestProof`, validates the returned
+platform proof, and assembles `OAuthProof` and `Identity`.
 
 ## Progress, cancellation, and recovery
 
@@ -741,5 +743,6 @@ namespace remains independent. The popup package's
 [`ConnectionVersion`](../popup/CONNECTION.md) independently versions private
 connection controls. Local Job schema versioning
 remains owned by the client store, while immutable asset revisioning remains a
-release concern. A Job which has already committed Identity has left the
-ceremony and remains usable under its composition's own compatibility rules.
+[CCDP Host](CCDP_HOST.md#proving-assets) release concern. A Job which has
+already committed Identity has left the ceremony and remains usable under its
+composition's own compatibility rules.

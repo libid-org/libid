@@ -8,9 +8,9 @@ browser documents, routes, isolation, presentation, messages, and navigation.
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). The browser boundary and its input/output
 messages are defined by [CCDP](CCDP.md#prover-get-prover). This document owns only the
-proof-generation implementation and its embedded `ProverAssets`; the CCDP Host
-serves it and all browser-fetched proving resources from an origin independent
-of the [OAuth bridge](OAUTH_BRIDGE.md).
+proof-generation implementation and its use of `ProverAssets`; the CCDP Host
+defines and serves the configuration and all browser-fetched proving resources
+from an origin independent of the [OAuth bridge](OAUTH_BRIDGE.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
@@ -149,13 +149,13 @@ X and GitHub additionally use the browser TLSNotary bundle built by the
 and published in [`libid-org/notary` releases](https://github.com/libid-org/notary/releases).
 The browser distribution exposes `tlsn_wasm.js` and its sibling
 `tlsn_wasm_bg.wasm`; the worker bootstrap is embedded in the module. The global
-`ProverAssets.notarizationClientUrl` selects the immutable JavaScript module,
+`ProverAssets.notarizationClientPath` selects the immutable JavaScript module,
 and the prover derives the WASM URL by replacing only its final path component
 with `tlsn_wasm_bg.wasm`. Each remains a normal, independently cached response;
-the browser never downloads or unpacks a release archive. Deployment may source
-the pair from GitHub releases or a CDN, but the CCDP Host serves the selected
-bytes to the browser. Neither an application nor `AppRequestProof` selects a
-notary, circuit, or bb.js version.
+the browser never downloads or unpacks a release archive. The
+[CCDP Host contract](CCDP_HOST.md#prover-configuration) owns their deployment.
+Neither an application nor `AppRequestProof` selects a notary, circuit, or
+bb.js version.
 
 ### Google
 
@@ -289,54 +289,23 @@ their causal lifecycle remains a platform-ceremony-version change.
 
 ## Shared toolchain and assets
 
-The CCDP Host embeds this exact record:
-
-```ts
-interface ProverProfile {
-  platformId: PlatformId
-  platformCeremonyVersion: PlatformCeremonyVersion
-  circuitUrl: string
-}
-
-interface ProverAssets {
-  notarizationClientUrl: string
-  notaryAddress: string
-  profiles: readonly ProverProfile[]
-}
-```
-
-It contains only CCDP-origin circuit and notarization-client release locations
-plus the common Notary Service address. A ceremony fetches only its selected
-platform/version profile. The OAuth bridge supplies none of these values.
-
-Every asset URL is a canonical absolute HTTPS URL on `ccdpOrigin` for one
-immutable, versioned response. `notarizationClientUrl` identifies the shared
-`tlsn_wasm.js` ES module; its `tlsn_wasm_bg.wasm` sibling resolves relative to
-that URL. `notaryAddress` is one canonical external HTTPS origin shared by all
-browser notarization sessions and is not an asset. `profiles` contains exactly
-one circuit entry for every supported platform/version pair. A request,
-fragment, or browser message cannot add or replace these values.
-
-The deployment may source libID-owned circuit and notarization-client bytes
-from an upstream release, local file, or CDN build input. It publishes the
-selected bytes through immutable CCDP-origin paths before advertising the
-profile. Upstream source locations never appear in `ProverAssets` and are not
-fetched by the browser.
+The CCDP Host embeds the exact [`ProverAssets`](CCDP_HOST.md#prover-configuration)
+record into Prefetch and Prover. A ceremony fetches only its selected
+platform/version profile. X and GitHub reuse the notarization client and
+`bearer-link` circuit; Google fetches neither when it does not need them.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
 Their JavaScript is part of the prover build; internal companion chunks are not
-deployment configuration. The build likewise owns every toolchain worker,
-WASM, and common reference string (CRS) path, and the CCDP Host serves those
-emitted resources from its origin. A deployer cannot replace those dependencies
-through `ProverAssets`.
+deployment configuration. The build likewise owns every toolchain worker, WASM,
+common reference string (CRS) path, and complete transitive execution graph.
+A deployer cannot replace those dependencies through `ProverAssets`.
 
-The build enumerates the complete transitive execution graph: companion chunks,
-spawner and nested worker modules, WASM, and exact CRS resource paths. Every
-emitted resource is served from the CCDP origin and prefetched under the exact
-immutable URL later used by the runtime. The Prefetch bootstrap which
-installs that worker cannot depend on the worker during its first evaluation;
-it is contained in the versioned document or uses an implementation-private
-immutable chunk.
+The [CCDP Host](CCDP_HOST.md#proving-assets) serves companion chunks, spawner
+and nested worker modules, WASM, circuits, and CRS bodies from immutable
+same-origin paths. Prefetch uses the exact path later used by Prover. The
+Prefetch bootstrap which installs the Worker cannot depend on it during its
+first evaluation; it is contained in the versioned document or uses an
+implementation-private immutable chunk.
 
 Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
@@ -389,14 +358,7 @@ The pinned bb.js 5.2.0 build owns the compressed CRS downloader and
 and includes
 [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290), which
 persists `Crs.new()` downloads. Its bytes also fix the CRS paths served
-by the [prover response policy](#worker-and-network-isolation).
-
-Deployment publishes one immutable CCDP-origin notarization-client module URL
-and one immutable CCDP-origin circuit URL per closed platform/version; the
-prover resolves the notary WASM sibling. Noir, bb.js, workers, CRS paths, and
-SRS size remain build constants. X and GitHub share the same notary and circuit
-URLs. The deployment does not add runtime content hashing; deployment-integrity
-hashes may be added later without changing ceremony semantics.
+by the [CCDP Host](CCDP_HOST.md#proving-assets).
 
 ## Prefetch and cache lifecycle
 
@@ -418,14 +380,15 @@ The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
 stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
-CCDP Host deployment contract.
+[CCDP Host deployment contract](CCDP_HOST.md#protocol-resources).
 
-The Prefetch bootstrap exact-validates its deployment-embedded `ProverAssets`
+The Prefetch bootstrap exact-validates its deployment-embedded
+[`ProverAssets`](CCDP_HOST.md#prover-configuration)
 and accepts only the closed, cleared profile selected by its fragment. It adds
 the global notarization client only when the
 closed platform implementation requires it, and combines those entries with
 the toolchain assets pinned by the prover build. Neither fragment nor message
-can supply an asset URL.
+can supply an asset path.
 
 The prefetch branch contains no OAuth or proof input. The separately imported
 popup handler owns only its bounded temporary continuity entries. The branch
@@ -438,10 +401,9 @@ through completion. Those loaders use bb.js's fixed CRS endpoints and IndexedDB
 cache. Merely importing bb.js is not CRS prefetch.
 
 Manifest prefetches use `credentials: 'same-origin'`, matching native module
-and worker requests. The CCDP origin is cookie-free. Fetch-event
-handling preserves the admitted request's URL and response semantics so Firefox
-can reuse a prefetched worker response rather than refetching or synthesizing a
-different module.
+and worker requests. Fetch-event handling preserves the admitted request's URL
+and response semantics so Firefox can reuse a prefetched worker response rather
+than refetching or synthesizing a different module.
 
 Its package-private prefetch call is an implementation detail, not a CCDP
 message or exported ceremony API. The worker intercepts only exact immutable
@@ -481,25 +443,13 @@ state is never a ceremony checkpoint.
 
 ## Execution isolation
 
-[CCDP](CCDP.md#documents-and-routes) owns the Prefetch, Airlock, Prover, and Worker
-routes, document isolation, and response policy. Deployment embeds only
-stylesheet bytes, `ProverAssets`, and fixed response-policy sources. No request
-parameter selects a platform, role, asset, bridge, or CSP. The implementation
-exact-validates every OAuth-bridge endpoint derived from the proof request's
-frozen `redirectUri` before use; the response does not embed or enumerate
-bridge origins and remains byte-identical across them.
-
-This is not browser-enforced compartmentalization between platform profiles or
-OAuth bridges: a compromised Prover implementation can use every network class admitted
-by that response. Stronger confinement requires platform- or bridge-specific
-responses and is outside this shared deployment.
-
-The complete module, worker, WASM, circuit, and CRS graph is sourced from
-immutable CCDP-origin URLs, so no runtime cross-origin worker bridge is part of
-the browser implementation. A toolchain-internal local `blob:` worker does not
-change that source boundary. An unknown nested worker, opaque or partial fetch,
-mutable alias, redirect away from `ccdpOrigin`, or unisolated or single-threaded
-fallback fails closed.
+[CCDP](CCDP.md#documents-and-routes) owns the Prover's isolated execution
+context; the [CCDP Host contract](CCDP_HOST.md#response-profiles) owns its HTTP
+policy and same-origin resource graph. No request parameter selects a platform,
+role, asset, bridge, or CSP. The implementation exact-validates every
+OAuth-bridge endpoint derived from the proof request's frozen `redirectUri`
+before use; the response does not embed or enumerate bridge origins and remains
+byte-identical across them.
 
 The top-level document runs the multithreaded prover configuration only after
 confirming cross-origin isolation and shared memory. No unisolated or
