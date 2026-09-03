@@ -433,33 +433,36 @@ Terminal cleanup follows the [invariants](#invariants).
 
 ### Successful sequence
 
+The popup lifeline is one browsing context whose current document is replaced
+at every navigation; it does not imply shared document state.
+
 ```mermaid
 sequenceDiagram
     participant A as Application
-    participant F as Prefetch
-    participant O as Authorization
-    participant C as Callback document
-    participant P as Prover
+    participant P as Ceremony popup
 
-    Note over A,O: Phase 1 - Prefetch to Authorization
-    A->>F: Navigate popup to Prefetch
-    F->>F: Register Worker and dispatch selected-profile fetches
-    F-->>A: PrefetchStarted
-    A->>O: Navigate popup to Authorization
+    Note over A,P: Phase 1 - Prefetch to Authorization
+    A->>P: Navigate to Prefetch
+    P->>P: Prefetch clears fragment and accepts connection
+    P->>P: Prefetch registers Worker and dispatches selected-profile fetches
+    P-->>A: PrefetchStarted
+    A->>P: Navigate away to Authorization
 
-    Note over O,C: Phase 2 - Authorization to Callback
-    Note over O: User completes login and consent
-    O->>C: Return to redirectUri
-    C->>C: Capture and clear return
-    C->>C: Select CCDP version and load Callback
-    Note over A,C: Callback accepts authenticated connection
-    C-->>A: CallbackDeliverParams
+    Note over A,P: Phase 2 - Authorization to Callback
+    Note over P: User completes login and consent in Authorization
+    P->>P: OAuth Platform navigates to redirectUri
+    P->>P: Bridge shell captures and clears return
+    P->>P: Select CCDP version and load Callback
+    P->>P: Callback accepts authenticated connection
+    P-->>A: CallbackDeliverParams
 
     Note over A,P: Phase 3 - Callback to Prover
-    Note over A,P: Application validation and Prover activation may overlap
-    C->>P: Preserve connection and navigate popup to Prover
-    P->>P: Clear fragment and accept connection
-    A->>A: Validate accepted OAuth return
+    par Application validates the accepted OAuth return
+        A->>A: Validate return
+    and Popup activates Prover
+        P->>P: Callback prepares continuity and navigates to Prover
+        P->>P: Prover clears fragment and accepts connection
+    end
     A-->>P: AppRequestProof
 
     Note over A,P: Phase 4 - Prover execution
