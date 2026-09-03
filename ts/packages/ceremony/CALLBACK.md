@@ -10,9 +10,9 @@ The exact cross-document records and their order are defined by
 selection, and continuity are defined by
 [`@libid/popup`](../popup/README.md). The shell, root
 filename, URL inputs, and entrypoint call are defined by
-[CCDP](CCDP.md#callback-shell); its identity-bridge-owned deployment values and
+[CCDP](CCDP.md#callback-shell); its OAuth-bridge-owned deployment values and
 response headers are defined by the
-[identity bridge contract](IDENTITY_BRIDGE.md#callback-document). Prover
+[OAuth bridge contract](OAUTH_BRIDGE.md#callback-document). Prover
 execution is defined in [PROVER.md](PROVER.md). This document
 owns only the callback participant's local lifecycle.
 
@@ -127,7 +127,7 @@ visible proving UI remain in [PROVER.md](PROVER.md).
 
 ### Script-owned presentation
 
-The identity bridge document contains only an empty mount point. The callback
+The OAuth bridge document contains only an empty mount point. The callback
 module bundles its stylesheet and inline libID logo and renders its initial,
 callback, and fixed failure views. The bundled logo is static inline vector
 markup with no external reference. The callback shell has no proving progress
@@ -151,7 +151,7 @@ record is written.
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, and embedded allowlist | CCDP callback shell |
-| HTTP response and logging policy | identity bridge |
+| HTTP response and logging policy | OAuth bridge |
 | Application source/origin, connection ID/version, carrier selection, and continuity | `@libid/popup` |
 | CCDP shape, direction, order, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client and callback/prover participants |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |

@@ -1,7 +1,7 @@
-# Identity Bridge Server
+# OAuth Bridge Server
 
 This document defines the HTTP and deployment contract for the OAuth-owning
-identity bridge used by `@libid/ceremony`. The bridge publishes platform
+OAuth bridge used by `@libid/ceremony`. The bridge publishes platform
 configuration, serves the OAuth callback document, and performs the one
 confidential platform exchange required by GitHub.
 
@@ -13,7 +13,7 @@ the bridge's public transport and deployment boundary.
 
 ## Boundary
 
-The identity bridge owns:
+The OAuth bridge owns:
 
 - OAuth application registrations, public client IDs, and confidential client
   credentials;
@@ -28,7 +28,7 @@ client, proving toolchain, or prover Service Worker. It owns no ceremony Job and
 keeps no ceremony progress, OAuth return, proof, retry, cancellation, or
 recovery state. Google and X require no confidential bridge route.
 
-The identity bridge and prover may use different origins or sites. The bridge
+The OAuth bridge and prover may use different origins or sites. The bridge
 origin is a code-supply-chain boundary for OAuth callback code and public
 configuration; the prover origin is an independent code-supply-chain boundary
 for proof generation. Supplying the bridge origin to the prover at runtime does
@@ -80,7 +80,7 @@ loads.
 
 No prover, artifact, preparation, continuation, polling, status, result,
 cancellation, browser TLS bridge, or proof-recovery route exists on the
-identity bridge. Unsupported methods fail without route work. Except for the
+OAuth bridge. Unsupported methods fail without route work. Except for the
 provider-mandated callback query and the GitHub JSON request, bridge routes
 accept no query or request body.
 

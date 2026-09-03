@@ -13,8 +13,8 @@ in [CCDP.md](CCDP.md); popup lifecycle and communication are supplied by
 is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
-The OAuth-owning identity bridge's routes, deployment inputs, and callback
-response policy are defined in [IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md). The
+The OAuth bridge's routes, deployment inputs, and callback response policy are
+defined in [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md). The
 package's measurement and export
 boundary is defined in [METRICS.md](METRICS.md). These documents are
 implementation architecture, not part of the normative protocol specification.
@@ -23,7 +23,7 @@ The normative libID specification owns the proof statement and authorization
 encoding. See the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md)
-for their exact content. Together, this document, CCDP, and the identity bridge
+for their exact content. Together, this document, CCDP, and the OAuth bridge
 contract
 and their linked callback, prover, and notarization documents otherwise stand
 alone; application job storage and all post-ceremony effects are outside their
@@ -179,7 +179,7 @@ worker/WASM assets from one compatible package release. The prover artifact
 runs in both Window and Service Worker contexts: its Window branch runs iframe
 prefetch or the one active top-level prover, while its Service Worker branch
 composes popup continuity with ceremony-owned asset single flights and cache.
-That registration belongs only to the prover origin; the identity-bridge
+That registration belongs only to the prover origin; the OAuth-bridge
 callback installs no shared worker.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
@@ -234,7 +234,7 @@ behavior.
 
 ### Client lifecycle
 
-An application creates one client for one configured identity bridge:
+An application creates one client for one configured OAuth bridge:
 
 ```ts
 import {
@@ -243,7 +243,7 @@ import {
 } from '@libid/ceremony/client'
 
 const ceremonies = await createCeremonyClient({
-  identityBridge: 'https://identity.example',
+  oauthBridge: 'https://oauth.example',
 })
 ```
 
@@ -440,7 +440,7 @@ no-ceremony-recovery launch scope.
 ### Identity bridge configuration
 
 The client fetches and validates the origin-controlled
-[`CeremonyConfig`](IDENTITY_BRIDGE.md#public-configuration) once, then freezes
+[`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
 the chosen platform, version, client ID, redirect URI, and prover origin.
 Callback and prover never fetch it.
 
@@ -691,7 +691,7 @@ validators during its compatibility window.
 
 [`CCDPVersion`](CCDP.md#version) independently versions callback/prover roots,
 navigation, fragments, and browser messages. Fragments and OAuth `state` select
-it before module loading; messages do not repeat it. The identity bridge API
+it before module loading; messages do not repeat it. The OAuth bridge API
 namespace remains independent. The popup package's
 [`ConnectionVersion`](../popup/CONNECTION.md) independently versions private
 connection controls. Local Job schema versioning

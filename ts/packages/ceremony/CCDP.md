@@ -15,8 +15,8 @@ implementation architecture, not part of the normative proof specification.
 
 | Context | Owns | Browser constraint |
 |---|---|---|
-| Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from both identity bridge and prover |
-| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated; its one configured identity-bridge URL serves initial launch and is the registered `redirect_uri` |
+| Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from both OAuth bridge and prover |
+| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated; its one configured OAuth-bridge URL serves initial launch and is the registered `redirect_uri` |
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
 CCDP is connection-neutral. It defines which document runs at each location,
@@ -35,7 +35,7 @@ type CCDPVersion = 1
 `CCDPVersion` is encoded in the launch/prover fragments and OAuth `state`.
 Version `1` selects matching callback and prover root modules, fragment
 grammars, navigation order, and `Message` semantics. A message does not repeat
-the version selected before its module loads. The identity bridge API and popup
+the version selected before its module loads. The OAuth bridge API and popup
 connection controls are independently versioned.
 
 The version-1 browser roots have these exact filenames:
@@ -53,7 +53,7 @@ root URL.
 
 ## Browser shells
 
-The identity bridge's configured callback path and `GET /ccdp/prover` serve the
+The OAuth bridge's configured callback path and `GET /ccdp/prover` serve the
 two stable CCDP HTML shells. They are browser documents, not JSON API routes. A shell update may add
 a supported CCDP version to its closed map, while an already published root
 remains immutable and available through its compatibility window.
@@ -73,7 +73,7 @@ user retry starts in a fresh document.
 
 ### Callback shell
 
-The identity bridge serves the callback shell at one developer-configurable
+The OAuth bridge serves the callback shell at one developer-configurable
 path whose default is `/auth/callback`. The application uses its absolute
 URL for initial launch, and every enabled OAuth application registers that same
 URL as its `redirect_uri`. It is not an HTTP redirect and does not encode a
@@ -110,9 +110,9 @@ The unversioned shell invokes this as
 interpreting the resolved tuple. The version-1 root exact-validates each argument. Application
 origins and prover origin are immutable deployment data, never derived from
 `Origin`, `Referer`, or URL input. The entrypoint is not a CCDP message or pure
-`ccdp` export. The identity bridge owns its concrete shell, default inputs, and
+`ccdp` export. The OAuth bridge owns its concrete shell, default inputs, and
 optional per-root overrides in
-[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#stable-root-input). Google
+[OAUTH_BRIDGE.md](OAUTH_BRIDGE.md#stable-root-input). Google
 credentials remain in the fragment and therefore never reach the bridge;
 provider-mandated query parameters are the only credential-bearing URL
 exception.
@@ -148,7 +148,7 @@ Service Worker. Its worker branch composes popup continuity with asset prefetch
 and cache reuse; it executes no CCDP participant or platform pipeline. Prefetch
 mode registers and activates that worker but constructs no popup connection or
 fallback. Callback deployment and response policy are defined by the
-[identity bridge](IDENTITY_BRIDGE.md#callback-document);
+[OAuth bridge](OAUTH_BRIDGE.md#callback-document);
 `ProverAssets` and prover response policy are defined by
 [PROVER.md](PROVER.md#shared-toolchain-and-assets).
 
@@ -345,7 +345,7 @@ nonce; only its derived code verifier crosses this boundary. No authorization
 digest, operation field, separate OAuth state, Job revision, composition kind,
 wallet state, connector, or carrier kind enters the request.
 
-For GitHub, the prover derives the fixed identity bridge token route from the
+For GitHub, the prover derives the fixed OAuth bridge token route from the
 origin of this frozen `redirectUri`. No second bridge origin or endpoint field
 enters CCDP or the prover document.
 
@@ -535,4 +535,4 @@ already-selected version.
 `PlatformCeremonyVersion` remains independent and versions one platform's
 authorization, OAuth, proof, and output semantics. The popup package's
 `ConnectionVersion` independently versions private connection controls. The
-identity bridge API namespace is also independent.
+OAuth bridge API namespace is also independent.

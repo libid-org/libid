@@ -10,7 +10,7 @@ The package API and result lifecycle are defined in
 [CCDP.md](CCDP.md), while popup connection lifecycle and continuity are defined
 by [`@libid/popup`](../popup/README.md). This document also owns the prover
 route, embedded `ProverAssets`, and response policy; these may be deployed on an
-origin independent of the [identity bridge](IDENTITY_BRIDGE.md).
+origin independent of the [OAuth bridge](OAUTH_BRIDGE.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
@@ -233,7 +233,7 @@ outputs.
 ### GitHub
 
 `platforms/github/1/prover` first sends the captured code and derived verifier
-to the fixed identity bridge token-exchange route. The bridge uses its
+to the fixed OAuth bridge token-exchange route. The bridge uses its
 confidential client secret, performs the token-exchange TLSNotary session, and
 returns the bounded access token, token attestation, and `bearerOpening`: the
 canonical unpadded base64url encoding of the token session's exact 16-byte
@@ -243,8 +243,8 @@ encoding and correlation, request bindings, and bearer opening before using
 the bearer in its own fixed `/user` TLSNotary session. Local verification of
 the notary signature is optional defense in depth; the downstream Platform
 Verifier remains authoritative. That session commits the bearer and reveals the
-canonical `id` and `login` ranges. The identity bridge route is defined in
-[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#github-token-endpoint).
+canonical `id` and `login` ranges. The OAuth bridge route is defined in
+[OAUTH_BRIDGE.md](OAUTH_BRIDGE.md#github-token-endpoint).
 
 The module then runs the same `bearer-link` circuit with the token-exchange and
 identity blinders. Its public-input count and order are identical to X: 64
@@ -354,7 +354,7 @@ interface ProverAssets {
 
 It contains only configurable libID-owned circuit and notarization-client
 release locations plus the common Notary Service address. A ceremony fetches
-only its selected platform/version profile. The identity bridge supplies none
+only its selected platform/version profile. The OAuth bridge supplies none
 of these values.
 
 Every asset URL is a canonical absolute HTTPS URL for one immutable, versioned
@@ -540,12 +540,12 @@ The document uses `Cross-Origin-Opener-Policy: same-origin`,
 Its CSP denies by default and admits only the exact root, worker, `blob:`,
 WebAssembly, style hash, toolchain sources, and network classes needed by the
 closed prover implementation. The implementation exact-validates every
-identity-bridge endpoint derived from the proof request's frozen `redirectUri`
+OAuth-bridge endpoint derived from the proof request's frozen `redirectUri`
 before use; the response does not embed or enumerate bridge origins and remains
 byte-identical across them.
 
 This is not browser-enforced compartmentalization between platform profiles or
-identity bridges: a compromised prover root can use every network class admitted
+OAuth bridges: a compromised prover root can use every network class admitted
 by that response. Stronger confinement requires platform- or bridge-specific
 responses and is outside this shared deployment.
 
