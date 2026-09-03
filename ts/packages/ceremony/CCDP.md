@@ -45,7 +45,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 | Property | Contract |
 |---|---|
-| Parameters | <table><tr><th>Name</th><td><code>ceremonyId</code></td><td><code>platformId</code></td><td><code>ceremonyVersion</code></td></tr><tr><th>Values</th><td>fragment; lowercase UUIDv4</td><td>fragment; exact identifier from the selected platform profile</td><td>fragment; unsigned 16-bit platform ceremony version</td></tr></table> |
+| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#platformId</code></td><td><code>#ceremonyVersion</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>exact identifier from the selected platform profile</td><td>unsigned 16-bit platform ceremony version</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, and non-isolated ceremony-popup document |
 | Lifecycle | Accepts the initial Application connection, registers the Worker, dispatches prefetch for the exact fragment-selected platform profile, emits `ProverPrefetchingAssets`, and is then navigated away to the OAuth Platform. It receives no authorization URL, OAuth return, or proof input. |
 | Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: unsafe-none`; no COEP; and `frame-ancestors 'none'`. CSP denies by default and admits only resources required by the closed Prefetch implementation. |
@@ -73,7 +73,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 | Property | Contract |
 |---|---|
-| Parameters | <table><tr><th>Name</th><td><code>ceremonyId</code></td></tr><tr><th>Values</th><td>fragment; lowercase UUIDv4</td></tr></table> |
+| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, COOP/COEP-isolated ceremony-popup document |
 | Lifecycle | Clears and validates its fragment, accepts the continuing Application connection, consumes one exact `AppRequestProof`, and emits only `ProverNotifyEvent`, `ProverDeliverProof`, or `AbortCeremony`. [PROVING.md](PROVING.md) defines proof-generation pipelines, assets, notarization, and caching. |
 | Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: same-origin`; and `Cross-Origin-Embedder-Policy: require-corp`. CSP denies by default and admits only the exact inline entry code, Worker, `blob:`, WebAssembly, styles, toolchain resources, and network classes required by the closed implementation. Proving starts only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
