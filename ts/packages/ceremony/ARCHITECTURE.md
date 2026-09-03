@@ -13,8 +13,9 @@ in [CCDP.md](CCDP.md); popup lifecycle and communication are supplied by
 is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
-The integrating server's routes, deployment inputs, and response policy are
-defined in [SERVER.md](SERVER.md). The package's measurement and export
+The OAuth-owning identity bridge's routes, deployment inputs, and callback
+response policy are defined in [IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md). The
+package's measurement and export
 boundary is defined in [METRICS.md](METRICS.md). These documents are
 implementation architecture, not part of the normative protocol specification.
 
@@ -22,7 +23,8 @@ The normative libID specification owns the proof statement and authorization
 encoding. See the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md)
-for their exact content. Together, this document, CCDP, and the server contract
+for their exact content. Together, this document, CCDP, and the identity bridge
+contract
 and their linked callback, prover, and notarization documents otherwise stand
 alone; application job storage and all post-ceremony effects are outside their
 scope.
@@ -59,7 +61,7 @@ sequenceDiagram
     C->>P: Continue with frozen provider URL
     P->>O: Navigate through platform authorization
     U->>O: Approve or deny
-    O-->>P: Return to callback alias
+    O-->>P: Return to callback URL
     P-->>C: Deliver OAuth return through popup connection
     P->>R: Continue popup connection and navigate same popup
     alt User denied
@@ -176,16 +178,15 @@ immutable roots whose filenames and shell selection are defined by CCDP, plus
 worker/WASM assets from one compatible package release. The prover artifact
 runs in both Window and Service Worker contexts: its Window branch runs iframe
 prefetch or the one active top-level prover, while its Service Worker branch
-composes the `@libid/popup/worker` continuity handler with ceremony-owned asset
-single flights and cache. One registration scoped over `/ccdp/` serves both the
-callback and prover documents; ceremony registers no second worker.
+composes popup continuity with ceremony-owned asset single flights and cache.
+That registration belongs only to the prover origin; the identity-bridge
+callback installs no shared worker.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
-Server implementations are outside the package. The GitHub version's prover
-leaf implements only the server-contract browser request/response codecs and
-validation; the integrating server implements the required confidential
-endpoint.
+Identity bridge implementations are outside the package. The GitHub version's
+prover leaf implements only the bridge-contract browser request/response codecs
+and validation; the bridge implements the required confidential endpoint.
 
 The dependency direction is closed:
 
@@ -233,7 +234,7 @@ behavior.
 
 ### Client lifecycle
 
-An application creates one client for one configured server:
+An application creates one client for one configured identity bridge:
 
 ```ts
 import {
@@ -242,7 +243,7 @@ import {
 } from '@libid/ceremony/client'
 
 const ceremonies = await createCeremonyClient({
-  server: 'https://identity.example',
+  identityBridge: 'https://identity.example',
 })
 ```
 
@@ -436,11 +437,12 @@ popup. Losing the application document loses the in-memory ceremony map and
 therefore requires fresh OAuth, as already required by the
 no-ceremony-recovery launch scope.
 
-### Server configuration
+### Identity bridge configuration
 
 The client fetches and validates the origin-controlled
-[`CeremonyConfig`](SERVER.md#public-configuration) once, then freezes the chosen
-platform, version, client ID, and redirect URI. Callback and prover never fetch it.
+[`CeremonyConfig`](IDENTITY_BRIDGE.md#public-configuration) once, then freezes
+the chosen platform, version, client ID, redirect URI, and prover origin.
+Callback and prover never fetch it.
 
 ## Result and lifecycle
 
@@ -689,7 +691,7 @@ validators during its compatibility window.
 
 [`CCDPVersion`](CCDP.md#version) independently versions callback/prover roots,
 navigation, fragments, and browser messages. Fragments and OAuth `state` select
-it before module loading; messages do not repeat it. The ceremony server API
+it before module loading; messages do not repeat it. The identity bridge API
 namespace remains independent. The popup package's
 [`ConnectionVersion`](../popup/CONNECTION.md) independently versions private
 connection controls. Local Job schema versioning

@@ -15,8 +15,8 @@ implementation architecture, not part of the normative proof specification.
 
 | Context | Owns | Browser constraint |
 |---|---|---|
-| Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from the ceremony server |
-| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated; it accepts the popup connection before the isolated prover replaces it, and its configured alias is the registered server-hosted `redirect_uri` |
+| Application page | operation inputs, live `Ceremony`, message ordering, and protocol result | has application-defined headers and lifecycle; may be cross-site from both identity bridge and prover |
+| Callback | OAuth navigation, return capture, and transition to proving | remains top-level and non-isolated; its one configured identity-bridge URL serves initial launch and is the registered `redirect_uri` |
 | Prover | credentials after callback, visible progress, and proof generation | reuses the popup's top-level browsing context under COOP/COEP isolation |
 
 CCDP is connection-neutral. It defines which document runs at each location,
@@ -35,7 +35,7 @@ type CCDPVersion = 1
 `CCDPVersion` is encoded in the launch/prover fragments and OAuth `state`.
 Version `1` selects matching callback and prover root modules, fragment
 grammars, navigation order, and `Message` semantics. A message does not repeat
-the version selected before its module loads. The ceremony server API and popup
+the version selected before its module loads. The identity bridge API and popup
 connection controls are independently versioned.
 
 The version-1 browser roots have these exact filenames:
@@ -46,14 +46,15 @@ The version-1 browser roots have these exact filenames:
 | Prover | `libid-ccdp-v1-prover.js` |
 
 A later CCDP version uses the same pattern with its decimal version substituted
-for `1`. Root URLs are same-origin, immutable deployment assets. The stable
-HTML shells embed closed `CCDPVersion`-to-root maps; neither a request nor a
-CCDP message may supply a root URL.
+for `1`. Each root is an immutable asset on its document's origin; callback and
+prover roots need not share an origin. The stable HTML shells embed closed
+`CCDPVersion`-to-root maps; neither a request nor a CCDP message may supply a
+root URL.
 
 ## Browser shells
 
-`GET /ccdp/callback` and `GET /ccdp/prover` serve the two stable CCDP HTML
-shells. They are browser documents, not JSON API routes. A shell update may add
+The identity bridge's configured callback path and `GET /ccdp/prover` serve the
+two stable CCDP HTML shells. They are browser documents, not JSON API routes. A shell update may add
 a supported CCDP version to its closed map, while an already published root
 remains immutable and available through its compatibility window.
 
@@ -72,11 +73,11 @@ user retry starts in a fresh document.
 
 ### Callback shell
 
-The developer-configurable OAuth callback alias, default
-`/auth/v1/callback`, serves the byte-identical callback shell; it is an alias,
-not a redirect or another CCDP version. Application launch uses
-`/ccdp/callback`, while the registered OAuth `redirect_uri` uses the configured
-alias.
+The identity bridge serves the callback shell at one developer-configurable
+path whose default is `/auth/v1/callback`. The application uses its absolute
+URL for initial launch, and every enabled OAuth application registers that same
+URL as its `redirect_uri`. It is not an HTTP redirect and does not encode a
+CCDP version.
 
 The callback bootstrap accepts exactly two input modes:
 
@@ -92,30 +93,39 @@ nonempty, and clears both. It parses no platform-specific return field beyond
 locating the single routing state. After root selection it invokes:
 
 ```ts
+interface CallbackShellInputV1 {
+  shellVersion: 1
+  locationInput: {
+    query: string
+    fragment: string
+  }
+  config: {
+    allowedApplicationOrigins: readonly string[]
+    proverOrigin: string
+  }
+}
+
+declare function startCallback(input: CallbackShellInputV1): void
+```
+
+The selected root exact-validates the versioned object. Its application origins
+and prover origin are immutable deployment data, never derived from `Origin`,
+`Referer`, or URL input. The object is an entrypoint dependency, not a CCDP
+message or pure `ccdp` export. The identity bridge owns its concrete shell and
+forward-compatible versioning in
+[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#versioned-root-input). Google
+credentials remain in the fragment and therefore never reach the bridge;
+provider-mandated query parameters are the only credential-bearing URL
+exception.
+
+### Prover shell
+
+```ts
 interface PopupEndpointOptions {
   allowedApplicationOrigins: readonly string[]
   fallback?: CarrierConstructor
 }
-
-declare function startCallback(
-  oauthReturn: { query: string; fragment: string },
-  popup: PopupEndpointOptions,
-): void
 ```
-
-`PopupEndpointOptions` is an entrypoint dependency, not a CCDP message or an
-export of the pure `ccdp` module.
-
-`popup.allowedApplicationOrigins` is immutable deployment data embedded in the
-shell. It is never derived from `Origin`, `Referer`, or URL input. When
-configured, the shell also supplies the popup package's optional fallback
-constructor. The callback passes both unchanged to `PopupConnection.accept`;
-CCDP does not inspect the constructor. Omitting it fails closed if the preferred
-carrier cannot connect. Google credentials remain in the fragment and therefore
-never reach the server; provider-mandated query parameters are the only
-credential-bearing URL exception.
-
-### Prover shell
 
 The prover bootstrap accepts an empty query and exactly one of the `prefetch`
 or `prove` fragments defined below. Both modes receive byte-identical HTML,
@@ -134,30 +144,29 @@ declare function startProver(
 ): void
 ```
 
-The selected prover root is also evaluated as the one module Service Worker
-scoped over both CCDP documents. Its worker branch composes the
-`@libid/popup/worker` continuity handler with asset prefetch and cache reuse; it
-executes no CCDP participant or platform pipeline. Prefetch mode registers and
-activates that worker but constructs no popup connection or fallback. The
-returned callback and top-level prover pass the immutable popup options to
-`PopupConnection.accept` and reuse the matching active registration. The
-server-owned `ProverAssets` record and both shells' HTTP response policies are
-defined by the [server contract](SERVER.md).
+The selected prover root is also evaluated as the prover origin's module
+Service Worker. Its worker branch composes popup continuity with asset prefetch
+and cache reuse; it executes no CCDP participant or platform pipeline. Prefetch
+mode registers and activates that worker but constructs no popup connection or
+fallback. Callback deployment and response policy are defined by the
+[identity bridge](IDENTITY_BRIDGE.md#callback-document);
+`ProverAssets` and prover response policy are defined by
+[PROVER.md](PROVER.md#shared-toolchain-and-assets).
 
 ## Protocol locations
 
-One live `Ceremony` freezes `serverOrigin`, `redirectUri`,
+One live `Ceremony` freezes `proverOrigin`, `redirectUri`,
 `providerAuthorizationUrl`, ceremony ID, platform ID, and platform ceremony
 version before launch. CCDP uses the following browser locations:
 
 | Location | Browser context | Exact form |
 |---|---|---|
 | Popup reservation | popup | `about:blank` |
-| Initial callback | popup | `${serverOrigin}/ccdp/callback#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
-| Selected-profile prefetch | callback child iframe | `${serverOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
+| Initial callback | popup | `${redirectUri}#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
+| Selected-profile prefetch | callback child iframe | `${proverOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
 | Platform authorization | popup | the frozen `providerAuthorizationUrl` defined by the selected platform ceremony version |
 | Provider return | popup | the frozen `redirectUri` followed by the provider-defined query or fragment return |
-| Proof generation | popup | `${serverOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
+| Proof generation | popup | `${proverOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
 
 Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
 shown above. Producers emit each named field exactly once in the displayed
@@ -165,12 +174,12 @@ order. Receivers require the exact field set, reject duplicates, and otherwise
 do not depend on parameter order. Ceremony IDs are lowercase UUIDv4 values;
 platform IDs and version bounds are defined by the package catalog.
 
-The launch and prover routes have no query. Their fragments never reach the
-server and are copied and cleared before rendering, module import, storage, or
-network use. Their clearing bootstraps use `ccdpVersion` to select one exact
-root module from a deployment-fixed supported map. No OAuth return, credential,
-proof input, or proof is placed in an internal fragment. The provider-mandated
-query on `redirectUri` is the only protocol exception.
+The launch and prover routes have no query. Their fragments never reach either
+HTTP server and are copied and cleared before rendering, module import,
+storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
+one exact root module from a deployment-fixed supported map. No OAuth return,
+credential, proof input, or proof is placed in an internal fragment. The
+provider-mandated query on `redirectUri` is the only protocol exception.
 
 The prefetch location carries only the selected public profile. It needs no
 ceremony ID: the callback binds its one child by browser source, and the child
@@ -182,7 +191,7 @@ and return grammar. OAuth `state` has the exact CCDP routing form
 UUIDv4 suffix remains the popup connection ID. The authorization request
 uses that state and the frozen `redirectUri`; CCDP owns the surrounding popup
 navigation but does not duplicate platform fields. `redirectUri` is the exact
-absolute configured callback alias for that platform; its default path is
+absolute configured callback URL for that platform; its default path is
 `/auth/v1/callback` and does not change between CCDP versions.
 
 ## End-to-end sequence
@@ -336,6 +345,10 @@ supplies the operation being authorized. The client retains the authorization
 nonce; only its derived code verifier crosses this boundary. No authorization
 digest, operation field, separate OAuth state, Job revision, composition kind,
 wallet state, connector, or carrier kind enters the request.
+
+For GitHub, the prover derives the fixed identity bridge token route from the
+origin of this frozen `redirectUri`. No second bridge origin or endpoint field
+enters CCDP or the prover document.
 
 The registered decoder validates CCDP shape and bounds. The prover then applies
 the exact selected platform/version parser before credential use. The callback
@@ -508,8 +521,8 @@ Endpoint authentication, continuity controls, and carrier records are not
 A loaded application client selects `CCDPVersion` in its launch fragment. The
 callback shell carries it through OAuth `state`, every later internal navigation
 repeats it in its fragment, and each shell loads that exact version's immutable
-root. The stable `/ccdp/callback`, its configured alias, and `/ccdp/prover`
-paths do not select or encode a CCDP version.
+root. The configured callback path and stable `/ccdp/prover` path do not select
+or encode a CCDP version.
 
 Compatible implementation changes keep the version. A breaking shell input
 grammar, root entrypoint contract, navigation order, message shape, direction,
@@ -523,4 +536,4 @@ already-selected version.
 `PlatformCeremonyVersion` remains independent and versions one platform's
 authorization, OAuth, proof, and output semantics. The popup package's
 `ConnectionVersion` independently versions private connection controls. The
-ceremony server API namespace is also independent.
+identity bridge API namespace is also independent.

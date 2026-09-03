@@ -4,7 +4,8 @@ This document defines the browser-side `prover/notarization` module: how it
 runs a TLSNotary session, applies platform-selected transcript disclosures, and
 returns a byte-exact attestation plus private commitment openings. The enclosing
 pipeline is defined in [PROVER.md](PROVER.md), browser placement in
-[CCDP.md](CCDP.md), and deployment inputs in [SERVER.md](SERVER.md). Exact
+[CCDP.md](CCDP.md), and bridge inputs in
+[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md). Exact
 proof semantics remain normative in the
 [common ceremony rules](../../../specs/ceremony-common.md) and
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md).
@@ -315,7 +316,7 @@ exists.
 
 GitHub's confidential token exchange is server-side and does not use this
 browser module. Its HTTP contract is defined in
-[SERVER.md](SERVER.md#github-token-endpoint), while the GitHub platform module
+[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#github-token-endpoint), while the GitHub platform module
 owns browser-side response validation and subsequent `/user` orchestration.
 
 ## Attestation handoff

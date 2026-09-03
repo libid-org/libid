@@ -8,9 +8,9 @@ cache behavior, and worker graph.
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). Cross-document messages are defined by
 [CCDP.md](CCDP.md), while popup connection lifecycle and continuity are defined
-by [`@libid/popup`](../popup/README.md). The integrating server's
-prover route, embedded `ProverAssets`, and response
-headers are defined in [SERVER.md](SERVER.md).
+by [`@libid/popup`](../popup/README.md). This document also owns the prover
+route, embedded `ProverAssets`, and response policy; these may be deployed on an
+origin independent of the [identity bridge](IDENTITY_BRIDGE.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
@@ -232,18 +232,19 @@ outputs.
 
 ### GitHub
 
-`platforms/github/1/prover` first sends the captured code and derived verifier to the
-fixed server token-exchange route. The server uses its confidential client
-secret, performs the token-exchange TLSNotary session, and returns the bounded
-access token, token attestation, and `bearerOpening`: the canonical unpadded
-base64url encoding of the token session's exact 16-byte TLSNotary blinder. The
+`platforms/github/1/prover` first sends the captured code and derived verifier
+to the fixed identity bridge token-exchange route. The bridge uses its
+confidential client secret, performs the token-exchange TLSNotary session, and
+returns the bounded access token, token attestation, and `bearerOpening`: the
+canonical unpadded base64url encoding of the token session's exact 16-byte
+TLSNotary blinder. The
 browser exact-validates the selected version's token response, attestation
 encoding and correlation, request bindings, and bearer opening before using
 the bearer in its own fixed `/user` TLSNotary session. Local verification of
 the notary signature is optional defense in depth; the downstream Platform
 Verifier remains authoritative. That session commits the bearer and reveals the
-canonical `id` and `login` ranges. The server route itself is defined in
-[SERVER.md](SERVER.md#github-token-endpoint).
+canonical `id` and `login` ranges. The identity bridge route is defined in
+[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#github-token-endpoint).
 
 The module then runs the same `bearer-link` circuit with the token-exchange and
 identity blinders. Its public-input count and order are identical to X: 64
@@ -335,10 +336,34 @@ application composition may retain it for a larger wallet flow.
 
 ## Shared toolchain and assets
 
-The integrating server embeds the exact `ProverAssets` value defined in
-[SERVER.md](SERVER.md#embedded-prover-assets). It contains only configurable
-libID-owned circuit and notarization-client release locations; a ceremony
-fetches only its selected platform/version profile.
+The prover deployment embeds this exact record:
+
+```ts
+interface ProverProfile {
+  platformId: PlatformId
+  platformCeremonyVersion: PlatformCeremonyVersion
+  circuitUrl: string
+}
+
+interface ProverAssets {
+  notarizationClientUrl: string
+  notaryAddress: string
+  profiles: readonly ProverProfile[]
+}
+```
+
+It contains only configurable libID-owned circuit and notarization-client
+release locations plus the common Notary Service address. A ceremony fetches
+only its selected platform/version profile. The identity bridge supplies none
+of these values.
+
+Every asset URL is a canonical absolute HTTPS URL for one immutable, versioned
+release. `notarizationClientUrl` identifies the shared `tlsn_wasm.js` ES module;
+its `tlsn_wasm_bg.wasm` sibling resolves relative to that URL. `notaryAddress`
+is one canonical HTTPS origin shared by all browser notarization sessions.
+`profiles` contains exactly one circuit entry for every supported
+platform/version pair. A request, fragment, or browser message cannot add or
+replace these values.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
 Their JavaScript is part of the prover build; whether the CCDP-named root has
@@ -352,8 +377,8 @@ same-origin emitted resource intended to reuse prefetch sits under the prover
 service worker's controlled scope; every external resource is prefetched under
 the exact immutable URL later used by the runtime. The root bootstrap graph
 which installs that worker cannot depend on the worker during its first
-evaluation; it is self-contained or loaded through the server's immutable
-root-module path.
+evaluation; it is self-contained or loaded through the prover deployment's
+immutable root-module path.
 
 Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
@@ -406,7 +431,7 @@ The pinned bb.js 5.2.0 build owns the compressed CRS downloader and
 and includes
 [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290), which
 persists `Crs.new()` downloads. Its bytes also fix the only CRS origins admitted
-by the [prover response policy](SERVER.md#prover-response-policy).
+by the [prover response policy](#worker-and-network-isolation).
 
 Deployment configures one immutable notarization-client module URL and one
 immutable circuit URL per closed platform/version; the prover resolves the
@@ -437,9 +462,9 @@ The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
 stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
-server contract.
+prover deployment contract.
 
-The prover bootstrap exact-validates its server-embedded `ProverAssets`. For
+The prover bootstrap exact-validates its deployment-embedded `ProverAssets`. For
 prefetch, its Window branch accepts only the closed, cleared profile selected by
 the bootstrap fragment, adds the global notarization client only when the
 closed platform implementation requires it, and combines those entries with
@@ -459,7 +484,7 @@ cache. Merely importing bb.js is not CRS prefetch.
 
 Manifest prefetches use `credentials: 'same-origin'`, matching native
 same-origin module and worker requests while still omitting credentials from
-cross-origin asset requests. The server origin is cookie-free. Fetch-event
+cross-origin asset requests. The prover origin is cookie-free. Fetch-event
 handling preserves the admitted request's URL and response semantics so Firefox
 can reuse a prefetched worker response rather than refetching or synthesizing a
 different module.
@@ -502,13 +527,27 @@ state is never a ceremony checkpoint.
 
 ## Worker and network isolation
 
-The exact prover document and asset headers are defined by the
-[server contract](SERVER.md#prover-response-policy). The byte-identical prover
-response admits the deployment-fixed union of exact origins required by enabled
-profiles. This is not browser-enforced cross-profile compartmentalization: a
-compromised prover root module can reach any origin in that union. Stronger
-confinement would require a platform-specific response or isolated worker which
-alone receives the credential; it is not part of the launch deployment.
+`GET /ccdp/prover` serves one request-invariant document for prefetch and
+isolated proving. CCDP owns its fragment modes, clearing, root selection, and
+entrypoint. The deployment embeds only the closed root map, stylesheet hash,
+`ProverAssets`, and fixed response-policy sources. No request parameter selects
+a platform, role, asset, bridge, or CSP.
+
+The document uses `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`, `Content-Type: text/html`,
+`X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, and
+`Referrer-Policy: no-referrer`. It is frameable only where prefetch requires it.
+Its CSP denies by default and admits only the exact root, worker, `blob:`,
+WebAssembly, style hash, toolchain sources, and network classes needed by the
+closed prover implementation. The implementation exact-validates every
+identity-bridge endpoint derived from the proof request's frozen `redirectUri`
+before use; the response does not embed or enumerate bridge origins and remains
+byte-identical across them.
+
+This is not browser-enforced compartmentalization between platform profiles or
+identity bridges: a compromised prover root can use every network class admitted
+by that response. Stronger confinement requires platform- or bridge-specific
+responses and is outside this shared deployment.
 
 Because a worker cannot directly load a cross-origin worker URL, the prover may
 create only a local `blob:` bootstrap which imports the fixed immutable worker

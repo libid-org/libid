@@ -10,9 +10,9 @@ The exact cross-document records and their order are defined by
 selection, and continuity are defined by
 [`@libid/popup`](../popup/README.md). The shell, root
 filename, URL inputs, and entrypoint call are defined by
-[CCDP](CCDP.md#callback-shell); its server-owned deployment values and response
-headers are defined by the
-[server contract](SERVER.md#callback-document-and-configured-alias). Prover
+[CCDP](CCDP.md#callback-shell); its identity-bridge-owned deployment values and
+response headers are defined by the
+[identity bridge contract](IDENTITY_BRIDGE.md#callback-document). Prover
 execution is defined in [PROVER.md](PROVER.md). This document
 owns only the callback participant's local lifecycle.
 
@@ -29,14 +29,13 @@ The callback owns:
 `@libid/popup` owns endpoint authentication, carrier selection,
 cross-document connection continuity, and popup replacement.
 
-The callback installs no separate Service Worker. During initial launch, its
-prover-prefetch child registers and activates the single ceremony worker scoped
-over `/ccdp/`; that worker composes the popup package's continuity handler with
-prover prefetch and cache. This happens before readiness and therefore before
-OAuth navigation. On provider return, `PopupConnection.accept` reuses the
-matching active registration. Once the returned callback has an accepted
-carrier, its navigation to the isolated prover can preserve a transferable port
-through that same worker; the prover claims it as its first connection step.
+The callback installs no Service Worker. During initial launch, its
+cross-origin prover-prefetch child registers and activates the prover origin's
+worker for prefetch and cache. On provider return, the callback accepts its
+application connection, delivers the OAuth return, and navigates the same popup
+to the configured prover origin. A MessagePort cannot cross that origin change:
+the prover establishes a fresh carrier through its opener or the configured
+fallback under the same logical popup connection.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
@@ -47,12 +46,13 @@ callback storage does not.
 
 ## Entrypoint and trusted inputs
 
-`oauthReturn` is the exact copied query and fragment, including their leading
-delimiter when nonempty. The CCDP shell passes it and immutable popup endpoint
-options to `startCallback`. The callback copies and freezes the embedded allowed
-application origins and passes them plus the optional fallback constructor to
-`PopupConnection.accept` before installing ceremony listeners. It neither
-inspects nor selects that fallback.
+`locationInput` is the exact copied query and fragment, including their leading
+delimiter when nonempty. The shell passes it with a sealed shell version and
+immutable bridge configuration in one `CallbackShellInputV1` object. The
+callback exact-validates and freezes that object, then passes the copied allowed
+application origins to `PopupConnection.accept` before installing ceremony
+listeners. The selected callback root owns any package-supported fallback
+construction; the shell passes data, never a function.
 
 The callback accepts the two closed inputs defined by CCDP:
 
@@ -127,12 +127,12 @@ visible proving UI remain in [PROVER.md](PROVER.md).
 
 ### Script-owned presentation
 
-The server document contains only an empty mount point. The callback module bundles
-its stylesheet and inline libID logo and renders its initial, callback, and
-fixed failure views. The bundled logo is static inline vector markup with no
-external reference. The callback shell has no proving progress model or activation
-button. The callback view lasts only until connection navigation is accepted; the
-top-level prover then owns the visible proving UI.
+The identity bridge document contains only an empty mount point. The callback
+module bundles its stylesheet and inline libID logo and renders its initial,
+callback, and fixed failure views. The bundled logo is static inline vector
+markup with no external reference. The callback shell has no proving progress
+model or activation button. The callback view lasts only until connection
+navigation is accepted; the top-level prover then owns the visible proving UI.
 
 The callback accepts no application markup or renderer. The clearing bootstrap may
 render only a fixed textual load failure after clearing the URL.
@@ -151,7 +151,7 @@ record is written.
 | Boundary | Owner |
 |---|---|
 | URL size, clearing order, immutable module root, and embedded allowlist | CCDP callback shell |
-| HTTP response and logging policy | ceremony server |
+| HTTP response and logging policy | identity bridge |
 | Application source/origin, connection ID/version, carrier selection, and continuity | `@libid/popup` |
 | CCDP shape, direction, order, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client and callback/prover participants |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
