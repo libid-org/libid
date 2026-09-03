@@ -43,10 +43,10 @@ version. CCDP runs across these concrete browser documents and routes:
 
 | Document | Served by | Browser context | Route | Responsibility and lifetime |
 |---|---|---|---|---|
-| Prefetch | Proving Host | ceremony popup, top-level and non-isolated | `${provingOrigin}/ccdp/prefetch#prefetch` | accepts the Application connection and starts selected-profile asset fetching |
+| Prefetch | Proving Host | ceremony popup, top-level and non-isolated | `${provingOrigin}/ccdp/prefetch` | accepts the Application connection and starts selected-profile asset fetching |
 | Authorization | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to `redirectUri`; it is not a CCDP participant |
 | Returned Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | frozen `redirectUri` | delivers the OAuth-platform return and navigates to the Prover |
-| Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover#prove` | receives the validated OAuth result, exposes visible progress, and generates the proof |
+| Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover` | receives the validated OAuth result, exposes visible progress, and generates the proof |
 
 The **ceremony popup** is a reusable browsing context, not an actor or document.
 It sequentially contains Prefetch → Authorization → Callback → Prover.
@@ -55,8 +55,8 @@ document-local state surviving it. These origins may all be cross-site, and
 same-site placement grants no protocol authority.
 
 The shell sections below define each fragment's full field set. Internal
-fragments use the literal mode, `?`, and URL-search-parameter encoding shown
-there. Producers emit each named field exactly once in the displayed order.
+fragments use URL-search-parameter encoding after `#`. Producers emit each
+named field exactly once in the displayed order.
 Receivers require the exact field set, reject duplicates, and otherwise do not
 depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
 Platform IDs use the exact identifiers defined by the selected platform
@@ -78,7 +78,7 @@ direction and state before acting.
 
 This document defines CCDP version `1`. `ccdpVersion` is encoded in the
 prefetch/prover fragments and OAuth `state`.
-Version `1` selects matching callback and prover root modules, fragment
+Version `1` selects matching callback, prefetch, and prover root modules, fragment
 grammars, navigation order, and message semantics. A message does not repeat
 the version selected before its module loads. The OAuth bridge API and popup
 connection controls are independently versioned.
@@ -88,11 +88,13 @@ The version-1 browser roots have these exact filenames:
 | Document | Root module |
 |---|---|
 | Callback | `libid-ccdp-v1-callback.js` |
-| Prefetch and Prover | `libid-ccdp-v1-prover.js` |
+| Prefetch | `libid-ccdp-v1-prefetch.js` |
+| Prover | `libid-ccdp-v1-prover.js` |
 
 A later CCDP version uses the same pattern with its decimal version substituted
-for `1`. Each root is an immutable asset on its document's origin; callback and
-prover roots need not share an origin. The stable HTML shells embed closed
+for `1`. Each root is an immutable asset on its document's origin. The Prefetch
+and Prover roots share the Proving Host origin; the Callback root need not. The
+stable HTML shells embed closed
 CCDP-version-to-root maps; neither a request nor a CCDP message may supply a
 root URL.
 
@@ -149,17 +151,18 @@ exception.
 
 ### Prefetch and Prover shells
 
-The Proving Host serves two response-policy shells which select the same
-immutable Prover root:
+The Proving Host serves two response-policy shells, each with its own immutable
+root:
 
-- `/ccdp/prefetch#prefetch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
+- `/ccdp/prefetch#ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
   is top-level and non-isolated so it can accept the initial popup connection;
-- `/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` is top-level and
+- `/ccdp/prover#ccdpVersion=1&ceremonyId=<uuid>` is top-level and
   COOP/COEP-isolated for proof generation.
 
-The shells have different isolation headers but otherwise contain the same
-empty mount point, deployment-controlled proving inputs, clearing bootstrap,
-and closed root map. Any other route, mode, or browser context imports nothing.
+The route selects the document role; no fragment field repeats it. The shells
+have different isolation headers and root maps but otherwise contain the same
+empty mount point, deployment-controlled proving inputs, and clearing
+bootstrap. Any other route or browser context imports nothing.
 With `allowedApplicationOrigins: '*'`, the Prefetch and Prover accept any valid
 browser-observed HTTPS Application origin and pin that exact origin and source
 for each carrier. The Application exact-authenticates the configured Proving
@@ -442,8 +445,8 @@ Proving Host paths do not select or encode a CCDP version.
 
 Compatible implementation changes keep the version. A breaking navigation
 order, message shape, direction, ordering, or validation rule increments the
-CCDP version and publishes both new
-versioned roots. The shells add the new roots to their closed maps while old
+CCDP version and publishes each affected versioned root. The shells add the new
+roots to their closed maps while old
 roots remain available for live ceremonies and a compatibility window. A root
 may gain immutable companion chunks without changing CCDP when its shell and
 protocol contracts remain compatible. No CCDP message repeats the

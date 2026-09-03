@@ -1,6 +1,6 @@
 # `@libid/ceremony` prover architecture
 
-This document defines the prover subsystem emitted by
+This document defines the subsystem emitted by `@libid/ceremony/prefetch` and
 `@libid/ceremony/prover`: its input/output boundary, closed platform pipelines,
 progress steps, release assets, proving toolchain, service-worker prefetch and
 cache behavior, and worker graph.
@@ -19,9 +19,9 @@ Normative proof relations and authorization semantics remain in the
 
 ## Component boundary
 
-The selected dual-context CCDP prover root serves the Prefetch and Prover
-shells and their Service Worker. CCDP defines its filename, shell entrypoint,
-and two document modes:
+The selected CCDP Prefetch root serves the Prefetch shell and its Service
+Worker. The separate Prover root serves the isolated Prover shell. CCDP defines
+their filenames, shell entrypoints, and fragments:
 
 ```text
 Before OAuth: top-level Prefetch accepts the popup connection
@@ -41,9 +41,8 @@ Shared Service Worker
 OAuth navigation prevents reuse of the Prefetch document; the worker and browser
 caches preserve its fetch work.
 
-After the CCDP shell clears the URL, the Window branch starts through its single
-internal entrypoint.
-The same root evaluated as a Service Worker installs the
+After each CCDP shell clears the URL, it invokes that document's single
+entrypoint. The Prefetch root evaluated as a Service Worker installs the
 `@libid/popup/worker` continuity handler beside its cache and prefetch handlers;
 it does not enter CCDP or a platform pipeline.
 
@@ -448,10 +447,10 @@ semantics.
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
 behavior, not configuration or action input. The Application opens the
 top-level `/ccdp/prefetch` document, whose Window branch accepts the popup
-connection, registers the selected CCDP prover root as a module Service Worker,
+connection, registers the selected CCDP Prefetch root as a module Service Worker,
 and asks it to start only the selected platform/version profile's artifact
-single flights. Prefetch and proving use separate response-policy routes but the
-same root artifact; no separate prefetch package or root exists.
+single flights. Prefetch and proving use separate response-policy routes and
+root artifacts from the same package release.
 
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
@@ -467,9 +466,9 @@ stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
 Proving Host deployment contract.
 
-The prover bootstrap exact-validates its deployment-embedded `ProverAssets`. For
-prefetch, its Window branch accepts only the closed, cleared profile selected by
-the bootstrap fragment, adds the global notarization client only when the
+The Prefetch bootstrap exact-validates its deployment-embedded `ProverAssets`
+and accepts only the closed, cleared profile selected by its fragment. It adds
+the global notarization client only when the
 closed platform implementation requires it, and combines those entries with
 the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
@@ -533,9 +532,9 @@ state is never a ceremony checkpoint.
 ## Worker and network isolation
 
 `GET /ccdp/prefetch` and `GET /ccdp/prover` serve request-invariant documents
-which select the same immutable Prover root. CCDP owns their fragment modes,
-clearing, root selection, and entrypoint. The deployment embeds only the closed
-root map, stylesheet hash, `ProverAssets`, and fixed response-policy sources. No
+which select their respective immutable roots. CCDP owns their fragment
+grammars, clearing, root selection, and entrypoints. The deployment embeds only
+the closed root map, stylesheet hash, `ProverAssets`, and fixed response-policy sources. No
 request parameter selects a platform, role, asset, bridge, or CSP.
 
 The top-level Prefetch uses `Cross-Origin-Opener-Policy: unsafe-none`, no COEP,
