@@ -47,7 +47,7 @@ One bridge deployment has these inputs:
 | CCDP origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID CCDP Host |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback implementations | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-shell) |
+| Callback implementations | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback) |
 | GitHub settings | Client secret, redirect URI, token endpoint settings, and server-side notary settings when GitHub is enabled |
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
@@ -151,10 +151,11 @@ embedded `allowedAppOrigins`, and CCDP origin do not depend on request
 top-level, non-isolated, and non-frameable so it preserves the application
 opener whenever OAuth-platform policy permits.
 
-[CCDP](CCDP.md#callback-shell) owns the shell's input, clearing, and
-implementation selection. The bridge embeds only the closed supported-version
-map, optional input overrides, `allowedAppOrigins`, the configured CCDP origin,
-stylesheet hash, and fixed CSP sources.
+The OAuth Bridge owns the shell's input handling, clearing, version selection,
+response policy, and module invocation. It embeds only the closed
+supported-version map, optional input overrides, `allowedAppOrigins`, the
+configured CCDP origin, stylesheet hash, and fixed CSP sources. CCDP owns the
+invoked [Callback](CCDP.md#callback) behavior.
 
 ### Shell document
 

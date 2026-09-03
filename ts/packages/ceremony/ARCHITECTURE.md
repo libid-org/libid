@@ -47,7 +47,7 @@ sequenceDiagram
     participant C as Application-side client
     participant F as Prefetch document / CCDP Host
     participant O as Authorization document / OAuth Platform
-    participant P as Callback document / OAuth Bridge
+    participant P as Callback / OAuth Bridge
     participant R as Prover document / CCDP Host
 
     U->>A: Activate identity action

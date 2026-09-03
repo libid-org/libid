@@ -1,18 +1,17 @@
 # `@libid/ceremony` callback architecture
 
-This document defines the browser participant implemented by the selected CCDP
-Callback implementation. The fixed, non-isolated shell runs only at the configured
-OAuth-platform callback. It accepts the application connection and delegates
-typed delivery and same-popup navigation to `@libid/popup`.
+This document defines the Callback participant implemented by the selected CCDP
+module. The OAuth Bridge's fixed, non-isolated shell loads it at the configured
+OAuth-platform callback. Callback accepts the application connection and
+delegates typed delivery and same-popup navigation to `@libid/popup`.
 
 The exact cross-document records and their order are defined by
 [CCDP](CCDP.md), while popup connection lifecycle, authentication, carrier
 selection, and continuity are defined by
-[`@libid/popup`](../popup/README.md). The shell, implementation
-route, URL inputs, and entrypoint call are defined by
-[CCDP](CCDP.md#callback-shell); its OAuth-bridge-owned deployment values and
-response headers are defined by the
-[OAuth bridge contract](OAUTH_BRIDGE.md#callback-document). Prover
+[`@libid/popup`](../popup/README.md). The module route and CCDP behavior are
+defined by [CCDP](CCDP.md#callback); the shell, URL inputs, entrypoint call,
+deployment values, and response headers are defined by the
+[OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document). Prover
 execution is defined in [PROVER.md](PROVER.md). This document
 owns only the callback participant's local lifecycle.
 
@@ -40,11 +39,11 @@ does not.
 
 `locationInput` is the exact copied query and fragment, including their leading
 delimiter when nonempty. The shell passes it first, followed by the selected
-CCDP implementation's opaque resolved input tuple. The version-1 callback exact-validates
-its allowed application origins and CCDP origin arguments, then passes the
-copied origins to `PopupConnection.accept` before installing ceremony listeners.
-The selected Callback implementation owns any package-supported fallback construction;
-the shell passes data, never a function.
+CCDP implementation's opaque resolved input tuple. The version-1 callback
+exact-validates its allowed application origins and CCDP origin arguments, then
+passes the copied origins to `PopupConnection.accept` before installing ceremony
+listeners. The selected Callback implementation owns any package-supported
+fallback construction; the shell passes data, never a function.
 
 The callback accepts only the bounded raw OAuth-platform return containing one
 routing state defined by CCDP.
@@ -53,7 +52,7 @@ The callback recognizes only enough callback grammar to find that single routing
 value. The application client's selected platform/version client leaf later
 classifies success, denial, query/fragment placement, and fields. Unknown,
 ambiguous, or malformed input enters a fixed terminal failure state without
-releasing the captured value or performing credential-bearing work. The CCDP
+releasing the captured value or performing credential-bearing work. The bridge
 bootstrap rejects oversized input before package code runs.
 
 ## Document lifetime
@@ -99,7 +98,7 @@ visible proving UI remain in [PROVER.md](PROVER.md).
 The OAuth bridge document contains only an empty mount point. The callback
 module bundles its stylesheet and inline libID logo and renders its callback
 and fixed failure views. The bundled logo is static inline vector
-markup with no external reference. The callback shell has no proving progress
+markup with no external reference. The Callback view has no proving progress
 model or activation button. The callback view lasts only until connection
 navigation is accepted; the top-level prover then owns the visible proving UI.
 
@@ -119,7 +118,7 @@ record is written.
 
 | Boundary | Owner |
 |---|---|
-| URL size, clearing order, versioned implementation selection, and embedded allowlist | CCDP callback shell |
+| URL size, clearing order, versioned implementation selection, and embedded allowlist | OAuth Bridge callback shell |
 | HTTP response and logging policy | OAuth bridge |
 | Application source/origin, connection ID/version, carrier selection, and continuity | `@libid/popup` |
 | CCDP shape, direction, order, live ceremony, platform OAuth grammar, OAuth-platform outcome, and frozen configuration | Ceremony Client and callback/prover participants |
@@ -133,8 +132,8 @@ to configuration.
 
 ## Compatibility and acceptance
 
-The CCDP shell selects the Callback implementation before this participant runs; no
-callback message repeats its version. The accepted popup connection
+The OAuth Bridge shell selects the Callback implementation before this
+participant runs; no callback message repeats its version. The accepted popup connection
 independently exact-matches its private `ConnectionVersion`. An unsupported
 CCDP version fails before package code loads. Version axes are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md#versioning-and-compatibility).
