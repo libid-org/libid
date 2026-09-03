@@ -33,17 +33,21 @@ an exact origin. In particular, the Proving Host is not a wallet: both
 external-wallet and native-wallet compositions consume the same independently
 hosted proving boundary.
 
-## Browser documents and contexts
+## Browser documents and locations
 
-CCDP runs across these concrete browser documents:
+Before launch, the Application freezes the proving origin, redirect URI,
+platform authorization URL, ceremony ID, platform ID, and platform ceremony
+version. CCDP runs across these concrete browser documents and locations:
 
-| Document | Served by | Browser context | Responsibility and lifetime |
-|---|---|---|---|
-| Application document | application origin | ordinary top-level application tab | owns the live ceremony, operation inputs, message order, and result; remains open independently of the popup |
-| Callback document | OAuth Bridge at the OAuth bridge origin | ceremony popup, top-level and non-isolated | runs once for initial launch and again as a fresh document on OAuth return; the same configured URL is the registered `redirect_uri` |
-| Authorization document | OAuth Platform at an OAuth-platform origin | ceremony popup | renders platform login/consent and navigates back to the callback URL; it is not a CCDP participant |
-| Prefetch document | Proving Host at the proving origin | child iframe of the initial callback document | loads `/ccdp/prover#prefetch`, starts selected-profile asset fetching, then disappears with its parent callback document |
-| Prover document | Proving Host at the proving origin | ceremony popup, top-level and COOP/COEP-isolated | loads `/ccdp/prover#prove`, receives the validated OAuth result, exposes visible progress, and generates the proof |
+| Document | Served by | Browser context | Location | Responsibility and lifetime |
+|---|---|---|---|---|
+| Application | Application | ordinary top-level tab | application-defined | owns the live ceremony, operation inputs, message order, and result; remains open independently of the popup |
+| Popup reservation | Browser | ceremony popup | `about:blank` | reserves the named browsing context before protocol navigation |
+| Initial Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | `${redirectUri}#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` | accepts the Application connection and starts prefetch |
+| Prefetch | Proving Host | child iframe of the Initial Callback | `${provingOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` | starts selected-profile asset fetching, then disappears with its parent Callback |
+| Authorization | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to `redirectUri`; it is not a CCDP participant |
+| Returned Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | frozen `redirectUri` followed by the OAuth-platform-defined query or fragment | delivers the OAuth return and navigates to the Prover |
+| Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` | receives the validated OAuth result, exposes visible progress, and generates the proof |
 
 The **ceremony popup** is a reusable browsing context, not an actor or document.
 It sequentially contains Callback → Authorization → a new Callback → Prover.
@@ -52,6 +56,33 @@ shell and never becomes the top-level Prover document. Navigation creates a new
 JavaScript heap each time; no participant relies on document-local state
 surviving it. These origins may all be cross-site, and same-site placement
 grants no protocol authority.
+
+Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
+shown above. Producers emit each named field exactly once in the displayed
+order. Receivers require the exact field set, reject duplicates, and otherwise
+do not depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
+Platform IDs use the exact identifiers defined by the selected platform
+profile; platform ceremony versions are unsigned 16-bit integers.
+
+The launch and prover routes have no query. Their fragments never reach either
+HTTP server and are copied and cleared before rendering, module import,
+storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
+one exact root module from a deployment-fixed supported map. No OAuth return,
+credential, proof input, or proof is placed in an internal fragment. The
+OAuth-platform-mandated query on `redirectUri` is the only protocol exception.
+
+The prefetch location carries only the selected public profile. It needs no
+ceremony ID: the Callback binds its one child by browser source, and the child
+does not join the Application popup connection.
+
+The selected platform ceremony version owns the exact platform authorization
+and return grammar. OAuth `state` has the exact CCDP routing form
+`v1.<ceremonyId>`: the version selects the Callback namespace and the lowercase
+UUIDv4 suffix remains the popup connection ID. The authorization request uses
+that state and the frozen `redirectUri`; CCDP owns the surrounding popup
+navigation but does not duplicate platform fields. `redirectUri` is the exact
+absolute configured callback URL for that platform; its default path is
+`/auth/callback` and does not change between CCDP versions.
 
 CCDP is connection-neutral. It defines which document runs at each location,
 which participant initiates each navigation, what each message means, and their
@@ -110,7 +141,7 @@ CCDP version.
 
 The callback bootstrap accepts exactly two input modes:
 
-- initial launch: an empty query and the `launch` fragment defined below, whose
+- initial launch: an empty query and the `launch` fragment defined above, whose
   `ccdpVersion` selects the callback root; or
 - OAuth-platform return: the bounded OAuth-platform-defined query and fragment containing
   exactly one OAuth `state` in the form `v<version>.<ceremonyId>`, whose version
@@ -131,54 +162,12 @@ exception.
 ### Prover shell
 
 The prover bootstrap accepts an empty query and exactly one of the `prefetch`
-or `prove` fragments defined below. Both modes receive byte-identical HTML,
+or `prove` fragments defined above. Both modes receive byte-identical HTML,
 headers, deployment-controlled proving inputs, and the same selected prover
 root. Prefetch is valid only in a child iframe; prove is valid only in the
 popup's top-level browsing context. Any other context imports nothing.
 Shell-to-root invocation, asset caching, and popup-connection construction are
 outside CCDP.
-
-## Protocol locations
-
-Before launch, the Application freezes the proving origin, redirect URI,
-platform authorization URL, ceremony ID, platform ID, and platform ceremony
-version. CCDP uses the following browser locations:
-
-| Location | Browser context | Exact form |
-|---|---|---|
-| Popup reservation | popup | `about:blank` |
-| Initial callback | popup | `${redirectUri}#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
-| Selected-profile prefetch | callback child iframe | `${provingOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
-| Platform authorization | popup | the frozen `platformAuthorizationUrl` defined by the selected platform ceremony version |
-| OAuth-platform return | popup | the frozen `redirectUri` followed by the OAuth-platform-defined query or fragment return |
-| Proof generation | popup | `${provingOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
-
-Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
-shown above. Producers emit each named field exactly once in the displayed
-order. Receivers require the exact field set, reject duplicates, and otherwise
-do not depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
-Platform IDs use the exact identifiers defined by the selected platform
-profile; platform ceremony versions are unsigned 16-bit integers.
-
-The launch and prover routes have no query. Their fragments never reach either
-HTTP server and are copied and cleared before rendering, module import,
-storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
-one exact root module from a deployment-fixed supported map. No OAuth return,
-credential, proof input, or proof is placed in an internal fragment. The
-OAuth-platform-mandated query on `redirectUri` is the only protocol exception.
-
-The prefetch location carries only the selected public profile. It needs no
-ceremony ID: the callback binds its one child by browser source, and the child
-does not join the application popup connection.
-
-The selected platform ceremony version owns the exact platform authorization
-and return grammar. OAuth `state` has the exact CCDP routing form
-`v1.<ceremonyId>`: the version selects the callback namespace and the lowercase
-UUIDv4 suffix remains the popup connection ID. The authorization request
-uses that state and the frozen `redirectUri`; CCDP owns the surrounding popup
-navigation but does not duplicate platform fields. `redirectUri` is the exact
-absolute configured callback URL for that platform; its default path is
-`/auth/callback` and does not change between CCDP versions.
 
 ## End-to-end sequence
 
