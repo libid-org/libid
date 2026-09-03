@@ -39,7 +39,9 @@ CCDP owns Callback behavior. The OAuth Bridge owns the registered callback
 document and shell, then dynamically loads CCDP's same-origin Callback module
 because the registered OAuth redirect URI must terminate on the bridge origin.
 
-## Browser resources and routes
+## Documents and Routes
+
+### Common
 
 Before launch, the Application freezes the CCDP origin, redirect URI,
 platform authorization URL, ceremony ID, platform ID, and platform ceremony
@@ -79,8 +81,6 @@ which participant initiates each navigation, what each message means, and their
 order. Each recipient validates its permitted inbound messages and enforces
 direction and state before acting.
 
-## Version
-
 This document defines `CCDPVersion = 1`, which substitutes `1` for
 `{CCDPVersion}` in the routes above. The version also appears in OAuth `state`
 and selects matching Callback code, CCDP Host documents and Worker, fragment
@@ -93,7 +93,20 @@ Bridge dynamically loads the matching Callback module; the CCDP Host documents
 execute their implementations directly. Internal bundle names are not protocol
 surface. The Prefetch and Prover documents and Worker share the CCDP origin.
 
-## Resource contracts
+The CCDP Host may serve the latest implementation compatible with a CCDP
+version at these paths. Prefetch, Prover, and Worker responses use normal HTTP
+cache revalidation, including an ETag, while implementation-private
+content-addressed assets remain long-lived and immutable. A breaking change
+uses a new CCDP-version path.
+
+With `allowedApplicationOrigins: '*'`, the Prefetch and Prover accept any valid
+browser-observed HTTPS Application origin and pin that exact origin and source
+for each carrier. The Application exact-authenticates the configured CCDP Host.
+Open admission there grants only public asset prefetch and processing of the
+connecting Application's own proof request; neither document receives an OAuth
+return directly from the platform. Callback exact-authenticates the Application
+against the OAuth Bridge's deployment allowlist before releasing that return.
+Asset caching and popup-connection construction are outside CCDP.
 
 ### Callback
 
@@ -103,7 +116,7 @@ contract alone defines that shell, its registered `redirectUri`, URL clearing,
 version selection, response policy, and module invocation. Once invoked,
 Callback owns only its CCDP connection, messages, navigation, and presentation.
 
-### Prefetch and Prover documents
+### Prefetch and Prover
 
 The CCDP Host serves two versioned, request-invariant documents:
 
@@ -119,27 +132,13 @@ exists. It may load implementation-private immutable chunks and proving assets.
 The two documents have different isolation headers but the same deployment
 inputs and empty mount point.
 
-`GET /ccdp/v{CCDPVersion}/worker.js` serves the same-origin module Service Worker registered
-by Prefetch. It composes temporary MessagePort continuity with asset and CRS
-single flights and caches for the later Prover. The route is required; whether
-its bytes are an on-disk file, generated output, or embedded in the CCDP Host
-binary is not part of CCDP.
+### Worker
 
-The CCDP Host may serve the latest implementation compatible with a CCDP
-version at these paths. Prefetch and Prover responses use normal HTTP
-cache revalidation, including an ETag, while implementation-private
-content-addressed assets remain long-lived and immutable. A breaking change
-uses a new CCDP-version path.
-
-With `allowedApplicationOrigins: '*'`, the Prefetch and Prover accept any valid
-browser-observed HTTPS Application origin and pin that exact origin and source
-for each carrier. The Application exact-authenticates the configured CCDP Host.
-Open admission there grants only public asset prefetch and processing of
-the connecting Application's own proof request; neither document receives an
-OAuth return directly from the platform. Callback
-exact-authenticates the Application against the OAuth Bridge's deployment
-allowlist before releasing that return.
-Asset caching and popup-connection construction are outside CCDP.
+`GET /ccdp/v{CCDPVersion}/worker.js` serves the same-origin module Service
+Worker registered by Prefetch. It composes temporary MessagePort continuity
+with asset and CRS single flights and caches for the later Prover. The route is
+required; whether its bytes are an on-disk file, generated output, or embedded
+in the CCDP Host binary is not part of CCDP.
 
 ## End-to-end sequence
 
