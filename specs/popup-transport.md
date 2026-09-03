@@ -12,14 +12,14 @@ application document and a sequence of popup documents: how endpoints are
 identified and allowlisted, what a message is, what delivery guarantees a
 protocol above may rely on, how navigation and closure behave, what
 continuity is guaranteed across popup-document replacement, and how failure
-is reported. A protocol layered on this transport cites these rules instead
-of restating browser mechanics.
+is reported. A Carried Protocol cites these rules instead of restating
+browser mechanics.
 
 It does not own the wire format of any carrier (the MessagePort handshake,
 the Service Worker port keeper, WebRTC signaling), the programming interface
-of an implementation, its diagnostic catalog, or any protocol carried over
-the connection. Those belong to the implementation, currently
-[`@libid/popup`](../ts/packages/popup/README.md), and to the protocols above.
+of an implementation, its diagnostic catalog, or any Carried Protocol.
+Those belong to the implementation, currently
+[`@libid/popup`](../ts/packages/popup/README.md), and to the Carried Protocols.
 
 ## 2. Terminology
 
@@ -41,7 +41,7 @@ Logical Connection: One bidirectional channel between the Application
    Endpoint and the current Popup Endpoint, identified by one Connection ID
    and surviving Participating Document replacement.
 
-Connection ID: The caller-supplied identifier of one Logical Connection
+Connection ID: The Carried Protocol's identifier of one Logical Connection
    (§5). It correlates endpoints; it is not a capability.
 
 Application Endpoint: The connection endpoint in the Application Document.
@@ -62,7 +62,11 @@ Carrier: The native browser channel the Logical Connection currently uses.
 Fallback Carrier: An optional Carrier that does not need the opener
    relationship, supplied by deployment configuration in every document.
 
-Caller Message: A value a protocol above sends over the Logical Connection.
+Carried Protocol: The protocol layered on this transport, which owns every
+   value it sends over the Logical Connection and the meaning of each.
+
+Protocol Message: A value the Carried Protocol sends over the Logical
+   Connection.
 
 Control: One of the two transport-owned messages, `navigate` and
    `close-popup`, sent only by the Application Endpoint.
@@ -113,11 +117,11 @@ unmodified implementation and user agent (ASM-POPUP-01).
   document in another window cannot bind, select, replace, or control it,
   whatever it knows.
 - SP-POPUP-03:
-  Caller Messages travel only over the authenticated Carrier. No cookie,
+  Protocol Messages travel only over the authenticated Carrier. No cookie,
   storage, URL, request, or continuity record ever carries one.
 - SP-POPUP-04:
   Only the Application Endpoint can navigate or close the Popup through the
-  Logical Connection. No Caller Message, URL, or storage value selects a
+  Logical Connection. No Protocol Message, URL, or storage value selects a
   destination or closes the Popup.
 - SP-POPUP-05:
   Loss of a Carrier, an endpoint, the Popup, or Continuity is never observed
@@ -135,7 +139,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
   An implementation MUST reject any other spelling before any carrier,
   continuity, or signaling work and MUST NOT normalize case or format.
 - REQ-POPUP-ID-02:
-  The protocol above MUST generate each Connection ID with a
+  The Carried Protocol MUST generate each Connection ID with a
   cryptographically secure random source, MUST use a fresh value for every
   Logical Connection, and MUST NOT reuse a value after failure or closure.
   The transport keeps no durable registry of used values.
@@ -146,7 +150,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
 - REQ-POPUP-ID-04:
   An implementation MUST use the Connection ID only for correlation and
   authentication of its own controls. It MUST NOT treat possession of the
-  ID as authority and MUST NOT expose it to the protocol above through
+  ID as authority and MUST NOT expose it to the Carried Protocol through
   transported values.
 
 ## 6. Origin allowlists and binding
@@ -186,15 +190,15 @@ unmodified implementation and user agent (ASM-POPUP-01).
 ## 7. Message model
 
 - REQ-POPUP-MSG-01:
-  A Caller Message is a plain record with a string `type` of 1 to 64 UTF-16
+  A Protocol Message is a plain record with a string `type` of 1 to 64 UTF-16
   code units. The transport reads only `type` for routing and never
   interprets any other field.
 - REQ-POPUP-MSG-02:
   The discriminators `navigate` and `close-popup` are reserved for Controls.
-  A protocol above MUST NOT send or register either; an implementation MUST
+  The Carried Protocol MUST NOT send or register either; an implementation MUST
   reject the attempt synchronously.
 - REQ-POPUP-MSG-03:
-  A protocol above registers, per discriminator, exactly one decoder and
+  The Carried Protocol registers, per discriminator, exactly one decoder and
   handler. For each inbound value the transport MUST select the registered
   decoder by `type`, call it exactly once, and deliver the decoded message
   to its handler. Duplicate registration MUST be rejected.
@@ -205,39 +209,39 @@ unmodified implementation and user agent (ASM-POPUP-01).
   accepted direction of each message; ordering and protocol state remain the
   handler's responsibility.
 - REQ-POPUP-MSG-05:
-  A protocol above MUST register its handlers before yielding to the event
+  The Carried Protocol MUST register its handlers before yielding to the event
   loop after obtaining its endpoint. The transport delivers inbound values
   as later tasks and MUST NOT queue a value for a handler registered later.
 - REQ-POPUP-MSG-06:
   Sending without a selected Carrier, or after closure, MUST fail
-  synchronously. The transport MUST NOT queue Caller Messages outside a
+  synchronously. The transport MUST NOT queue Protocol Messages outside a
   Carrier.
 - REQ-POPUP-MSG-07:
   Values are transported by structured clone. The transport MUST NOT add
   encoding, normalization, or copies for its built-in Carrier, and MUST
   deliver the received object itself to the decoder. A Fallback Carrier MAY
-  publish a value-domain and size bound, which the protocol above MUST
+  publish a value-domain and size bound, which the Carried Protocol MUST
   respect.
 
 ## 8. Delivery guarantees
 
 - REQ-POPUP-DELIVER-01:
-  Over one selected Carrier, Caller Messages are delivered in send order and
+  Over one selected Carrier, Protocol Messages are delivered in send order and
   at most once.
 - REQ-POPUP-DELIVER-02:
-  No Caller Message is delivered before both endpoints have authenticated
-  (REQ-POPUP-ALLOW-04), and every Caller Message stays behind that
+  No Protocol Message is delivered before both endpoints have authenticated
+  (REQ-POPUP-ALLOW-04), and every Protocol Message stays behind that
   authentication on the ordered channel.
 - REQ-POPUP-DELIVER-03:
   Sending is not an acknowledgement. The transport provides no delivery
-  receipt for Caller Messages or Controls.
+  receipt for Protocol Messages or Controls.
 - REQ-POPUP-DELIVER-04:
   Background suspension of either document MAY delay delivery. It is not
   success, cancellation, or a reason to select another Carrier; delivery
   after resumption preserves order.
 - REQ-POPUP-DELIVER-05:
-  Carrier loss MAY be silent. A Caller Message sent into a lost Carrier
-  succeeds locally and is lost. The protocol above MUST derive outcomes only
+  Carrier loss MAY be silent. A Protocol Message sent into a lost Carrier
+  succeeds locally and is lost. The Carried Protocol MUST derive outcomes only
   from messages it receives.
 
 ## 9. Lifecycle, navigation, and control
@@ -257,7 +261,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
 - REQ-POPUP-CONTROL-01:
   Controls travel from the Application Endpoint to the Popup Endpoint only.
   A Control received by the Application Endpoint MUST fail the Logical
-  Connection. Controls carry no Caller Message, credential, or result.
+  Connection. Controls carry no Protocol Message, credential, or result.
 - REQ-POPUP-CONTROL-02:
   The first accepted Control is terminal for the receiving Participating
   Document. A later, duplicate, replayed, unknown, or malformed Control MUST
@@ -285,7 +289,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
   receiving `close-popup`, or closing itself, MUST release the connection
   and close its own window. Closure is idempotent.
 - REQ-POPUP-CONTROL-07:
-  A protocol above MUST invoke closure only for a Popup created as in
+  The Carried Protocol MUST invoke closure only for a Popup created as in
   ASM-POPUP-05. A same-tab or full-page presentation MUST NOT be closed
   through the transport; there is no reliable runtime probe for
   closability after Isolation.
@@ -293,7 +297,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
   Navigation to a Non-participating Document leaves the Application
   Endpoint without a usable Carrier until the next Participating Document
   authenticates, and the Application Endpoint cannot observe that window.
-  Caller Messages and Controls sent meanwhile succeed locally and are lost;
+  Protocol Messages and Controls sent meanwhile succeed locally and are lost;
   closure still uses Direct Control while the handle is usable.
 - REQ-POPUP-LIFE-04:
   Any navigation of the Popup outside the transport's own operation loses
@@ -319,7 +323,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
 - REQ-POPUP-CONT-02:
   A preserved Carrier is the same authenticated channel: the Application
   Endpoint observes no replacement, no re-authentication occurs, and every
-  Caller Message already sent stays in order ahead of later ones.
+  Protocol Message already sent stays in order ahead of later ones.
 - REQ-POPUP-CONT-03:
   When the same-origin destination does not resolve the same active
   continuity owner as the source, or the bound expires, the destination
@@ -329,14 +333,14 @@ unmodified implementation and user agent (ASM-POPUP-01).
   A cross-origin replacement, including a cross-site one, MUST NOT attempt
   Continuity. The source Popup Endpoint retires and the destination
   authenticates a fresh Carrier. The Connection ID and the registrations of
-  the protocol above are unchanged; REQ-POPUP-LIFE-03 applies until the
+  the Carried Protocol are unchanged; REQ-POPUP-LIFE-03 applies until the
   destination authenticates.
 - REQ-POPUP-CONT-05:
   If Continuity cannot be prepared for a replacement that requires it, the
   transport MUST reject before navigating and MUST NOT navigate with live
   state.
 - REQ-POPUP-CONT-06:
-  No Continuity mechanism MAY carry a Caller Message, and none MAY persist
+  No Continuity mechanism MAY carry a Protocol Message, and none MAY persist
   beyond its bound or across a Non-participating Document.
 
 ## 11. Failure semantics
@@ -346,7 +350,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
   release no later value. It MUST NOT synthesize a Control, close the Popup,
   or select a weaker Carrier.
 - REQ-POPUP-FAIL-02:
-  An operation the protocol above invoked reports failure through that
+  An operation the Carried Protocol invoked reports failure through that
   operation. A failure with no invoking operation is reported only through
   the implementation's local diagnostics.
 - REQ-POPUP-FAIL-03:
@@ -409,7 +413,7 @@ this specification.
 
 ## 13. Security considerations
 
-- The Connection ID appears in the Popup's URL under most protocols above
+- The Connection ID appears in the Popup's URL under most Carried Protocols
   and reaches every Non-participating Document the Popup visits. By
   REQ-POPUP-ALLOW-05 such a document can neither bind nor deliver; by
   SP-POPUP-06 the worst it can do is terminate the connection, which it
@@ -424,7 +428,7 @@ this specification.
   bounded time. Any same-origin document that knows the Connection ID could
   claim it within that bound; same-origin documents are already inside the
   trust boundary of the Participating Document.
-- Nothing in this transport authenticates the user, the protocol above, or
+- Nothing in this transport authenticates the user, the Carried Protocol, or
   the outcome of anything the Popup did; it authenticates only which
   documents are talking.
 
