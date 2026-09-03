@@ -415,7 +415,7 @@ platform/version rules before credential use. It sends zero or more
 [`AppCancelCeremony`](#appcancelceremony). The first terminal outcome—proof
 delivery, abort, or cancellation—ends the phase; later messages have no effect.
 
-#### 5. Terminal outcomes
+### Terminal outcomes
 
 Terminal processing begins when the Application cancels an active Callback or
 Prover, Callback or Prover reports an abort, or Prover delivers a proof. These
@@ -435,10 +435,13 @@ sequenceDiagram
     participant C as Callback
     participant P as Prover
 
+    Note over A,O: Phase 1 - Prefetch to Authorization
     A->>F: Open Prefetch
     F->>F: Register Worker and dispatch selected-profile fetches
     F-->>A: PrefetchStarted
     A->>O: Navigate popup to Authorization
+
+    Note over O,C: Phase 2 - Authorization to Callback
     Note over O: User completes or denies login and consent
     O->>B: Return to redirectUri
     B->>B: Capture and clear return, then select CCDP version
@@ -448,6 +451,8 @@ sequenceDiagram
         C-->>A: AbortCeremony
     else Callback operational
         C-->>A: CallbackDeliverParams
+
+        Note over A,P: Phase 3 - Callback to Prover
         Note over A,C: Application may cancel while Callback remains active
         C->>P: Preserve connection and navigate popup to Prover
         P->>P: Clear fragment and accept connection
@@ -459,6 +464,8 @@ sequenceDiagram
                 A-->>P: AppCancelCeremony
             else Accepted return
                 A-->>P: AppRequestProof
+
+                Note over A,P: Phase 4 - Prover execution
                 loop Zero or more progress events
                     P-->>A: ProverNotifyEvent
                 end
