@@ -429,32 +429,47 @@ sequenceDiagram
     participant A as Application
     participant F as Prefetch
     participant O as Authorization
+    participant B as OAuth Bridge shell
     participant C as Callback
     participant P as Prover
 
-    A->>F: Open popup at /prefetch
-    Note over A,F: Popup connection acceptance and prefetch start
+    A->>F: Open Prefetch
+    F->>F: Register Worker and dispatch selected-profile fetches
     F-->>A: PrefetchStarted
-    A->>O: Navigate popup to platformAuthorizationUrl
-    O->>C: Return to redirectUri, then load /callback.js
-    Note over C: Receive the cleared OAuth return
-    C-->>A: CallbackDeliverParams over popup connection
-    C->>P: Continue connection and navigate to /prover
-    Note over C,P: Prover replaces Callback in the same popup
-    alt Application does not proceed
-        A-->>P: AppCancelCeremony
-    else Application requests proof
-        A-->>P: AppRequestProof
-        loop Zero or more progress events
-            P-->>A: ProverNotifyEvent
-        end
-        alt Technical failure
+    A->>O: Navigate popup to Authorization
+    Note over O: User completes or denies login and consent
+    O->>B: Return to redirectUri
+    B->>B: Capture and clear return, then select CCDP version
+    B->>C: Load Callback
+    Note over A,C: Callback accepts authenticated connection
+    alt Technical failure after Callback acceptance
+        C-->>A: AbortCeremony
+    else Callback operational
+        C-->>A: CallbackDeliverParams
+        Note over A,C: Application may cancel while Callback remains active
+        C->>P: Preserve connection and navigate popup to Prover
+        P->>P: Clear fragment and accept connection
+        alt Observable Prover activation failure
             P-->>A: AbortCeremony
-        else Proof generated
-            P-->>A: ProverDeliverProof
+        else Prover active
+            A->>A: Validate OAuth return
+            alt Cancellation, denial, or invalid return
+                A-->>P: AppCancelCeremony
+            else Accepted return
+                A-->>P: AppRequestProof
+                loop Zero or more progress events
+                    P-->>A: ProverNotifyEvent
+                end
+                alt Technical failure
+                    P-->>A: AbortCeremony
+                else Proof delivered
+                    P-->>A: ProverDeliverProof
+                end
+            end
         end
     end
 ```
 
-Popup-connection mechanics and URL clearing are omitted from the diagram; the
-contracts above remain required.
+Carrier mechanics and proof-generation internals are omitted from the diagram;
+the contracts above remain required. `AppCancelCeremony` targets Callback when
+it is still active and Prover after the transition.
