@@ -253,6 +253,15 @@ unmodified implementation and user agent (ASM-POPUP-01).
   Carrier loss MAY be silent. A Protocol Message sent into a lost Carrier
   succeeds locally and is lost. The Carried Protocol MUST derive outcomes only
   from messages it receives.
+- REQ-POPUP-DELIVER-06:
+  Protocol Messages sent over a Carrier before a Control are delivered to the
+  Popup Endpoint's handlers before the Popup acts on that Control, whatever
+  the destination. A transition that must carry the Application Endpoint's
+  reply is therefore driven by the Application Endpoint, which replies and
+  then navigates, or the Popup navigates only after receiving the reply. The
+  transport buffers nothing and retransmits nothing; navigation away by the
+  Application Endpoint does not wait for the Carrier and MUST NOT be used to
+  deliver a reply.
 
 ## 9. Lifecycle, navigation, and control
 
@@ -423,9 +432,11 @@ this specification.
   decoder runs exactly once and its object is delivered; unknown, malformed,
   and decoder-rejected input fails the connection and reaches no handler;
   sending without a Carrier fails synchronously and queues nothing.
-- TEST-POPUP-06 (exercises REQ-POPUP-DELIVER-01 to REQ-POPUP-DELIVER-05):
+- TEST-POPUP-06 (exercises REQ-POPUP-DELIVER-01 to REQ-POPUP-DELIVER-06):
   Values arrive in order and once; nothing arrives before mutual
-  authentication; a closed peer delivers nothing and produces no outcome.
+  authentication; a closed peer delivers nothing and produces no outcome; a
+  reply sent before a navigation Control reaches the Popup's handler before
+  the Popup leaves for a cross-origin destination.
 - TEST-POPUP-07 (exercises REQ-POPUP-CONTROL-01 to REQ-POPUP-CONTROL-06, REQ-POPUP-LIFE-06):
   Controls are application-to-popup and one-shot; malformed destinations
   fail before any browser operation; navigation uses the Carrier when
@@ -485,7 +496,7 @@ from; those documents keep the mechanics.
 | REQ-POPUP-ALLOW-03 to ALLOW-05 | message-port.md, Failure and security invariants; Authentication |
 | REQ-POPUP-ALLOW-06 | connection.md, Popup creation and native-anchor fallback |
 | REQ-POPUP-MSG-01 to MSG-07 | connection.md, `send` and `on` rules; message-port.md, Message delivery |
-| REQ-POPUP-DELIVER-01 to DELIVER-05 | connection.md, Failure and security rules; message-port.md, invariants |
+| REQ-POPUP-DELIVER-01 to DELIVER-06 | connection.md, Failure and security rules; message-port.md, invariants |
 | REQ-POPUP-LIFE-01, LIFE-02 | connection.md, Selection |
 | REQ-POPUP-CONTROL-01 to CONTROL-07 | control.md, Records; Execution; Security boundary |
 | REQ-POPUP-LIFE-03 to LIFE-06 | connection.md, navigate rules; Continuity across navigations |
