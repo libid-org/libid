@@ -431,15 +431,14 @@ navigation: the Application composition alone decides whether to retain,
 navigate, or close the popup because any subsequent flow is outside CCDP.
 Terminal cleanup follows the [invariants](#invariants).
 
-### End-to-end sequence
+### Successful sequence
 
 ```mermaid
 sequenceDiagram
     participant A as Application
     participant F as Prefetch
     participant O as Authorization
-    participant B as OAuth Bridge shell
-    participant C as Callback
+    participant C as Callback document
     participant P as Prover
 
     Note over A,O: Phase 1 - Prefetch to Authorization
@@ -449,43 +448,28 @@ sequenceDiagram
     A->>O: Navigate popup to Authorization
 
     Note over O,C: Phase 2 - Authorization to Callback
-    Note over O: User completes or denies login and consent
-    O->>B: Return to redirectUri
-    B->>B: Capture and clear return, then select CCDP version
-    B->>C: Load Callback in the same document
+    Note over O: User completes login and consent
+    O->>C: Return to redirectUri
+    C->>C: Capture and clear return
+    C->>C: Select CCDP version and load Callback
     Note over A,C: Callback accepts authenticated connection
-    alt Technical failure after Callback acceptance
-        C-->>A: AbortCeremony
-    else Callback operational
-        C-->>A: CallbackDeliverParams
+    C-->>A: CallbackDeliverParams
 
-        Note over A,P: Phase 3 - Callback to Prover
-        Note over A,C: Application may cancel while Callback remains active
-        C->>P: Preserve connection and navigate popup to Prover
-        P->>P: Clear fragment and accept connection
-        alt Observable Prover activation failure
-            P-->>A: AbortCeremony
-        else Prover active
-            A->>A: Validate OAuth return
-            alt Cancellation, denial, or invalid return
-                A-->>P: AppCancelCeremony
-            else Accepted return
-                A-->>P: AppRequestProof
+    Note over A,P: Phase 3 - Callback to Prover
+    Note over A,P: Application validation and Prover activation may overlap
+    C->>P: Preserve connection and navigate popup to Prover
+    P->>P: Clear fragment and accept connection
+    A->>A: Validate accepted OAuth return
+    A-->>P: AppRequestProof
 
-                Note over A,P: Phase 4 - Prover execution
-                loop Zero or more progress events
-                    P-->>A: ProverNotifyEvent
-                end
-                alt Technical failure
-                    P-->>A: AbortCeremony
-                else Proof delivered
-                    P-->>A: ProverDeliverProof
-                end
-            end
-        end
+    Note over A,P: Phase 4 - Prover execution
+    loop Zero or more progress events
+        P-->>A: ProverNotifyEvent
     end
+    P-->>A: ProverDeliverProof
 ```
 
-Carrier mechanics and proof-generation internals are omitted from the diagram;
-the contracts above remain required. `AppCancelCeremony` targets Callback when
-it is still active and Prover after the transition.
+Only successful OAuth acceptance and proof delivery are shown. Cancellation and
+failure follow [Terminal outcomes](#terminal-outcomes) and the
+[message contracts](#messages). Carrier mechanics and proof-generation
+internals are omitted.
