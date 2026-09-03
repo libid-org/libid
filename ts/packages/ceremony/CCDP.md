@@ -50,7 +50,6 @@ CCDP origin.
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#platformId</code></td><td><code>#ceremonyVersion</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>exact identifier from the selected platform profile</td><td>unsigned 16-bit platform ceremony version</td></tr></table> |
 | Host and context | CCDP Host; versioned, top-level, and non-isolated ceremony-popup document |
 | Role | Starts the selected profile's fetches before the Application continues through [Prefetch to Authorization](#1-prefetch-to-authorization). It receives no authorization URL, OAuth return, or proof input. |
-| Hosting profile | [Prefetch document](CCDP_HOST.md#prefetch-and-airlock-documents) |
 
 ### Authorization `GET platformAuthorizationUrl`
 
@@ -67,7 +66,6 @@ CCDP origin.
 |---|---|
 | Host and context | CCDP Host; versioned, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
 | Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
-| Hosting profile | [Callback module](CCDP_HOST.md#callback-module). The OAuth Bridge contract independently defines the shell, registered `redirectUri`, URL clearing, version selection, document policy, and module invocation. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
 ### Airlock `GET /airlock`
@@ -77,7 +75,6 @@ CCDP origin.
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
 | Host and context | CCDP Host; versioned, top-level, and non-isolated ceremony-popup document |
 | Role | Accepts a fresh carrier for the same logical Application connection after Callback, then initiates same-origin connected navigation to Prover. It exists solely to establish the carrier on the CCDP origin before Prover isolation and receives no OAuth return, proof request, or platform configuration. |
-| Hosting profile | [Airlock document](CCDP_HOST.md#prefetch-and-airlock-documents) |
 | Presentation and cleanup | Renders a fixed transition or failure view with an inline libID logo and accepts no Application markup or renderer. It retains no ceremony data and releases listeners and connection references when replaced or terminal. |
 
 Airlock is a browser-compatibility shim, not a ceremony or proving stage. A
@@ -96,7 +93,6 @@ Prover iframe without that top-level navigation.
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
 | Host and context | CCDP Host; versioned, top-level, cross-origin-isolated ceremony-popup document |
 | Role | Claims the carrier preserved by Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
-| Hosting profile | [Prover document](CCDP_HOST.md#prover-document) |
 | Presentation and cleanup | Renders a persistent inline libID logo and one accessible milestone progress bar. It begins at **Preparing proof**, advances only from valid platform events, and reaches 100% only on proof delivery. After `SLOW_PROVING_HINT_MS = 15_000`, it adds a nonblocking **Still proving** notice which may suggest enabling JavaScript JIT in Vanadium site controls. It accepts no Application markup or renderer, presents no ETA, and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
 
 ### Worker `GET /worker.js`
@@ -105,7 +101,6 @@ Prover iframe without that top-level navigation.
 |---|---|
 | Host and context | CCDP Host; same-origin module Service Worker registered by Prefetch |
 | Role | Composes Airlock-to-Prover MessagePort continuity with asset and CRS single flights and caches for Prefetch and Prover. |
-| Hosting profile | [Worker](CCDP_HOST.md#worker) |
 
 ### Common
 
@@ -136,9 +131,7 @@ names are not protocol surface. Callback, Prefetch, Airlock, Prover, and Worker
 share the CCDP origin.
 
 The Prefetch, Airlock, and Prover paths select both CCDP version and document
-role. The [CCDP Host contract](CCDP_HOST.md#protocol-resources) defines their
-response construction, caching, retained versions, and implementation-private
-resources.
+role.
 
 Platform Ceremony Version independently versions one platform's authorization,
 OAuth, proof, and output semantics. Popup connection controls and the OAuth
@@ -355,11 +348,10 @@ The protocol advances one named ceremony popup through
 [Authorization](#authorization-get-platformauthorizationurl),
 [Callback](#callback-get-callbackjs), [Airlock](#airlock-get-airlock), and
 [Prover](#prover-get-prover). Those route sections own each participant's
-inputs, context, hosting profile, and role; [Messages](#messages) owns the records
-crossing the popup connection. The [CCDP Host contract](CCDP_HOST.md) defines
-the referenced response policies. The phases below own their sequencing, entry
-conditions, and exit conditions. Navigation retires the source document, and no
-later message can reactivate an earlier phase.
+inputs, context, and role; [Messages](#messages) owns the records crossing the
+popup connection. The phases below own their sequencing, entry conditions, and
+exit conditions. Navigation retires the source document, and no later message
+can reactivate an earlier phase.
 
 ### Invariants
 
