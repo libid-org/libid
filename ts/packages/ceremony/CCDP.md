@@ -39,6 +39,32 @@ CCDP owns Callback behavior. The OAuth Bridge owns the registered callback
 document and shell, then dynamically loads CCDP's same-origin Callback module
 because the registered OAuth redirect URI must terminate on the bridge origin.
 
+## Protocol invariants
+
+- One live ceremony owns one authenticated popup connection. Connection
+  ownership supplies message correlation and its private version; loaded
+  resources supply the CCDP version. CCDP messages repeat neither.
+- Each participant accepts only exact records permitted by its direction,
+  current state, and cardinality. Unknown, malformed, replayed, out-of-order,
+  wrong-direction, and post-terminal values change no state.
+- Browser-observed exact origins establish authority. Same-site placement,
+  navigation history, request headers, and message fields do not substitute for
+  connection authentication.
+- Documents use only the frozen locations and fragments defined here. A CCDP
+  message never selects an origin, implementation, or navigation destination.
+- No internal route carries an OAuth return, credential, proof input, or proof.
+  The platform-mandated callback URL is the sole ingress exception and is
+  cleared before Callback code runs.
+- Callback releases an OAuth return only after authenticating the Application.
+  Authorization receives no CCDP message or popup connection.
+- Progress, carrier state, navigation, popup closure, and unvalidated proof
+  delivery grant no authority and never constitute ceremony success.
+- The Application owns terminal popup lifetime. Callback's transition to
+  Prover is the only navigation initiated by a CCDP popup document; no CCDP
+  document closes the popup.
+- Cancellation and context-loss cleanup are best effort. CCDP has no durable
+  checkpoint, ceremony recovery, or migration to another popup connection.
+
 ## Documents and Routes
 
 ### Prefetch `GET /prefetch`
@@ -164,43 +190,6 @@ connecting Application's own proof request; neither document receives an OAuth
 return directly from the platform. Callback exact-authenticates the Application
 against the OAuth Bridge's deployment allowlist before releasing that return.
 Asset caching and popup-connection construction are outside CCDP.
-
-## End-to-end sequence
-
-```mermaid
-sequenceDiagram
-    participant A as Application
-    participant F as Prefetch
-    participant O as Authorization
-    participant C as Callback
-    participant P as Prover
-
-    A->>F: Open popup at /prefetch
-    Note over A,F: Popup connection acceptance and prefetch start
-    F-->>A: ProverPrefetchingAssets
-    A->>O: Navigate popup to platformAuthorizationUrl
-    O->>C: Return to redirectUri, then load /callback.js
-    Note over C: Receive the cleared OAuth return
-    C-->>A: CallbackDeliverParams over popup connection
-    C->>P: Continue connection and navigate to /prover
-    Note over C,P: Prover replaces Callback in the same popup
-    alt Application does not proceed
-        A-->>P: AppCancelCeremony
-    else Application requests proof
-        A-->>P: AppRequestProof
-        loop Zero or more progress events
-            P-->>A: ProverNotifyEvent
-        end
-        alt Technical failure
-            P-->>A: AbortCeremony
-        else Proof generated
-            P-->>A: ProverDeliverProof
-        end
-    end
-```
-
-Popup-connection mechanics and URL clearing are omitted from the diagram but
-are required at the transitions below.
 
 ## Protocol phases
 
@@ -400,26 +389,39 @@ and bounds defined here. Unknown fields, coercion, normalization, defaults, and
 unrecognized discriminators are invalid. The selected platform/version rules
 validate the opaque `proof` payload separately.
 
-## Shared invariants
+## End-to-end sequence
 
-- One live ceremony accepts one prefetch readiness and one
-  `CallbackDeliverParams`.
-- No CCDP message reaches the application before popup connection acceptance.
-- The popup connection authenticates before any OAuth return reaches the
-  application and does not interpret or alter message meaning.
-- Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal
-  values change no state.
-- No CCDP message carries ceremony ID, CCDP version, or popup-connection
-  version. Popup-connection ownership supplies correlation and its private
-  version; the loaded route supplies CCDP version.
-- Prefetch, Callback, and Prover accept only the locations and fragments defined
-  above; received CCDP values never select a navigation destination.
-- Progress remains advisory and cannot authorize, cancel, or complete a
-  ceremony.
-- Connection state, navigation, popup closure, and progress are never a ceremony
-  result.
-- The Application owns popup lifetime after every terminal outcome; Callback,
-  Prover, and ceremony cleanup never close the connection.
-- Cancellation and context-loss cleanup are best effort.
-- No ceremony recovery, durable browser checkpoint, or migration to another
-  popup connection exists.
+```mermaid
+sequenceDiagram
+    participant A as Application
+    participant F as Prefetch
+    participant O as Authorization
+    participant C as Callback
+    participant P as Prover
+
+    A->>F: Open popup at /prefetch
+    Note over A,F: Popup connection acceptance and prefetch start
+    F-->>A: ProverPrefetchingAssets
+    A->>O: Navigate popup to platformAuthorizationUrl
+    O->>C: Return to redirectUri, then load /callback.js
+    Note over C: Receive the cleared OAuth return
+    C-->>A: CallbackDeliverParams over popup connection
+    C->>P: Continue connection and navigate to /prover
+    Note over C,P: Prover replaces Callback in the same popup
+    alt Application does not proceed
+        A-->>P: AppCancelCeremony
+    else Application requests proof
+        A-->>P: AppRequestProof
+        loop Zero or more progress events
+            P-->>A: ProverNotifyEvent
+        end
+        alt Technical failure
+            P-->>A: AbortCeremony
+        else Proof generated
+            P-->>A: ProverDeliverProof
+        end
+    end
+```
+
+Popup-connection mechanics and URL clearing are omitted from the diagram; the
+contracts above remain required.
