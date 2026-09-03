@@ -450,8 +450,22 @@ from; those documents keep the mechanics.
 
 ## 15. References
 
-- HTML Standard, cross-document messaging and message channels.
-- HTML Standard, browsing-context-group switches due to
-  Cross-Origin-Opener-Policy.
-- Service Workers, registration scope and client matching.
-- RFC 4122, A Universally Unique IDentifier (UUID) URN Namespace.
+Normative:
+
+- [HTML] WHATWG HTML Standard. Cross-document messaging
+  (<https://html.spec.whatwg.org/multipage/web-messaging.html#crossDocumentMessages>),
+  message channels
+  (<https://html.spec.whatwg.org/multipage/web-messaging.html#message-channels>),
+  safe passing of structured data
+  (<https://html.spec.whatwg.org/multipage/structured-data.html#safe-passing-of-structured-data>),
+  browsing-context-group switches due to Cross-Origin-Opener-Policy
+  (<https://html.spec.whatwg.org/multipage/browsers.html#coop-bcg-switch>),
+  and valid navigable target names
+  (<https://html.spec.whatwg.org/multipage/document-sequences.html#valid-navigable-target-name-or-keyword>).
+- [SW] W3C Service Workers. Registration scope matching
+  (<https://w3c.github.io/ServiceWorker/#scope-match-algorithm>).
+- [RFC4122] A Universally Unique IDentifier (UUID) URN Namespace
+  (<https://www.rfc-editor.org/rfc/rfc4122>).
+- [RFC2119] Key words for use in RFCs to Indicate Requirement Levels
+  (<https://www.rfc-editor.org/rfc/rfc2119>), as clarified by [RFC8174]
+  (<https://www.rfc-editor.org/rfc/rfc8174>).
