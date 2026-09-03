@@ -43,6 +43,8 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 ### Common
 
+#### Route map
+
 Before launch, the Application freezes the CCDP origin, redirect URI,
 platform authorization URL, ceremony ID, platform ID, and platform ceremony
 version. CCDP uses these concrete browser resources and routes:
@@ -54,6 +56,8 @@ version. CCDP uses these concrete browser resources and routes:
 | Callback | OAuth Bridge | dynamically loaded into the top-level, non-isolated callback document | `/ccdp/v{CCDPVersion}/callback.js` | accepts the bridge-captured OAuth-platform return, delivers it, and navigates to the Prover |
 | Prover | CCDP Host | ceremony popup, top-level and COOP/COEP-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prover` | receives the validated OAuth result, exposes visible progress, and generates the proof |
 | Worker | CCDP Host | module Service Worker shared by Prefetch and Prover | `${ccdpOrigin}/ccdp/v{CCDPVersion}/worker.js` | preserves popup MessagePorts across same-origin navigation and owns asset/CRS single flights and caches |
+
+#### Popup and fragment model
 
 The **ceremony popup** is a reusable browsing context, not an actor or document.
 It sequentially contains Prefetch → Authorization → Callback → Prover.
@@ -81,6 +85,8 @@ which participant initiates each navigation, what each message means, and their
 order. Each recipient validates its permitted inbound messages and enforces
 direction and state before acting.
 
+#### Versioning and implementations
+
 This document defines `CCDPVersion = 1`, which substitutes `1` for
 `{CCDPVersion}` in the routes above. The version also appears in OAuth `state`
 and selects matching Callback code, CCDP Host documents and Worker, fragment
@@ -93,11 +99,19 @@ Bridge dynamically loads the matching Callback module; the CCDP Host documents
 execute their implementations directly. Internal bundle names are not protocol
 surface. The Prefetch and Prover documents and Worker share the CCDP origin.
 
+The Prefetch and Prover paths select both CCDP version and document role; no
+fragment field repeats either. Each response contains its clearing bootstrap
+and entry code directly, so no root map, standardized root filename, or second
+entry-script request exists. Either may load implementation-private immutable
+chunks, and both provide only an empty mount point to their entry code.
+
 The CCDP Host may serve the latest implementation compatible with a CCDP
 version at these paths. Prefetch, Prover, and Worker responses use normal HTTP
 cache revalidation, including an ETag, while implementation-private
 content-addressed assets remain long-lived and immutable. A breaking change
 uses a new CCDP-version path.
+
+#### Origin policy
 
 With `allowedApplicationOrigins: '*'`, the Prefetch and Prover accept any valid
 browser-observed HTTPS Application origin and pin that exact origin and source
@@ -110,12 +124,16 @@ Asset caching and popup-connection construction are outside CCDP.
 
 ### Callback
 
+#### Location
+
 `GET /ccdp/v{CCDPVersion}/callback.js` is a same-origin JavaScript module whose
-primary use is dynamic loading by the OAuth Bridge's callback shell. The bridge
-contract alone defines that shell, its registered `redirectUri`, URL clearing,
-version selection, response policy, and module invocation. Once invoked,
-Callback owns its CCDP connection, unchanged OAuth-return delivery, transition
-to the Prover, script-owned transition UI, and one-shot cleanup.
+primary use is dynamic loading by the OAuth Bridge's callback shell.
+
+#### Lifecycle
+
+Once invoked, Callback owns its CCDP connection, unchanged OAuth-return
+delivery, transition to the Prover, script-owned transition UI, and one-shot
+cleanup.
 
 Callback installs no Service Worker and retains no state across navigation. It
 accepts the Application connection, locates the single routing `state` in the
@@ -124,6 +142,14 @@ to replace the same popup with the Prover. It does not classify the platform
 result, prefetch assets, load platform configuration, prove or verify anything,
 persist a checkpoint, or close the popup. Platform-aware validation remains
 with the Application and Prover as defined by the phases below.
+
+#### Response policy
+
+The OAuth Bridge contract alone defines the callback shell, its registered
+`redirectUri`, URL clearing, version selection, response policy, and module
+invocation.
+
+#### Presentation and cleanup
 
 The module renders its own fixed transition and failure views, including an
 inline libID logo. It accepts no Application markup or renderer. Terminal
@@ -134,12 +160,19 @@ uses `AbortCeremony`.
 
 ### Prefetch
 
+#### Location
+
 `GET /ccdp/v{CCDPVersion}/prefetch#ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
-is a versioned, request-invariant, top-level document. It accepts the initial
-Application connection, registers the Worker, dispatches prefetch for the exact
-fragment-selected platform profile, emits `ProverPrefetchingAssets`, and is then
-navigated away to the OAuth Platform. It receives no authorization URL, OAuth
-return, or proof input.
+is a versioned, request-invariant, top-level document.
+
+#### Lifecycle
+
+Prefetch accepts the initial Application connection, registers the Worker,
+dispatches prefetch for the exact fragment-selected platform profile, emits
+`ProverPrefetchingAssets`, and is then navigated away to the OAuth Platform. It
+receives no authorization URL, OAuth return, or proof input.
+
+#### Response policy
 
 The response uses `Content-Type: text/html`,
 `X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, a strong `ETag`,
@@ -149,12 +182,20 @@ the resources required by the closed Prefetch implementation.
 
 ### Prover
 
+#### Location
+
 `GET /ccdp/v{CCDPVersion}/prover#ceremonyId=<uuid>` is a versioned,
-request-invariant, top-level proof-generation document. It clears and validates
-its fragment, accepts the continuing Application connection, consumes one exact
-`AppRequestProof`, and emits only `ProverNotifyEvent`, `ProverDeliverProof`, or
-`AbortCeremony`. Its proof-generation pipelines, assets, notarization, and cache
-implementation are defined in [PROVING.md](PROVING.md).
+request-invariant, top-level proof-generation document.
+
+#### Lifecycle
+
+Prover clears and validates its fragment, accepts the continuing Application
+connection, consumes one exact `AppRequestProof`, and emits only
+`ProverNotifyEvent`, `ProverDeliverProof`, or `AbortCeremony`. Its
+proof-generation pipelines, assets, notarization, and cache implementation are
+defined in [PROVING.md](PROVING.md).
+
+#### Response policy
 
 The response uses `Content-Type: text/html`,
 `X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, a strong `ETag`,
@@ -166,6 +207,8 @@ implementation. Proving starts only after the document confirms
 cross-origin isolation, shared memory, and worker support; there is no weaker
 fallback.
 
+#### Presentation and cleanup
+
 The Prover renders a persistent inline libID logo and one accessible milestone
 progress bar. It starts at **Preparing proof**, advances only from valid
 platform events, and reaches 100% only on proof delivery. After
@@ -175,22 +218,25 @@ no Application markup or renderer and never presents an ETA. Terminal cleanup
 clears inputs, workers, timers, and listeners without closing or navigating the
 popup.
 
-The Prefetch and Prover paths select both CCDP version and document role; no
-fragment field repeats either. Each response contains its clearing bootstrap
-and entry code directly, so no root map, standardized root filename, or second
-entry-script request exists. Either may load implementation-private immutable
-chunks, and both provide only an empty mount point to their entry code.
-
 ### Worker
 
+#### Location
+
 `GET /ccdp/v{CCDPVersion}/worker.js` serves the same-origin module Service
-Worker registered by Prefetch. It composes temporary MessagePort continuity
-with asset and CRS single flights and caches for the later Prover. The route is
-required; whether its bytes are an on-disk file, generated output, or embedded
-in the CCDP Host binary is not part of CCDP. Its response uses the module
-Service Worker JavaScript media type, `X-Content-Type-Options: nosniff`,
-`Cache-Control: no-cache`, a strong `ETag`, and policies compatible with the
-isolated Prover and its controlled scope.
+Worker registered by Prefetch. The route is required; whether its bytes are an
+on-disk file, generated output, or embedded in the CCDP Host binary is not part
+of CCDP.
+
+#### Lifecycle
+
+Worker composes temporary MessagePort continuity with asset and CRS single
+flights and caches for the later Prover.
+
+#### Response policy
+
+The response uses the module Service Worker JavaScript media type,
+`X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, a strong `ETag`,
+and policies compatible with the isolated Prover and its controlled scope.
 
 ## End-to-end sequence
 
