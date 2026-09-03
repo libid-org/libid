@@ -63,7 +63,6 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 | Property | Contract |
 |---|---|
-| Parameters | None. The OAuth Bridge shell supplies the module's already-cleared callback input and deployment configuration. |
 | Host and context | Same-origin module dynamically loaded by the OAuth Bridge's top-level, non-isolated callback shell |
 | Lifecycle | Accepts the Application connection, locates the single routing `state` in the already-cleared return, emits `CallbackDeliverParams`, and asks the connection to replace the same popup with the Prover. It installs no Service Worker, retains no state across navigation, and does not classify the platform result, prefetch, load platform configuration, prove, verify, persist a checkpoint, or close the popup. |
 | Response policy | The OAuth Bridge contract alone defines the shell, registered `redirectUri`, URL clearing, version selection, response policy, and module invocation. |
@@ -83,7 +82,6 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 | Property | Contract |
 |---|---|
-| Parameters | None. |
 | Host and context | CCDP Host; same-origin module Service Worker registered by Prefetch |
 | Lifecycle | Composes temporary MessagePort continuity with asset and CRS single flights and caches for the later Prover. |
 | Response policy | Module Service Worker JavaScript media type; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; and policies compatible with the isolated Prover and its controlled scope. Whether its bytes are an on-disk file, generated output, or embedded in the CCDP Host binary is not part of CCDP. |
