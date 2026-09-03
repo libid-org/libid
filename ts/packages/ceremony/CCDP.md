@@ -73,7 +73,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 |---|---|
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#platformId</code></td><td><code>#ceremonyVersion</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>exact identifier from the selected platform profile</td><td>unsigned 16-bit platform ceremony version</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, and non-isolated ceremony-popup document |
-| Lifecycle | Accepts the initial Application connection, registers the Worker, dispatches prefetch for the exact fragment-selected platform profile, emits `ProverPrefetchingAssets`, and is then navigated away to the OAuth Platform. It receives no authorization URL, OAuth return, or proof input. |
+| Role | Starts the selected profile's fetches before the Application continues through [Prefetch to Authorization](#1-prefetch-to-authorization). It receives no authorization URL, OAuth return, or proof input. |
 | Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: unsafe-none`; no COEP; and `frame-ancestors 'none'`. CSP denies by default and admits only resources required by the closed Prefetch implementation. |
 
 ### Authorization `GET platformAuthorizationUrl`
@@ -82,7 +82,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 |---|---|
 | Parameters | The complete frozen URL is opaque to CCDP. The selected platform ceremony version owns its parameters. |
 | Host and context | Selected OAuth Platform; top-level ceremony-popup document |
-| Lifecycle | After Prefetch reports readiness, the Application navigates the popup here. The OAuth Platform owns login and consent, then returns approval or denial to the exact frozen `redirectUri`, where Callback begins. No CCDP participant runs and no CCDP message or popup connection is exposed to this document. |
+| Role | Owns login and consent during [Authorization to Callback](#2-authorization-to-callback). No CCDP participant runs and no CCDP message or popup connection is exposed to this document. |
 | Response policy | Controlled entirely by the OAuth Platform. CCDP assumes nothing about its markup, scripts, headers, or origin transitions; it may sever the opener or browsing-context group. Callback reconnects without assuming direct window continuity. The selected platform ceremony version owns authorization request and return semantics. |
 
 ### Callback `GET /callback.js`
@@ -90,7 +90,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 | Property | Contract |
 |---|---|
 | Host and context | Same-origin module dynamically loaded by the OAuth Bridge's top-level, non-isolated callback shell |
-| Lifecycle | Accepts the Application connection, locates the single routing `state` in the already-cleared return, emits `CallbackDeliverParams`, and asks the connection to replace the same popup with the Prover. It installs no Service Worker, retains no state across navigation, and does not classify the platform result, prefetch, load platform configuration, prove, verify, persist a checkpoint, or close the popup. |
+| Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then replaces itself with Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Response policy | The OAuth Bridge contract alone defines the shell, registered `redirectUri`, URL clearing, version selection, response policy, and module invocation. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
@@ -100,7 +100,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 |---|---|
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, COOP/COEP-isolated ceremony-popup document |
-| Lifecycle | Clears and validates its fragment, accepts the continuing Application connection, consumes one exact `AppRequestProof`, and emits only `ProverNotifyEvent`, `ProverDeliverProof`, or `AbortCeremony`. [PROVING.md](PROVING.md) defines proof-generation pipelines, assets, notarization, and caching. |
+| Role | Accepts the continuing Application connection during [Callback to Prover](#3-callback-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, assets, notarization, and caching. |
 | Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: same-origin`; and `Cross-Origin-Embedder-Policy: require-corp`. CSP denies by default and admits only the exact inline entry code, Worker, `blob:`, WebAssembly, styles, toolchain resources, and network classes required by the closed implementation. Proving starts only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
 | Presentation and cleanup | Renders a persistent inline libID logo and one accessible milestone progress bar. It begins at **Preparing proof**, advances only from valid platform events, and reaches 100% only on proof delivery. After `SLOW_PROVING_HINT_MS = 15_000`, it adds a nonblocking **Still proving** notice which may suggest enabling JavaScript JIT in Vanadium site controls. It accepts no Application markup or renderer, presents no ETA, and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
 
@@ -109,7 +109,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 | Property | Contract |
 |---|---|
 | Host and context | CCDP Host; same-origin module Service Worker registered by Prefetch |
-| Lifecycle | Composes temporary MessagePort continuity with asset and CRS single flights and caches for the later Prover. |
+| Role | Composes temporary MessagePort continuity with asset and CRS single flights and caches for Prefetch and Prover. |
 | Response policy | Module Service Worker JavaScript media type; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; and policies compatible with the isolated Prover and its controlled scope. Whether its bytes are an on-disk file, generated output, or embedded in the CCDP Host binary is not part of CCDP. |
 
 ### Common
@@ -191,45 +191,40 @@ return directly from the platform. Callback exact-authenticates the Application
 against the OAuth Bridge's deployment allowlist before releasing that return.
 Asset caching and popup-connection construction are outside CCDP.
 
-## Protocol phases
+## Messages
 
-### 1. Launch and prefetch
+The following table is the complete CCDP version-1 message set.
 
-On user activation, the Application opens one named popup at the Prefetch
-location and establishes its connection. An
-implementation may use scripted opening or preserve the same activation's
-real-anchor navigation when scripted opening is unavailable.
+| Message | Direction | Accepted after | Cardinality and effect |
+|---|---|---|---|
+| [`PrefetchStarted`](#prefetchstarted) | Prefetch → Application | connection acceptance and selected-profile dispatch | exactly once; permits navigation to Authorization |
+| [`CallbackDeliverParams`](#callbackdeliverparams) | Callback → Application | OAuth return and connection acceptance | exactly once; starts Application validation |
+| [`AppRequestProof`](#apprequestproof) | Application → Prover | validated OAuth acceptance and active Prover connection | exactly once; starts proof execution |
+| [`ProverNotifyEvent`](#provernotifyevent) | Prover → Application | `AppRequestProof` | zero or more; advisory only |
+| [`ProverDeliverProof`](#proverdeliverproof) | Prover → Application | `AppRequestProof` | at most once; ends the Prover run |
+| [`AppCancelCeremony`](#appcancelceremony) | Application → Callback or Prover | active Callback or Prover connection | at most once; requests downstream cleanup and ends the run |
+| [`AbortCeremony`](#abortceremony) | Callback or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
 
-After clearing and validating the prefetch fragment, the Prefetch document
-accepts the popup connection and dispatches exactly one selected-profile
-prefetch. It reports readiness only after connection acceptance:
+Every recipient requires a plain record with the exact fields, types, and bounds
+defined below. Unknown fields, coercion, normalization, defaults, and
+unrecognized discriminators are invalid. Messages outside the listed direction,
+predecessor, and cardinality are invalid. Cancellation, proof delivery, and
+abort make later messages inert even when they race in transit.
+
+### PrefetchStarted
 
 ```ts
-interface ProverPrefetchingAssets {
-  type: 'prover-prefetching-assets'
+interface PrefetchStarted {
+  type: 'prefetch-started'
 }
 ```
 
-`ProverPrefetchingAssets` is delivered directly through the accepted popup
-connection. It states that prefetch for the selected public
-profile has been dispatched; it does not promise that downloads completed and
-grants no authority. The Prefetch already received and validated the selected
-profile through its cleared fragment; echoing it would compare the Application
-with its own values.
+`PrefetchStarted` states only that fetching for the selected public profile
+was dispatched. It does not promise completion or grant authority. Prefetch
+already received the profile through its cleared fragment, so the message
+repeats no selection field.
 
-After readiness, the Application navigates the retained popup away to the
-frozen `platformAuthorizationUrl` without sending that URL through the current
-carrier. The Prefetch therefore never learns the authorization request. The
-navigation retires the Prefetch carrier; the Application endpoint remains
-available for Callback to reconnect.
-
-### 2. OAuth-platform authorization and return
-
-The OAuth Platform owns the popup until it navigates to the frozen `redirectUri`.
-The OAuth Bridge's shell captures and clears the OAuth return, selects the CCDP
-version from `state`, and invokes `/ccdp/v{CCDPVersion}/callback.js`. The
-[OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively defines
-those ingress mechanics.
+### CallbackDeliverParams
 
 ```ts
 interface CallbackDeliverParams {
@@ -241,33 +236,17 @@ interface CallbackDeliverParams {
 }
 ```
 
-Callback creates this message from the bounded query and fragment supplied by
-the bridge shell. It extracts the ceremony ID suffix from `state` and does not
-classify approval, denial, OAuth transport, or platform fields.
+Callback constructs this message from the bounded query and fragment supplied
+by the OAuth Bridge shell. It extracts the ceremony ID suffix from `state` but
+does not classify approval, denial, transport, or platform fields. The
+`Callback` prefix records its creator even when connection continuity delivers
+the message after Callback replacement.
 
-On the successful path, `CallbackDeliverParams` is the first CCDP message after
-OAuth-platform return and reaches the Application only through the authenticated
-popup connection. The `Callback` prefix records its creator even when
-connection continuity delivers it after Callback replacement.
+The Application uses the live ceremony already bound to the connection and its
+platform/version rules to exact-validate response location, fields, state,
+OAuth client, redirect, success, and denial.
 
-The Application uses the live ceremony already bound to that connection and
-its platform/version rules to exact-validate response location, fields, state,
-OAuth client, redirect, success, and OAuth-platform denial. A stale,
-replayed, retired, or post-reload delivery changes no live state.
-
-### 3. Prover activation and application decision
-
-Callback delivers `CallbackDeliverParams`, then asks its accepted
-popup connection to navigate to the exact proof-generation location. The
-connection owns immediate cross-document continuity.
-
-The isolated top-level prover clears its fragment and accepts the same logical
-popup connection before handling CCDP. No callback value enters a URL or
-signaling record.
-
-The Application classifies the already-delivered OAuth return using the live
-ceremony's selected platform/version. It either cancels or sends one proof
-request to the active prover:
+### AppRequestProof
 
 ```ts
 interface AppRequestProof {
@@ -284,31 +263,23 @@ interface AppRequestProof {
 }
 ```
 
-A malformed result rejects the ceremony. A valid OAuth-platform denial resolves
-`{ status: 'denied' }` and sends `AppCancelCeremony`. A valid acceptance creates
-one `AppRequestProof` from the selected platform/version, frozen client ID and
-redirect, derived code verifier, and unchanged OAuth return.
+`platformId` and `platformCeremonyVersion` are the exact supported profile
+selected at launch and must match the active Prover. The remaining fields are
+the frozen client identifier and redirect, unchanged OAuth return, and derived
+code verifier.
 
-`platformId` is the supported platform identifier selected at launch, and
-`platformCeremonyVersion` is the same unsigned 16-bit version selected there.
-Both must match the active Prover profile exactly.
+The Application origin is trusted for this transient input because it already
+supplies the operation being authorized. It retains the authorization nonce;
+only the derived code verifier crosses this boundary. The message contains no
+authorization digest, operation field, separate OAuth state, Job revision,
+composition kind, wallet state, connector, or carrier kind.
 
-The application origin is trusted for this transient input: it already
-supplies the operation being authorized. The Application retains the authorization
-nonce; only its derived code verifier crosses this boundary. No authorization
-digest, operation field, separate OAuth state, Job revision, composition kind,
-wallet state, connector, or carrier kind enters the request.
+For GitHub, Prover derives the fixed OAuth Bridge token route from the origin of
+`redirectUri`; no second bridge origin or endpoint field is carried. Prover
+exact-validates the CCDP record and selected platform/version before credential
+use.
 
-For GitHub, the prover derives the fixed OAuth bridge token route from the
-origin of this frozen `redirectUri`. No second bridge origin or endpoint field
-enters CCDP or the prover document.
-
-The Prover validates the CCDP record and then applies the exact selected
-platform/version rules before credential use. The Callback and popup connection
-have no platform configuration and cannot perform that second validation. The
-one-shot ceremony accepts no duplicate request or late result.
-
-### 4. Proof execution
+### ProverNotifyEvent
 
 ```ts
 interface ProverNotifyEvent {
@@ -321,73 +292,113 @@ interface ProverNotifyEvent {
   }
   timestamp: number
 }
+```
 
+`platformStep.code` belongs to the selected platform ceremony version's closed
+step set. `label` is nonempty display text of at most 96 UTF-8 bytes without
+control characters. `status` records the step transition. `progress` is
+finite, monotonic, and in `[0, 1)`. `timestamp` is the Prover's finite,
+nonnegative `performance.timeOrigin + performance.now()` value in milliseconds.
+It permits same-browser ordering and duration diagnostics but grants no
+authority.
+
+### ProverDeliverProof
+
+```ts
 interface ProverDeliverProof {
   type: 'prover-deliver-proof'
   proof: unknown
 }
 ```
 
-After `AppRequestProof`, the prover sends zero or more bounded progress records
-followed by one proof, unless the run aborts. `proof` is the exact value defined
-by the selected platform ceremony version. CCDP treats it as opaque; adding a
-platform does not change this record.
+`proof` is the exact value defined by the selected platform ceremony version.
+CCDP treats it as opaque and the selected platform validator checks it; adding a
+platform does not change this message.
 
-`platformStep.code` is selected from the platform ceremony version's closed
-step set. `platformStep.label` is nonempty display text of at most 96 UTF-8
-bytes without control characters. `platformStep.status` records the step's
-lifecycle transition. `platformStep.progress` is finite, monotonic, and in
-`[0, 1)`. `timestamp` is the Prover's finite nonnegative
-`performance.timeOrigin + performance.now()` value in milliseconds; it permits
-same-browser ordering and duration diagnostics but grants no authority.
-Progress is advisory.
-
-### 5. Terminal control and failure
+### AppCancelCeremony
 
 ```ts
 interface AppCancelCeremony {
   type: 'app-cancel-ceremony'
 }
+```
 
+`AppCancelCeremony` is the parameterless command for explicit user
+cancellation, valid OAuth-platform denial, invalid callback classification, or
+retired Application authority. Reachable work clears queued input; no
+acknowledgement or platform-specific cancel path exists. Callback and Prover do
+not close or navigate the popup in response.
+
+### AbortCeremony
+
+```ts
 interface AbortCeremony {
   type: 'abort-ceremony'
   reason: string
 }
 ```
 
-`AppCancelCeremony` is the parameterless downstream command for explicit user
-cancellation, valid OAuth-platform denial, invalid callback classification, or
-retired application authority. Reachable proving work clears queued input; no
-acknowledgement or platform-specific cancel path exists. Callback and prover
-never close or navigate the popup in response.
-
-`AbortCeremony` is the upstream technical-failure message created by callback or
-prover code. Its reason is a bounded sanitized diagnostic string, not a stable
+`AbortCeremony` reports an observable technical failure after connection
+acceptance. `reason` is a bounded sanitized diagnostic string, not a stable
 code or raw exception. Exact reason enums may emerge from implementation
-experience. The Application rejects the live ceremony for every observable
-abort. It requires an accepted popup connection. Popup-connection construction
-or acceptance failure has no CCDP path and remains a local failure.
+experience. The Application rejects the live ceremony. Failure before
+connection acceptance has no CCDP path and remains local.
 
-## Direction and ordering
+## Protocol
 
-The following table is the complete CCDP version-1 message set.
+### 1. Prefetch to Authorization
 
-| Message | Created by | Received by | Valid position and cardinality |
-|---|---|---|---|
-| `ProverPrefetchingAssets` | Prefetch | application | exactly once through the accepted popup connection before OAuth-platform navigation |
-| `CallbackDeliverParams` | callback | application | exactly once after OAuth-platform return and popup-connection acceptance, before the application decision |
-| `AppRequestProof` | application | active prover | exactly once after an accepted callback result; starts proving |
-| `AppCancelCeremony` | application | active callback or prover endpoint | at most once before another terminal message; makes later messages inert and requests downstream cleanup |
-| `ProverNotifyEvent` | prover | application | zero or more after `AppRequestProof` and before a terminal message |
-| `ProverDeliverProof` | prover | application | at most once after `AppRequestProof`; ends the prover run |
-| `AbortCeremony` | callback or prover | application | at most once after popup-connection acceptance for an observable technical failure before another terminal message |
+On user activation, the Application opens one named popup at Prefetch and
+establishes its connection. An implementation may use scripted opening or
+preserve the same activation's real-anchor navigation when scripted opening is
+unavailable.
 
-Messages outside these directions or positions are invalid. Cancellation,
-proof delivery, and abort make later messages inert even when they race in
-transit. Every recipient requires a plain record with the exact fields, types,
-and bounds defined here. Unknown fields, coercion, normalization, defaults, and
-unrecognized discriminators are invalid. The selected platform/version rules
-validate the opaque `proof` payload separately.
+Prefetch clears and validates its fragment, accepts the connection, registers
+the Worker, and dispatches the selected profile's fetches. It then sends
+[`PrefetchStarted`](#prefetchstarted). The Application navigates the retained
+popup to the frozen `platformAuthorizationUrl` without sending that URL through
+the carrier. This retires the Prefetch carrier while leaving the Application
+endpoint available for Callback.
+
+### 2. Authorization to Callback
+
+The OAuth Platform owns the popup until it returns approval or denial to the
+frozen `redirectUri`. The OAuth Bridge shell captures and clears the return,
+selects the CCDP version from `state`, and loads the matching Callback module.
+The [OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively
+defines ingress.
+
+Callback accepts the Application connection and sends
+[`CallbackDeliverParams`](#callbackdeliverparams). No return reaches the
+Application before authentication.
+
+### 3. Callback to Prover
+
+After delivery, Callback asks its connection to navigate to Prover. The
+connection owns immediate cross-document continuity. Prover clears its fragment
+and accepts the same logical connection; no callback value enters a URL or
+signaling record.
+
+The Application validates the delivered return under the selected
+platform/version. A malformed result rejects the ceremony and sends
+[`AppCancelCeremony`](#appcancelceremony). A valid denial resolves
+`{ status: 'denied' }` and sends the same cancellation. A valid acceptance sends one
+[`AppRequestProof`](#apprequestproof) after Prover is active.
+
+### 4. Prover execution
+
+Prover applies the selected platform/version rules before credential use. It
+sends zero or more [`ProverNotifyEvent`](#provernotifyevent) messages followed
+by one [`ProverDeliverProof`](#proverdeliverproof), unless it sends
+[`AbortCeremony`](#abortceremony) or receives
+[`AppCancelCeremony`](#appcancelceremony).
+
+### 5. Terminal outcomes
+
+Proof delivery, cancellation, and abort are mutually terminal even when they
+race in transit. Cancellation has no acknowledgement. An observable abort
+rejects the live ceremony; a failure before connection acceptance is rendered
+locally. Terminal cleanup and popup ownership follow the protocol invariants.
 
 ## End-to-end sequence
 
@@ -401,7 +412,7 @@ sequenceDiagram
 
     A->>F: Open popup at /prefetch
     Note over A,F: Popup connection acceptance and prefetch start
-    F-->>A: ProverPrefetchingAssets
+    F-->>A: PrefetchStarted
     A->>O: Navigate popup to platformAuthorizationUrl
     O->>C: Return to redirectUri, then load /callback.js
     Note over C: Receive the cleared OAuth return

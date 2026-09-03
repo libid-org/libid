@@ -402,7 +402,7 @@ selected platform/version profile's artifact single flights. Prefetch, Prover,
 and Worker implementations come from one compatible package release.
 
 After registration, the Window branch selects the newest worker, waits for it
-to become active, posts the exact selected profile, and reports readiness
+to become active, posts the exact selected profile, and reports dispatch
 without waiting for downloads. The worker composes the popup package's bounded
 MessagePort keeper with the selected immutable-asset and CRS single flights; no
 second worker or registration exists. A worker which receives the prefetch
@@ -447,7 +447,7 @@ exchange, platform APIs, OAuth navigation, HTML, and configuration are never
 cached, rewritten, or synthesized by this worker.
 
 As soon as active-worker selection and the prefetch request settle, without
-waiting for download completion, the Prefetch emits CCDP's readiness message.
+waiting for download completion, the Prefetch emits CCDP's `PrefetchStarted`.
 Registration or activation failure is terminal under the package's fixed
 prefetch/cache contract; artifact fetch failure records no weaker mode and
 leaves proving on the identical cold path. The active prover resolves

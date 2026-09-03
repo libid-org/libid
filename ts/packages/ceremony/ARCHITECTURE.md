@@ -55,7 +55,7 @@ sequenceDiagram
     A->>C: Call proveUserIdentity
     C->>F: Navigate connection to top-level prefetch
     Note over C,F: Accept connection and dispatch selected-profile prefetch
-    F-->>C: Report prefetch readiness
+    F-->>C: Report prefetch start
     C->>O: Navigate away with frozen platform authorization URL
     U->>O: Approve or deny
     O-->>P: Return to callback URL
@@ -407,7 +407,7 @@ embedding policy returning `null`, not a claim that a launch target is known to
 require it.
 
 `proveUserIdentity()` navigates the retained connection to `launchUrl`, waits
-for prefetch readiness, then calls
+for `PrefetchStarted`, then calls
 `connection.navigateAway(platformAuthorizationUrl)` without disclosing that URL
 to the Prefetch peer. With
 native-anchor fallback, connection binding and initial navigation are owned by
