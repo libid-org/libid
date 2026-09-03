@@ -154,11 +154,14 @@ preserves the already authenticated port without repeating its handshake.
 `PortKeeper` never receives an RTC resource, substitute carrier, or caller
 value.
 
-This path is strictly same-origin: the source and destination must resolve the
-same Service Worker registration. Before cross-origin navigation, including
-navigation to another site, connection does not call `keep`; it releases the
-old popup endpoint and an allowed destination performs a fresh handshake
-through its opener or fallback.
+This path is strictly same-origin. The host must serve source and destination
+under the same active Service Worker registration and scope when it expects
+preservation. Connection can check only the target origin before navigation; if
+a same-origin destination resolves to another registration, it claims no port
+and performs a fresh handshake through its opener or fallback. Before
+cross-origin navigation, including navigation to another site, connection does
+not call `keep`; it releases the old popup endpoint and the allowed destination
+likewise establishes a fresh carrier.
 
 This is a short in-memory continuity bridge, not persistence or recovery.
 Worker loss breaks continuity; no later document can reconstruct or resume the
