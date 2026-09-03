@@ -1,7 +1,7 @@
 # Ceremony Cross-Document Protocol (CCDP)
 
 This document defines the closed browser protocol across the Application,
-Callback, and isolated Prover. It owns ceremony locations, navigations,
+Prefetch, Callback, and isolated Prover. It owns ceremony locations, navigations,
 messages, ordering, and compatibility. Authorization, platform-proof, and
 final-proof semantics are defined by the normative
 [common ceremony](../../../specs/ceremony-common.md) and
@@ -43,19 +43,16 @@ version. CCDP runs across these concrete browser documents and routes:
 
 | Document | Served by | Browser context | Route | Responsibility and lifetime |
 |---|---|---|---|---|
-| Initial Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | `${redirectUri}#launch` | accepts the Application connection and starts prefetch |
-| Prefetch | Proving Host | child iframe of the Initial Callback | `${provingOrigin}/ccdp/prover#prefetch` | starts selected-profile asset fetching, then disappears with its parent Callback |
+| Prefetch | Proving Host | ceremony popup, top-level and non-isolated | `${provingOrigin}/ccdp/prefetch#prefetch` | accepts the Application connection and starts selected-profile asset fetching |
 | Authorization | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to `redirectUri`; it is not a CCDP participant |
 | Returned Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | frozen `redirectUri` | delivers the OAuth-platform return and navigates to the Prover |
 | Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover#prove` | receives the validated OAuth result, exposes visible progress, and generates the proof |
 
 The **ceremony popup** is a reusable browsing context, not an actor or document.
-It sequentially contains Callback → Authorization → a new Callback → Prover.
-The Prefetch document is a distinct iframe instance of the same stable prover
-shell and never becomes the top-level Prover document. Navigation creates a new
-JavaScript heap each time; no participant relies on document-local state
-surviving it. These origins may all be cross-site, and same-site placement
-grants no protocol authority.
+It sequentially contains Prefetch → Authorization → Callback → Prover.
+Navigation creates a new JavaScript heap each time; no participant relies on
+document-local state surviving it. These origins may all be cross-site, and
+same-site placement grants no protocol authority.
 
 The shell sections below define each fragment's full field set. Internal
 fragments use the literal mode, `?`, and URL-search-parameter encoding shown
@@ -65,7 +62,7 @@ depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
 Platform IDs use the exact identifiers defined by the selected platform
 profile; platform ceremony versions are unsigned 16-bit integers.
 
-The launch and prover routes have no query. Their fragments never reach either
+The prefetch and prover routes have no query. Their fragments never reach either
 HTTP server and are copied and cleared before rendering, module import,
 storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
 one exact root module from a deployment-fixed supported map. No OAuth return,
@@ -80,7 +77,7 @@ direction and state before acting.
 ## Version
 
 This document defines CCDP version `1`. `ccdpVersion` is encoded in the
-launch/prover fragments and OAuth `state`.
+prefetch/prover fragments and OAuth `state`.
 Version `1` selects matching callback and prover root modules, fragment
 grammars, navigation order, and message semantics. A message does not repeat
 the version selected before its module loads. The OAuth bridge API and popup
@@ -91,7 +88,7 @@ The version-1 browser roots have these exact filenames:
 | Document | Root module |
 |---|---|
 | Callback | `libid-ccdp-v1-callback.js` |
-| Prover | `libid-ccdp-v1-prover.js` |
+| Prefetch and Prover | `libid-ccdp-v1-prover.js` |
 
 A later CCDP version uses the same pattern with its decimal version substituted
 for `1`. Each root is an immutable asset on its document's origin; callback and
@@ -101,12 +98,13 @@ root URL.
 
 ## Browser shells
 
-The OAuth bridge's configured callback path and `GET /ccdp/prover` serve the
-two stable CCDP HTML shells. They are browser documents, not JSON API routes. A shell update may add
+The OAuth bridge's configured callback path and the Proving Host's
+`GET /ccdp/prefetch` and `GET /ccdp/prover` routes serve the stable CCDP HTML
+shells. They are browser documents, not JSON API routes. A shell update may add
 a supported CCDP version to its closed map, while an already published root
 remains immutable and available through its compatibility window.
 
-Both responses are request-invariant security shells containing one
+The responses are request-invariant security shells containing one
 CSP-authorized inline clearing bootstrap and one empty mount point. They contain
 no application UI. Before storage, rendering, error reporting, module import,
 or subsequent network use, each bootstrap bounds and copies its URL input,
@@ -122,19 +120,13 @@ user retry starts in a fresh document.
 ### Callback shell
 
 The OAuth bridge serves the callback shell at one developer-configurable
-path whose default is `/auth/callback`. The Application uses its absolute
-URL for initial launch, and every enabled OAuth application registers that same
-URL as its `redirect_uri`. It is not an HTTP redirect and does not encode a
-CCDP version.
+path whose default is `/auth/callback`. Every enabled OAuth application
+registers its absolute URL as its `redirect_uri`. It is not an HTTP redirect
+and does not encode a CCDP version.
 
-The callback bootstrap accepts exactly two input modes:
-
-- initial launch: an empty query and the exact fragment
-  `#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`,
-  whose `ccdpVersion` selects the Callback root; or
-- OAuth-platform return: the bounded OAuth-platform-defined query and fragment containing
-  exactly one OAuth `state` in the form `v<version>.<ceremonyId>`, whose version
-  selects the Callback root.
+The callback bootstrap accepts only the bounded OAuth-platform-defined query
+and fragment containing exactly one OAuth `state` in the form
+`v<version>.<ceremonyId>`, whose version selects the Callback root.
 
 The selected platform ceremony version owns the exact platform authorization
 and return grammar. The authorization request uses the frozen `redirectUri`
@@ -155,20 +147,27 @@ credentials remain in the fragment and therefore never reach the bridge;
 OAuth-platform-mandated query parameters are the only credential-bearing URL
 exception.
 
-### Prover shell
+### Prefetch and Prover shells
 
-The prover bootstrap accepts an empty query and exactly one of these fragments:
+The Proving Host serves two response-policy shells which select the same
+immutable Prover root:
 
-- `#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` in a child
-  iframe; or
-- `#prove?ccdpVersion=1&ceremonyId=<uuid>` in the popup's top-level browsing
-  context.
+- `/ccdp/prefetch#prefetch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
+  is top-level and non-isolated so it can accept the initial popup connection;
+- `/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` is top-level and
+  COOP/COEP-isolated for proof generation.
 
-Both modes receive byte-identical HTML, headers, deployment-controlled proving
-inputs, and the same selected Prover root. Any other context imports nothing.
-Prefetch carries only the selected public profile and no ceremony ID: the
-Callback binds its one child by browser source, and the child does not join the
-Application popup connection.
+The shells have different isolation headers but otherwise contain the same
+empty mount point, deployment-controlled proving inputs, clearing bootstrap,
+and closed root map. Any other route, mode, or browser context imports nothing.
+With `allowedApplicationOrigins: '*'`, the Prefetch and Prover accept any valid
+browser-observed HTTPS Application origin and pin that exact origin and source
+for each carrier. The Application exact-authenticates the configured Proving
+Host. Open admission there grants only public asset prefetch and processing of
+the connecting Application's own proof request; neither document receives an
+OAuth return directly from the platform. The returned Callback
+exact-authenticates the Application against the OAuth Bridge's deployment
+allowlist before releasing that return.
 Shell-to-root invocation, asset caching, and popup-connection construction are
 outside CCDP.
 
@@ -177,17 +176,15 @@ outside CCDP.
 ```mermaid
 sequenceDiagram
     participant A as Application
-    participant C as Callback document
-    participant F as Prefetch iframe
+    participant F as Prefetch document
     participant O as OAuth Platform
+    participant C as Callback document
     participant P as Top-level prover
 
-    A->>C: Open popup at callback + launch fragment
-    Note over A,C: Popup connection acceptance begins
-    C->>F: Load prover + prefetch fragment
-    F-->>C: ProverPrefetchingAssets
-    C-->>A: ProverPrefetchingAssets after connection acceptance
-    A->>O: Navigate same popup to platformAuthorizationUrl
+    A->>F: Open popup at prefetch fragment
+    Note over A,F: Popup connection acceptance and prefetch start
+    F-->>A: ProverPrefetchingAssets
+    A->>O: Navigate popup away to platformAuthorizationUrl
     O->>C: Return same popup to redirectUri
     Note over C: Clear return and select callback root by state version
     C-->>A: CallbackDeliverParams over popup connection
@@ -215,18 +212,14 @@ are required at the transitions below.
 
 ### 1. Launch and prefetch
 
-On user activation, the Application opens one named popup at the Initial
-Callback location and establishes its authenticated connection. An
+On user activation, the Application opens one named popup at the Prefetch
+location and establishes its connection. An
 implementation may use scripted opening or preserve the same activation's
 real-anchor navigation when scripted opening is unavailable.
 
-After clearing and validating the launch fragment, the callback starts popup
-connection acceptance and loads exactly one selected-profile prefetch iframe
-concurrently. Neither operation waits for the other. The iframe clears and
-validates its own fragment, dispatches prefetch, and reports readiness to its
-exact parent. If readiness arrives first, the callback retains that fact only
-in its current heap. It forwards the same logical value to the application only
-after the popup connection is accepted:
+After clearing and validating the prefetch fragment, the Prefetch document
+accepts the popup connection and dispatches exactly one selected-profile
+prefetch. It reports readiness only after connection acceptance:
 
 ```ts
 interface ProverPrefetchingAssets {
@@ -234,25 +227,23 @@ interface ProverPrefetchingAssets {
 }
 ```
 
-`ProverPrefetchingAssets` is delivered through the accepted popup connection.
-It states that prefetch for the selected public
+`ProverPrefetchingAssets` is delivered directly through the accepted popup
+connection. It states that prefetch for the selected public
 profile has been dispatched; it does not promise that downloads completed and
-grants no authority. The callback already received and validated the selected
-profile through its cleared launch input; echoing it would compare the
-Application with its own values. Popup connection authentication and
-correlation are independent of CCDP. Prefetch may start before connection
-establishment, but no CCDP message crosses that boundary. Acceptance may cause
-only navigation of that popup to the platform authorization URL already frozen by the live
-ceremony.
+grants no authority. The Prefetch already received and validated the selected
+profile through its cleared fragment; echoing it would compare the Application
+with its own values.
 
-After acceptance, the application connection navigates the retained popup to
-the frozen `platformAuthorizationUrl`. That navigation destroys the initial
-callback and prefetch iframe.
+After readiness, the Application navigates the retained popup away to the
+frozen `platformAuthorizationUrl` without sending that URL through the current
+carrier. The Prefetch therefore never learns the authorization request. The
+navigation retires the Prefetch carrier; the Application endpoint remains
+available for the returned Callback to reconnect.
 
 ### 2. OAuth-platform authorization and return
 
 The OAuth Platform owns the popup until it navigates to the frozen `redirectUri`.
-That route serves the same request-invariant callback shell used at launch. Its
+That route serves the request-invariant callback shell. Its
 inline bootstrap bounds and clears both URL components, extracts exactly one
 `v<version>.<ceremonyId>` state, and imports the matching immutable callback
 root from its closed supported-version map in the same document. Unknown or
@@ -402,7 +393,7 @@ The following table is the complete CCDP version-1 message set.
 
 | Message | Created by | Received by | Valid position and cardinality |
 |---|---|---|---|
-| `ProverPrefetchingAssets` | prover prefetch child, forwarded unchanged by callback | application | exactly once through the accepted popup connection before OAuth-platform navigation |
+| `ProverPrefetchingAssets` | Prefetch | application | exactly once through the accepted popup connection before OAuth-platform navigation |
 | `CallbackDeliverParams` | callback | application | exactly once after OAuth-platform return and popup-connection acceptance, before the application decision |
 | `AppRequestProof` | application | active prover | exactly once after an accepted callback result; starts proving |
 | `AppCancelCeremony` | application | active callback or prover endpoint | at most once before another terminal message; makes later messages inert and requests downstream cleanup |
@@ -421,8 +412,7 @@ validate the opaque `proof` payload separately.
 
 - One live ceremony accepts one prefetch readiness and one
   `CallbackDeliverParams`.
-- Prefetch work may start while the popup connection is being accepted, but no
-  CCDP message reaches the application before connection authentication.
+- No CCDP message reaches the application before popup connection acceptance.
 - The popup connection authenticates before any OAuth return reaches the
   application and does not interpret or alter message meaning.
 - Unknown, malformed, replayed, out-of-order, wrong-direction, or post-terminal
@@ -430,8 +420,8 @@ validate the opaque `proof` payload separately.
 - No CCDP message carries ceremony ID, CCDP version, or popup-connection
   version. Popup-connection ownership supplies correlation and its private
   version; the loaded route supplies CCDP version.
-- Callback and prover accept only the locations and fragments defined above;
-  received CCDP values never select a navigation destination.
+- Prefetch, Callback, and Prover accept only the locations and fragments defined
+  above; received CCDP values never select a navigation destination.
 - Progress remains advisory and cannot authorize, cancel, or complete a
   ceremony.
 - Connection state, navigation, popup closure, and progress are never a ceremony
@@ -444,11 +434,11 @@ validate the opaque `proof` payload separately.
 
 ## Versioning and compatibility
 
-The Application selects the CCDP version in its launch fragment. The
-callback shell carries it through OAuth `state`, every later internal navigation
-repeats it in its fragment, and each shell loads that exact version's immutable
-root. The configured callback path and stable `/ccdp/prover` path do not select
-or encode a CCDP version.
+The Application selects the CCDP version in its prefetch fragment and carries
+the same version through OAuth `state`. The Callback selects it from that state,
+the later Prover navigation repeats it in its fragment, and each shell loads
+that exact version's immutable root. The configured callback path and stable
+Proving Host paths do not select or encode a CCDP version.
 
 Compatible implementation changes keep the version. A breaking navigation
 order, message shape, direction, ordering, or validation rule increments the

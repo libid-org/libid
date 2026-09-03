@@ -43,7 +43,7 @@ One bridge deployment has these inputs:
 | Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted to fetch configuration and authenticate the callback popup connection |
 | Proving origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID Proving Host |
-| Callback path | Developer-configurable fixed path whose default is `/auth/callback`; the same URL is used for initial launch and registered as every enabled platform's OAuth `redirect_uri` |
+| Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback roots | Closed CCDP root map, immutable filenames, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-shell) |
 | GitHub settings | Client secret, redirect URI, token endpoint settings, and server-side notary settings when GitHub is enabled |
@@ -55,8 +55,8 @@ inferred from a request's `Origin`, `Referer`, query, fragment, or body.
 
 The proving origin is likewise deployment data. It is returned to the
 application in public configuration and embedded into the callback document so
-the callback can start selected-profile prefetch and later navigate the popup to
-the prover. It does not identify an artifact, circuit, or notary endpoint.
+the callback can navigate the popup to the prover. It does not identify an
+artifact, circuit, or notary endpoint.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
@@ -69,10 +69,10 @@ The bridge exposes only:
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
 | `GET` | `/api/v1/ceremony/config` | always | public platform and prover configuration | exact request `Origin` member of `allowedAppOrigins`; exact noncredentialed CORS |
-| `GET` | configured callback path, default `/auth/callback` | always | callback shell for initial launch and registered OAuth `redirect_uri` | none at HTTP ingress; callback authenticates its popup connection after clearing and classifying its input |
+| `GET` | configured callback path, default `/auth/callback` | always | registered OAuth callback shell | none at HTTP ingress; callback authenticates its popup connection after clearing its input |
 | `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured proving origin; exact noncredentialed CORS |
 
-Top-level and iframe navigation may omit `Origin`, and an OAuth-platform callback may
+Top-level navigation may omit `Origin`, and an OAuth-platform callback may
 identify the platform rather than the application. `Referer` is never an
 authority input. The callback document is therefore public and
 request-invariant; its browser protocol authenticates the application after it
@@ -86,7 +86,7 @@ accept no query or request body.
 
 The `v1` in `/api/v1/ceremony/...` versions the bridge's JSON API.
 The configured callback path is a browser protocol document; its shell selects
-`CCDPVersion` from browser-local launch input or OAuth `state`.
+`CCDPVersion` from OAuth `state`.
 `PlatformCeremonyVersion` independently versions one platform ceremony. There
 is no request-time version negotiation.
 
@@ -134,14 +134,13 @@ returning configuration. Request values do not alter the response record.
 The application-scoped `CeremonyClient` fetches and validates this record once
 at creation. It freezes the selected client ID, redirect URI, proving origin,
 and mutually supported platform ceremony version in each live ceremony.
-Callback and prover documents never fetch bridge configuration.
+Prefetch, callback, and prover documents never fetch bridge configuration.
 
 ## Callback document
 
 The configured callback path serves one deployment-generated callback document.
-The application opens that URL for initial launch, and each enabled OAuth
-application registers the same URL as its `redirect_uri`. There is no callback
-alias or HTTP redirect.
+Each enabled OAuth application registers the same URL as its `redirect_uri`.
+There is no callback alias or HTTP redirect.
 
 The response is invariant across requests. Its HTML, headers, root map, CSP,
 embedded `allowedAppOrigins`, and proving origin do not depend on request
@@ -149,7 +148,7 @@ embedded `allowedAppOrigins`, and proving origin do not depend on request
 top-level, non-isolated, and non-frameable so it preserves the application
 opener whenever OAuth-platform policy permits.
 
-[CCDP](CCDP.md#callback-shell) owns the shell's input modes, clearing and root
+[CCDP](CCDP.md#callback-shell) owns the shell's input, clearing, and root
 selection. The bridge embeds only that closed root map, `allowedAppOrigins`,
 the configured proving origin, stylesheet hash, and fixed CSP sources.
 
@@ -217,11 +216,10 @@ const root = await import(selected.moduleUrl)
 root.startCallback(locationInput, ...(selected.inputs ?? defaultInputs))
 ```
 
-`query` and `fragment` are the bounded byte-for-byte URL components captured
-before clearing, including their leading delimiter when nonempty. On initial
-launch, `locationInput` contains the launch fragment rather than an OAuth
-return. The root exact-validates the selected shape, including unknown fields,
-before using it and copies the origin list again before popup acceptance. For
+`query` and `fragment` are the bounded byte-for-byte OAuth-return URL components
+captured before clearing, including their leading delimiter when nonempty. The
+root exact-validates the selected shape, including unknown fields, before using
+it and copies the origin list again before popup acceptance. For
 CCDP version 1, the root defines and exact-validates this signature:
 
 ```ts
@@ -247,10 +245,9 @@ the inline bootstrap:
 
 1. bounds and copies the raw query and fragment;
 2. clears both with `history.replaceState` while retaining the same path;
-3. accepts either an empty-query launch fragment or an OAuth-platform return containing
-   exactly one routing `state`;
-4. reads only `ccdpVersion` from launch input or the `v<version>.` prefix from
-   OAuth `state` and rejects malformed, conflicting, or unsupported values;
+3. accepts only an OAuth-platform return containing exactly one routing `state`;
+4. reads only the `v<version>.` prefix from OAuth `state` and rejects malformed
+   or unsupported values;
 5. selects the corresponding closed root and its optional input override;
 6. deeply freezes the captured location and resolved inputs; and
 7. imports the immutable root and invokes

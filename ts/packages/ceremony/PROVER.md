@@ -19,14 +19,14 @@ Normative proof relations and authorization semantics remain in the
 
 ## Component boundary
 
-The selected dual-context CCDP prover root serves the prover shell and its
-Service Worker. CCDP defines its filename, shell entrypoint, and two document
-modes:
+The selected dual-context CCDP prover root serves the Prefetch and Prover
+shells and their Service Worker. CCDP defines its filename, shell entrypoint,
+and two document modes:
 
 ```text
-Before OAuth: ephemeral child starts selected-profile fetches
-                       │
-                       └── OAuth navigation destroys it
+Before OAuth: top-level Prefetch accepts the popup connection
+              ├── starts selected-profile fetches
+              └── Application navigates it away to OAuth
 
 After OAuth: same popup becomes the isolated top-level prover
              ├── accepts the continuing popup connection
@@ -38,7 +38,7 @@ Shared Service Worker
 └── immutable-asset and CRS single flights survive document replacement
 ```
 
-OAuth navigation prevents reuse of the first iframe; the worker and browser
+OAuth navigation prevents reuse of the Prefetch document; the worker and browser
 caches preserve its fetch work.
 
 After the CCDP shell clears the URL, the Window branch starts through its single
@@ -47,9 +47,11 @@ The same root evaluated as a Service Worker installs the
 `@libid/popup/worker` continuity handler beside its cache and prefetch handlers;
 it does not enter CCDP or a platform pipeline.
 
-The prover calls `PopupConnection.accept` after isolation and URL clearing,
-passing the shell's immutable allowed application origins and optional fallback
-constructor. `@libid/popup` privately restores continuity or selects a fresh
+The prover calls `PopupConnection.accept` with
+`allowedApplicationOrigins: '*'` after isolation and URL clearing. The
+Application exact-authenticates the configured Proving Host; the accepted peer
+can submit only its own transient
+proof request. `@libid/popup` privately restores continuity or selects a fresh
 carrier before returning the same logical connection. Platform and proving
 logic see no carrier, worker handoff, or fallback configuration. It then
 consumes one exact `AppRequestProof` and returns only bounded platform steps,
@@ -444,11 +446,12 @@ semantics.
 ## Prefetch and cache lifecycle
 
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
-behavior, not configuration or action input. The initial callback loads the fixed
-prover document, whose Window branch registers the selected CCDP prover root as
-a module Service Worker and asks it to start only the selected
-platform/version profile's artifact single flights.
-There is no separate prefetch route, artifact, or mode flag.
+behavior, not configuration or action input. The Application opens the
+top-level `/ccdp/prefetch` document, whose Window branch accepts the popup
+connection, registers the selected CCDP prover root as a module Service Worker,
+and asks it to start only the selected platform/version profile's artifact
+single flights. Prefetch and proving use separate response-policy routes but the
+same root artifact; no separate prefetch package or root exists.
 
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
@@ -471,9 +474,10 @@ closed platform implementation requires it, and combines those entries with
 the toolchain assets pinned by the prover build. Neither fragment nor message
 can supply an asset URL.
 
-The ceremony-owned prefetch branch contains no OAuth, application, or
-popup-connection state. The separately imported popup handler owns only its
-bounded temporary continuity entries. The prefetch branch owns each selected
+The ceremony-owned prefetch branch contains no OAuth or proof input. Its popup
+connection carries only readiness before the Application navigates away. The
+separately imported popup handler owns only its bounded temporary continuity
+entries. The prefetch branch owns each selected
 immutable asset fetch from the first byte, keys
 ordinary artifact single flights by canonical URL, starts the fixed launch
 bb.js CRS loaders—
@@ -497,7 +501,8 @@ exchange, platform APIs, OAuth navigation, HTML, and configuration are never
 cached, rewritten, or synthesized by this worker.
 
 As soon as active-worker selection and the prefetch request settle, without
-waiting for download completion, the child emits `ProverPrefetchingAssets`.
+waiting for download completion, the Prefetch emits `ProverPrefetchingAssets`
+through its accepted popup connection.
 Registration or activation failure is terminal under the package's fixed
 prefetch/cache contract; artifact fetch failure records no weaker mode and
 leaves proving on the identical cold path. The active prover resolves
@@ -509,9 +514,9 @@ IndexedDB cache before proof generation.
 
 A later ceremony reuses every repeated artifact URL and the same CRS entries;
 only missing profile assets are fetched. OAuth navigation therefore neither
-restarts shared work nor downloads unrelated profiles. The prefetch iframe,
-callback document and active prover remain in the same origin and worker
-registration, so the final prover reuses the same fetches and caches.
+restarts shared work nor downloads unrelated profiles. The Prefetch and active
+Prover share the proving origin and worker registration, so the final Prover
+reuses the same fetches and caches.
 
 A new document reconnects to the worker rather than awaiting a Promise owned
 by a destroyed prefetch document. Worker termination after completion is
@@ -527,17 +532,20 @@ state is never a ceremony checkpoint.
 
 ## Worker and network isolation
 
-`GET /ccdp/prover` serves one request-invariant document for prefetch and
-isolated proving. CCDP owns its fragment modes, clearing, root selection, and
-entrypoint. The deployment embeds only the closed root map, stylesheet hash,
-`ProverAssets`, and fixed response-policy sources. No request parameter selects
-a platform, role, asset, bridge, or CSP.
+`GET /ccdp/prefetch` and `GET /ccdp/prover` serve request-invariant documents
+which select the same immutable Prover root. CCDP owns their fragment modes,
+clearing, root selection, and entrypoint. The deployment embeds only the closed
+root map, stylesheet hash, `ProverAssets`, and fixed response-policy sources. No
+request parameter selects a platform, role, asset, bridge, or CSP.
 
-The document uses `Cross-Origin-Opener-Policy: same-origin`,
+The top-level Prefetch uses `Cross-Origin-Opener-Policy: unsafe-none`, no COEP,
+and `frame-ancestors 'none'` so its opener remains available for initial
+popup-connection acceptance. It handles only public asset selection and
+prefetch. The Prover uses `Cross-Origin-Opener-Policy: same-origin`,
 `Cross-Origin-Embedder-Policy: require-corp`, `Content-Type: text/html`,
 `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, and
-`Referrer-Policy: no-referrer`. It is frameable only where prefetch requires it.
-Its CSP denies by default and admits only the exact root, worker, `blob:`,
+`Referrer-Policy: no-referrer`. Both documents use a CSP which denies by default
+and admits only the exact root, worker, `blob:`,
 WebAssembly, style hash, toolchain sources, and network classes needed by the
 closed prover implementation. The implementation exact-validates every
 OAuth-bridge endpoint derived from the proof request's frozen `redirectUri`

@@ -32,8 +32,8 @@ Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 The specification's **Ceremony Client** role maps to this package's closed
 client, callback, prover, and platform implementation as a whole. Its
 **Ceremony Popup** is the auxiliary browser window; the package documents
-running inside it are the callback and prover. `@libid/popup` owns the window
-and connection but is not a ceremony-protocol participant.
+running inside it are the prefetch, callback, and prover. `@libid/popup` owns
+the window and connection but is not a ceremony-protocol participant.
 
 ## System boundary
 
@@ -45,22 +45,19 @@ sequenceDiagram
     actor U as User
     participant A as Application composition
     participant C as Application-side client
-    participant P as Callback document / OAuth Bridge
     participant F as Prefetch document / Proving Host
     participant O as Authorization document / OAuth Platform
+    participant P as Callback document / OAuth Bridge
     participant R as Prover document / Proving Host
 
     U->>A: Activate identity action
     A->>A: Create popup window and connection
     A->>C: Create Ceremony from Job operation + connection
     A->>C: Call proveUserIdentity
-    C->>P: Navigate connection to callback
-    Note over C,P: Popup connection acceptance and prefetch start concurrently
-    P->>F: Start selected-profile prefetch
-    F-->>P: Prefetch dispatched
-    P-->>C: Report prefetch readiness
-    C->>P: Continue with frozen platform authorization URL
-    P->>O: Navigate through platform authorization
+    C->>F: Navigate connection to top-level prefetch
+    Note over C,F: Accept connection and dispatch selected-profile prefetch
+    F-->>C: Report prefetch readiness
+    C->>O: Navigate away with frozen platform authorization URL
     U->>O: Approve or deny
     O-->>P: Return to callback URL
     P-->>C: Deliver OAuth return through popup connection
@@ -206,8 +203,8 @@ Individual platform leaves never import the aggregator. `callback` and `prover`
 are build entrypoints, not separately versioned packages. They emit the
 immutable roots whose filenames and shell selection are defined by CCDP, plus
 worker/WASM assets from one compatible package release. The prover artifact
-runs in both Window and Service Worker contexts: its Window branch runs iframe
-prefetch or the one active top-level prover, while its Service Worker branch
+runs in both Window and Service Worker contexts: its Window branch runs the
+top-level Prefetch or active top-level Prover, while its Service Worker branch
 composes popup continuity with ceremony-owned asset single flights and cache.
 That registration belongs only to the proving origin; the OAuth-bridge
 callback installs no shared worker.
@@ -397,7 +394,7 @@ The caller owns launch UI and constructs the popup connection. The ceremony
 package never opens a window, renders an anchor, or selects a carrier.
 The caller chooses one unique non-reserved browsing-context target, uses it for
 both `PopupWindow.open` and the action-specific real anchor, and passes the
-resulting connection to `new`. Ceremony exposes only the initial CCDP callback
+resulting connection to `new`. Ceremony exposes only the initial CCDP Prefetch
 location as `launchUrl`. The activation handler prevents native navigation only
 when scripted popup creation succeeded; otherwise the same activation's anchor
 proceeds while the armed connection binds it.
@@ -407,11 +404,13 @@ did not reject it. The real anchor is a hedge against an unqualified browser or
 embedding policy returning `null`, not a claim that a launch target is known to
 require it.
 
-`proveUserIdentity()` navigates the retained connection to `launchUrl`
-when direct popup control exists. With native-anchor fallback, connection
-binding and navigation are owned by `@libid/popup`; ceremony observes only its
-typed messages. There is no popup argument to proving and no mutable connection
-setter.
+`proveUserIdentity()` navigates the retained connection to `launchUrl`, waits
+for prefetch readiness, then calls
+`connection.navigateAway(platformAuthorizationUrl)` without disclosing that URL
+to the Prefetch peer. With
+native-anchor fallback, connection binding and initial navigation are owned by
+`@libid/popup`; ceremony observes only its typed messages. There is no popup
+argument to proving and no mutable connection setter.
 
 ```ts
 function activate(event: MouseEvent) {
@@ -421,7 +420,7 @@ function activate(event: MouseEvent) {
   const popupWindow = PopupWindow.open(target)
   const connection = PopupConnection.connect<Message>(popupWindow, {
     connectionId: ceremonyId,
-    popupOrigin,
+    allowedPopupOrigins: [provingOrigin, new URL(redirectUri).origin],
   })
   const ceremony = ceremonies.new(ceremonyId, {
     connection,

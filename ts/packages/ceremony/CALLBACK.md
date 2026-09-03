@@ -1,9 +1,9 @@
 # `@libid/ceremony` callback architecture
 
 This document defines the browser participant implemented by the selected CCDP
-callback root. The same fixed, non-isolated shell runs before OAuth and at the
-configured OAuth-platform callback. The callback accepts the application connection
-and delegates typed delivery and same-popup navigation to `@libid/popup`.
+callback root. The fixed, non-isolated shell runs only at the configured
+OAuth-platform callback. It accepts the application connection and delegates
+typed delivery and same-popup navigation to `@libid/popup`.
 
 The exact cross-document records and their order are defined by
 [CCDP](CCDP.md), while popup connection lifecycle, authentication, carrier
@@ -18,31 +18,23 @@ owns only the callback participant's local lifecycle.
 
 ## Component boundary
 
-The callback owns:
-
-- classifying its already-cleared input as an initial launch or OAuth-platform
-  callback;
-- starting selected-profile prefetch before OAuth;
-- constructing, decoding, and handling its CCDP values; and
-- script-owned native transition UI and one-shot cleanup.
+The callback owns its already-cleared OAuth-platform return, CCDP delivery,
+transition to the Prover, script-owned transition UI, and one-shot cleanup.
 
 `@libid/popup` owns endpoint authentication, carrier selection,
 cross-document connection continuity, and popup replacement.
 
-The callback installs no Service Worker. During initial launch, its
-cross-origin prover-prefetch child registers and activates the proving origin's
-worker for prefetch and cache. On OAuth-platform return, the callback accepts its
-application connection, delivers the OAuth return, and navigates the same popup
-to the configured proving origin. A MessagePort cannot cross that origin change:
+The callback installs no Service Worker. It accepts its application connection,
+delivers the OAuth return, and navigates the same popup to the configured proving
+origin. A MessagePort cannot cross that origin change:
 the prover establishes a fresh carrier through its opener or the configured
 fallback under the same logical popup connection.
 
-It does not fetch `CeremonyConfig`, import the platform catalog, parse a
-platform-specific OAuth result, generate or verify a proof, own an application
-Job, persist a checkpoint, or submit any downstream operation. OAuth-platform
-navigation replaces the initial document, so the callback starts in a fresh
-JavaScript heap. The caller-supplied logical popup connection owns continuity;
-callback storage does not.
+It does not prefetch prover assets, fetch `CeremonyConfig`, import the platform
+catalog, parse a platform-specific OAuth result, generate or verify a proof, own
+an application Job, persist a checkpoint, or submit any downstream operation.
+The caller-supplied logical popup connection owns continuity; callback storage
+does not.
 
 ## Entrypoint and trusted inputs
 
@@ -54,11 +46,8 @@ copied origins to `PopupConnection.accept` before installing ceremony listeners.
 The selected callback root owns any package-supported fallback construction;
 the shell passes data, never a function.
 
-The callback accepts the two closed inputs defined by CCDP:
-
-- **Initial launch:** the cleared launch input.
-- **OAuth-platform callback:** the bounded raw OAuth-platform return containing one routing
-  state.
+The callback accepts only the bounded raw OAuth-platform return containing one
+routing state defined by CCDP.
 
 The callback recognizes only enough callback grammar to find that single routing
 value. The application client's selected platform/version client leaf later
@@ -67,28 +56,17 @@ ambiguous, or malformed input enters a fixed terminal failure state without
 releasing the captured value or performing credential-bearing work. The CCDP
 bootstrap rejects oversized input before package code runs.
 
-## Two document lifetimes
+## Document lifetime
 
-The callback state machine has two independent browser-document lifetimes:
+The callback state machine has one browser-document lifetime:
 
 ```text
-initial launch
-  validate launch
-    -> start connection acceptance and prover prefetch concurrently
-    -> after both complete, report readiness
-    -> OAuth navigation
-
 OAuth-platform callback
   validate OAuth state
     -> accept the returned popup connection; claim a preserved port when present
     -> deliver the OAuth return
     -> navigate the same connection to /prover
 ```
-
-OAuth navigation destroys all initial-launch memory. No in-memory transition,
-IndexedDB record, cookie, or callback binding record connects the two
-lifetimes. The application retains the live `Ceremony`, ceremony ID, selected
-profile, and logical popup connection across navigation.
 
 Every local transition is one-shot. A duplicate, stale, out-of-order, wrong
 application source, wrong origin, unknown type, or post-terminal message changes
@@ -98,24 +76,15 @@ no state.
 
 | Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
-| Initial launch | valid launch input; child `ProverPrefetchingAssets` | start popup-connection acceptance and bind the prefetch child concurrently; forward readiness only after both complete; missing profile or child load fails, ordinary fetch failure continues cold |
 | OAuth-platform return | one OAuth state and `CallbackDeliverParams` | accept the popup connection and deliver the unchanged return |
 | Prover transition | delivered `CallbackDeliverParams` | ask the popup connection to replace this document with the CCDP proof-generation location |
 
-Prefetch handles public assets and needs no application reply or timeout. It
-starts without awaiting carrier establishment, while connection acceptance
-does not await prefetch. If the child reports first, the callback retains only
-that local readiness until `PopupConnection.accept` succeeds. No CCDP value
-crosses to the application before connection authentication. The callback
-never constructs the platform authorization URL. After OAuth-platform return it likewise releases
-no OAuth return until acceptance succeeds. Carrier deadlines, selection, and
-fallback are popup-package concerns. A connection-continuity failure clears the
-return and renders the fixed prover-load failure instead of navigating.
-
-During initial launch, a prefetch failure waits for an accepted connection
-before reporting terminal `AbortCeremony`. After OAuth-platform return, an observable
-abort likewise uses the accepted connection. Failure to accept a connection
-has no CCDP path, follows
+No OAuth return crosses to the application before connection authentication.
+The callback never constructs the platform authorization URL. Carrier deadlines,
+selection, and fallback are popup-package concerns. A connection-continuity
+failure clears the return and renders the fixed prover-load failure instead of
+navigating. An observable abort uses the accepted connection. Failure to accept
+a connection has no CCDP path, follows
 the [undeliverable-failure rule](METRICS.md#undeliverable-failures), and renders
 the fixed failure view.
 
@@ -128,8 +97,8 @@ visible proving UI remain in [PROVER.md](PROVER.md).
 ### Script-owned presentation
 
 The OAuth bridge document contains only an empty mount point. The callback
-module bundles its stylesheet and inline libID logo and renders its initial,
-callback, and fixed failure views. The bundled logo is static inline vector
+module bundles its stylesheet and inline libID logo and renders its callback
+and fixed failure views. The bundled logo is static inline vector
 markup with no external reference. The callback shell has no proving progress
 model or activation button. The callback view lasts only until connection
 navigation is accepted; the top-level prover then owns the visible proving UI.
@@ -140,8 +109,8 @@ render only a fixed textual load failure after clearing the URL.
 A sanitized `AbortCeremony.reason` is diagnostic input to the application, not
 arbitrary callback markup.
 
-Terminal cleanup clears retained query and fragment bytes, removes the prover
-prefetch child and ceremony listeners, and severs references which are no
+Terminal cleanup clears retained query and fragment bytes, removes ceremony
+listeners, and severs references which are no
 longer needed. It never closes or navigates the popup; the application
 composition owns that window's lifetime. No terminal history or recovery
 record is written.
