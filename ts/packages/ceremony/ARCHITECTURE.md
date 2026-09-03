@@ -29,9 +29,9 @@ scope.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 
 The specification's **Ceremony Client** role maps to this package's closed
-client, callback, bridge, prover, and platform implementation as a whole. Its
+client, callback, airlock, prover, and platform implementation as a whole. Its
 **Ceremony Popup** is the auxiliary browser window; the package documents
-running inside it are the prefetch, callback, bridge, and prover. `@libid/popup`
+running inside it are the prefetch, callback, airlock, and prover. `@libid/popup`
 owns the window and connection but is not a ceremony-protocol participant.
 
 ## System boundary
@@ -47,7 +47,7 @@ sequenceDiagram
     participant F as Prefetch document / CCDP Host
     participant O as Authorization document / OAuth Platform
     participant P as Callback / OAuth Bridge
-    participant B as Bridge / CCDP Host
+    participant L as Airlock / CCDP Host
     participant R as Prover document / CCDP Host
 
     U->>A: Activate identity action
@@ -64,8 +64,8 @@ sequenceDiagram
     par Validate OAuth return
         C->>C: Validate platform return
     and Activate isolated Prover
-        P->>B: Navigate same popup and establish fresh carrier
-        B->>R: Preserve carrier and navigate same popup
+        P->>L: Navigate same popup and establish fresh carrier
+        L->>R: Preserve carrier and navigate same popup
         R-->>C: Report Prover ready
     end
     alt User denied
@@ -112,7 +112,7 @@ can isolate the prover document itself without applying COOP/COEP to its whole
 frame chain. With interoperable browser support, libID could keep the prover in
 an isolated cross-origin iframe while the non-isolated ceremony popup retains
 its ordinary opener communication. That would remove the top-level
-Callback-to-Bridge-to-Prover replacement and its popup-connection continuity machinery. It
+Callback-to-Airlock-to-Prover replacement and its popup-connection continuity machinery. It
 would not protect against an OAuth-platform response that itself severs the
 opener with COOP; an opener-independent popup connection remains necessary for
 that independent case.
@@ -134,7 +134,7 @@ portable baseline.
 ## Ceremony Cross-Document Protocol
 
 [CCDP.md](CCDP.md) defines the protocol between the Application, Callback,
-Bridge, and isolated Prover, including each participant's local lifecycle and
+Airlock, and isolated Prover, including each participant's local lifecycle and
 UI. [`@libid/popup`](../popup/README.md) carries it. This document owns only the
 package and public client contracts around them.
 
@@ -148,7 +148,7 @@ Launch publishes one `@libid/ceremony` package:
 │   └── index         ceremony records, directional codecs, and protocol version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
 ├── callback    source entrypoint for the versioned CCDP Callback implementation
-├── bridge      source entrypoint for the non-isolated CCDP Bridge
+├── airlock     source entrypoint for the non-isolated CCDP Airlock
 ├── prefetch    source entrypoint for Prefetch, the shared worker, and asset cache
 ├── prover
 │   ├── index          source entrypoint for the isolated Prover and WASM proving
@@ -161,7 +161,7 @@ Launch publishes one `@libid/ceremony` package:
     └── github/<version>/{client,types,prover}
 ```
 
-`ccdp/index` is the pure protocol leaf imported by client, callback, bridge,
+`ccdp/index` is the pure protocol leaf imported by client, callback, airlock,
 prefetch, and prover. It performs no platform dispatch, browser work, storage,
 network, authorization construction, or cryptographic proof verification.
 Those entrypoints use the caller-supplied `@libid/popup` connection without
@@ -205,16 +205,16 @@ and `prover` owns progress, witness construction, and proof generation.
 catalog and public result types, and is re-exported by the package root and
 client API. Prover leaves are internal imports of the prover entrypoint and
 never enter the client catalog.
-Individual platform leaves never import the aggregator. `callback`, `bridge`,
+Individual platform leaves never import the aggregator. `callback`, `airlock`,
 `prefetch`, and `prover` are build entrypoints, not separately versioned
 packages. Callback supplies the implementation served by the OAuth Bridge's
-versioned route. The CCDP Host embeds Prefetch, Bridge, and Prover entry code
+versioned route. The CCDP Host embeds Prefetch, Airlock, and Prover entry code
 directly into their versioned documents and serves the Prefetch Service Worker
 at CCDP's versioned worker path; internal bundle filenames are deployment
 details. The Prefetch entrypoint runs in Window and Service Worker contexts: its
 Window branch dispatches the selected asset profile, while its Service Worker
 branch composes popup continuity with ceremony-owned asset single flights and
-cache. Bridge accepts a fresh carrier on the CCDP origin and navigates the same
+cache. Airlock accepts a fresh carrier on the CCDP origin and navigates the same
 popup to Prover through that Worker; Prover runs only in the active top-level
 document and joins the cached flights. The OAuth-bridge Callback installs no
 Worker.
@@ -242,8 +242,8 @@ prover ───> platforms/<platform>/<version>/prover ───> types
 
 platforms/{x,github}/<version>/prover ───> prover/notarization
 
-client, callback, bridge, prefetch, prover, platforms/index ───> ccdp
-client, callback, bridge, prefetch, prover ───> @libid/popup
+client, callback, airlock, prefetch, prover, platforms/index ───> ccdp
+client, callback, airlock, prefetch, prover ───> @libid/popup
 wallet-client ─────────> client + ceremony + wallet/protocol + @libid/popup
 ```
 
@@ -260,7 +260,7 @@ The package-facing API surface is:
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-callbackjs) served as the versioned CCDP Callback implementation |
-| `@libid/ceremony/bridge` | [browser entrypoint](CCDP.md#bridge-get-bridge) embedded by the non-isolated Bridge document |
+| `@libid/ceremony/airlock` | [browser entrypoint](CCDP.md#airlock-get-airlock) embedded by the non-isolated Airlock document |
 | `@libid/ceremony/prefetch` | dual-context browser entrypoint embedded by the versioned Prefetch document and served at the versioned Worker path |
 | `@libid/ceremony/prover` | [browser entrypoint](CCDP.md#prover-get-prover) embedded by the versioned isolated Prover document |
 
@@ -452,8 +452,8 @@ function activate(event: MouseEvent) {
 When `CallbackDeliverParams` arrives on the retained connection,
 `proveUserIdentity()` parses its OAuth `state`, exact-matches the CCDP version
 and ceremony ID against this instance's frozen values, and consumes that return
-once. In parallel, Callback navigates to Bridge, Bridge establishes a fresh
-carrier on the CCDP origin, and Bridge preserves it into Prover. The client
+once. In parallel, Callback navigates to Airlock, Airlock establishes a fresh
+carrier on the CCDP origin, and Airlock preserves it into Prover. The client
 waits for `ProverReady` as well as a valid accepted OAuth return before sending
 the minimal proving inputs. It then validates the delivered platform proof,
 constructs the non-authoritative identity preview and OAuth proof, and resolves
@@ -485,7 +485,7 @@ no-ceremony-recovery launch scope.
 The client fetches and validates the origin-controlled
 [`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
 the chosen platform, version, client ID, redirect URI, and CCDP origin.
-Prefetch, Callback, Bridge, and Prover never fetch it.
+Prefetch, Callback, Airlock, and Prover never fetch it.
 
 ## Result and lifecycle
 

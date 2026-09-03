@@ -25,7 +25,7 @@ Each browser context measures its own work with the native Performance API:
 - explicit marks surround application work which browser resource timing
   cannot describe.
 
-Callback, Bridge, and Prover send only bounded, sanitized diagnostic records
+Callback, Airlock, and Prover send only bounded, sanitized diagnostic records
 over the ceremony's already-authenticated popup connection. The Ceremony Client
 combines them with its own records and exposes one optional application
 observer. No diagnostic record changes CCDP ordering or requires an
@@ -57,14 +57,14 @@ OpenTelemetry is an export adapter, not an internal ceremony dependency.
 One ceremony attempt maps naturally to one trace, and the span catalogs below
 map naturally to child spans. The application may translate the sanitized
 diagnostic stream into its existing OpenTelemetry provider and exporter. The
-package must not pass an OTLP endpoint into Callback, Bridge, or Prover and
+package must not pass an OTLP endpoint into Callback, Airlock, or Prover and
 must not run an exporter or automatic fetch/document instrumentation there.
 
 This boundary is deliberate:
 
 - the package is a library, so the application owns sampling, consent,
   resource attributes, batching, and export policy;
-- Callback, Bridge, and Prover CSPs do not gain a telemetry `connect-src`;
+- Callback, Airlock, and Prover CSPs do not gain a telemetry `connect-src`;
 - the prover does not expose another public cross-origin network destination;
 - credentials, URLs, headers, bodies, witnesses, and proofs cannot be captured
   accidentally by automatic instrumentation;
@@ -145,7 +145,7 @@ performance qualification compares the post-OAuth and proof-request spans.
 | callback bootstrap | document start through bounded copy and immediate URL clearing |
 | OAuth parse | cleared copy through the selected platform return decoder |
 | package load | callback entrypoint import and initialization |
-| proof handoff | authenticated OAuth delivery through Bridge navigation and `ProverReady` |
+| proof handoff | authenticated OAuth delivery through Airlock navigation and `ProverReady` |
 
 OAuth query/fragment lengths may be reported only as coarse, code-defined
 size buckets. Values, field names supplied by an OAuth platform, and URLs are never
@@ -162,7 +162,7 @@ reported.
 | CRS artifacts | the same aggregate fields, reported separately from ordinary artifacts |
 | asset class | code-defined class and logical asset code, never a URL |
 | pre-OAuth work | prefetch start through OAuth-platform navigation |
-| post-callback join | Bridge entry through Prover selected-flight readiness |
+| post-callback join | Airlock entry through Prover selected-flight readiness |
 | prefetch benefit | work completed before proof start and residual single-flight wait |
 | storage health | cache put failure, quota/eviction observation, and stale-release pruning outcome |
 
@@ -267,7 +267,7 @@ Qualification compares at least:
 - prefetch enabled and deliberately unavailable;
 - normal and private mode;
 - foreground and backgrounded popup;
-- popup-connection continuity through Callback-to-Bridge-to-Prover navigation;
+- popup-connection continuity through Callback-to-Airlock-to-Prover navigation;
 - one and multiple simultaneous ceremonies; and
 - Chromium, Firefox, WebKit, and real iOS Safari.
 
