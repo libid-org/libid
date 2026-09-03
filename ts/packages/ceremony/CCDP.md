@@ -64,7 +64,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 | Property | Contract |
 |---|---|
 | Host and context | Same-origin module dynamically loaded by the OAuth Bridge's top-level, non-isolated callback shell |
-| Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then replaces itself with Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
+| Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Response policy | The OAuth Bridge contract alone defines the shell, registered `redirectUri`, URL clearing, version selection, response policy, and module invocation. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
@@ -350,9 +350,8 @@ earlier phase.
   Authorization receives no CCDP message or popup connection.
 - Progress, carrier state, navigation, popup closure, and unvalidated proof
   delivery grant no authority and never constitute ceremony success.
-- The Application owns terminal popup lifetime. Callback's transition to
-  Prover is the only navigation initiated by a CCDP popup document; no CCDP
-  document closes the popup.
+- The Application owns terminal popup lifetime. No CCDP document closes the
+  popup.
 - Cancellation and context-loss cleanup are best effort. CCDP has no durable
   checkpoint, ceremony recovery, or migration to another popup connection.
 
@@ -360,27 +359,31 @@ earlier phase.
 
 #### 1. Prefetch to Authorization
 
-The protocol enters this phase on user activation. The Application opens one
-named popup at [Prefetch](#prefetch-get-prefetch) and establishes its
-connection. An implementation may use scripted opening or preserve the same
-activation's real-anchor navigation when scripted opening is unavailable.
+The protocol enters this phase on user activation. The Application initiates
+one named popup's first navigation to [Prefetch](#prefetch-get-prefetch) and
+establishes its connection there. A scripted opener may first reserve the
+popup at `about:blank`; if that fails, the same activation's real anchor
+navigates it directly to Prefetch.
 
 Prefetch clears and validates its fragment, accepts the connection, registers
 the Worker, and dispatches the selected profile's fetches. It then sends
 [`PrefetchStarted`](#prefetchstarted). Only after accepting that message, the
-Application navigates the retained popup to
+Application endpoint navigates the retained popup to
 [Authorization](#authorization-get-platformauthorizationurl) at the frozen
-`platformAuthorizationUrl`, without sending that URL through the carrier. The
-navigation ends this phase: it retires the Prefetch carrier while leaving the
-Application endpoint available for Callback.
+`platformAuthorizationUrl`. The Application owns this transition because it
+alone retains that URL; neither the URL nor a navigation command crosses the
+carrier. Authorization is not a participating document, so the navigation
+retires the Prefetch carrier while leaving the Application endpoint available
+for Callback.
 
 #### 2. Authorization to Callback
 
 This phase begins when [Authorization](#authorization-get-platformauthorizationurl)
-loads. The OAuth Platform owns the popup until it returns approval or denial to
-the frozen `redirectUri`. The OAuth Bridge shell captures and clears the
-return, selects the CCDP version from `state`, and loads the matching
-[Callback](#callback-get-callbackjs) module. The
+loads. The OAuth Platform owns the popup and initiates browser navigation to
+the frozen `redirectUri` after approval or denial; neither CCDP endpoint
+initiates that transition. The OAuth Bridge shell captures and clears the
+return, selects the CCDP version from `state`, and dynamically imports the
+matching [Callback](#callback-get-callbackjs) module in the same document. The
 [OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively defines
 ingress.
 
@@ -392,10 +395,12 @@ validation.
 
 #### 3. Callback to Prover
 
-After delivery, [Callback](#callback-get-callbackjs) asks its connection to
-navigate to [Prover](#prover-get-prover). The connection owns immediate
-cross-document continuity. Prover clears its fragment and accepts the same
-logical connection; no callback value enters a URL or signaling record.
+After delivery, the popup-side [Callback](#callback-get-callbackjs) endpoint
+asks its connection to navigate to [Prover](#prover-get-prover). Callback owns
+this transition because the OAuth Platform may have severed the Application's
+direct popup handle; the active popup document can still navigate itself after
+the connection prepares continuity. Prover clears its fragment and accepts the
+same logical connection; no callback value enters a URL or signaling record.
 
 The Application validates the delivered return under the selected
 platform/version. A malformed result rejects the ceremony and sends
@@ -421,8 +426,10 @@ Terminal processing begins when the Application cancels an active Callback or
 Prover, Callback or Prover reports an abort, or Prover delivers a proof. These
 outcomes are mutually terminal even when they race in transit. Cancellation has
 no acknowledgement. An observable abort rejects the live ceremony; a failure
-before connection acceptance is rendered locally. Terminal cleanup and popup
-ownership follow the [invariants](#invariants).
+before connection acceptance is rendered locally. CCDP initiates no further
+navigation: the Application composition alone decides whether to retain,
+navigate, or close the popup because any subsequent flow is outside CCDP.
+Terminal cleanup follows the [invariants](#invariants).
 
 ### End-to-end sequence
 
@@ -436,7 +443,7 @@ sequenceDiagram
     participant P as Prover
 
     Note over A,O: Phase 1 - Prefetch to Authorization
-    A->>F: Open Prefetch
+    A->>F: Navigate popup to Prefetch
     F->>F: Register Worker and dispatch selected-profile fetches
     F-->>A: PrefetchStarted
     A->>O: Navigate popup to Authorization
@@ -445,7 +452,7 @@ sequenceDiagram
     Note over O: User completes or denies login and consent
     O->>B: Return to redirectUri
     B->>B: Capture and clear return, then select CCDP version
-    B->>C: Load Callback
+    B->>C: Load Callback in the same document
     Note over A,C: Callback accepts authenticated connection
     alt Technical failure after Callback acceptance
         C-->>A: AbortCeremony

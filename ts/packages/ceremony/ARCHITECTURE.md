@@ -409,9 +409,9 @@ require it.
 `proveUserIdentity()` navigates the retained connection to `launchUrl`, waits
 for `PrefetchStarted`, then calls
 `connection.navigateAway(platformAuthorizationUrl)` without disclosing that URL
-to the Prefetch peer. With
-native-anchor fallback, connection binding and initial navigation are owned by
-`@libid/popup`; ceremony observes only its typed messages. There is no popup
+to the Prefetch peer. With native-anchor fallback, `@libid/popup` binds the
+anchor-created window while the Application's anchor performs the initial
+navigation; ceremony observes only its typed messages. There is no popup
 argument to proving and no mutable connection setter.
 
 ```ts
