@@ -178,7 +178,7 @@ never affect cache or ceremony behavior.
 ### Platform and proof engine
 
 The exact platform/version span catalogs and causal rules are owned by
-[PROVER.md](PROVER.md#platform-progress). Diagnostics reuse those codes rather
+[PROVING.md](PROVING.md#platform-progress). Diagnostics reuse those codes rather
 than create a second list. They include readiness, every Google/X/GitHub
 platform step, and the proof-engine phases from worker bootstrap through
 backend destruction.

@@ -6,8 +6,8 @@ configuration, serves the OAuth callback document, and performs the one
 confidential platform exchange required by GitHub.
 
 The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), the callback
-participant in [CALLBACK.md](CALLBACK.md), and proof generation in
-[PROVER.md](PROVER.md). The normative libID specification owns authorization,
+participant in [CCDP](CCDP.md#callback), and proof generation in
+[PROVING.md](PROVING.md). The normative libID specification owns authorization,
 platform-return, token-exchange, and proof semantics; this document fixes only
 the bridge's public transport and deployment boundary.
 

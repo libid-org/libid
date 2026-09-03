@@ -3,7 +3,7 @@
 This document defines the browser-side `prover/notarization` module: how it
 runs a TLSNotary session, applies platform-selected transcript disclosures, and
 returns a byte-exact attestation plus private commitment openings. The enclosing
-pipeline is defined in [PROVER.md](PROVER.md), browser placement in
+pipeline is defined in [PROVING.md](PROVING.md), browser placement in
 [CCDP.md](CCDP.md), and bridge inputs in
 [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md). Exact
 proof semantics remain normative in the

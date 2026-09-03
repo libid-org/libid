@@ -8,9 +8,8 @@ the proof-bearing `OAuthProof` for the downstream Ledger Verifier.
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
 in [CCDP.md](CCDP.md); popup lifecycle and communication are supplied by
-[`@libid/popup`](../popup/README.md). The callback participant
-is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
-[PROVER.md](PROVER.md). Browser TLSNotary sessions and
+[`@libid/popup`](../popup/README.md). Proof-generation internals are defined in
+[PROVING.md](PROVING.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The OAuth bridge's routes, deployment inputs, and callback response policy are
 defined in [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md). The package's measurement and
@@ -24,7 +23,7 @@ encoding. See the
 [identity-platform ceremonies](../../../specs/platform-ceremonies.md)
 for their exact content. Together, this document, CCDP, and the OAuth bridge
 contract
-and their linked callback, prover, and notarization documents otherwise stand
+and their linked proof-generation and notarization documents otherwise stand
 alone; application job storage and all post-ceremony effects are outside their
 scope.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
@@ -129,10 +128,9 @@ portable baseline.
 ## Ceremony Cross-Document Protocol
 
 [CCDP.md](CCDP.md) defines the protocol between the application,
-callback, and isolated prover; [`@libid/popup`](../popup/README.md) carries it;
-and [CALLBACK.md](CALLBACK.md) defines the callback's local
-state and UI. This document owns only the package and public client contracts
-around them.
+callback, and isolated prover, including each participant's local lifecycle and
+UI. [`@libid/popup`](../popup/README.md) carries it. This document owns only the
+package and public client contracts around them.
 
 ## Package composition
 
@@ -252,9 +250,9 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) served as the versioned CCDP Callback implementation |
+| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback) served as the versioned CCDP Callback implementation |
 | `@libid/ceremony/prefetch` | dual-context browser entrypoint embedded by the versioned Prefetch document and served at the versioned Worker path |
-| `@libid/ceremony/prover` | browser entrypoint embedded by the versioned isolated Prover document |
+| `@libid/ceremony/prover` | [browser entrypoint](CCDP.md#prover) embedded by the versioned isolated Prover document |
 
 The API below and the [CCDP records](CCDP.md#direction-and-ordering)
 are the launch surface.
@@ -642,9 +640,9 @@ normative PKCE construction. Derived hashes are exact 32-byte `Uint8Array`
 values. Unknown fields, aliases, coercions, and
 noncanonical encodings fail before use.
 
-## Prover subsystem
+## Proof-generation subsystem
 
-[PROVER.md](PROVER.md) defines pipelines, assets, workers, caching, and proof
+[PROVING.md](PROVING.md) defines pipelines, assets, workers, caching, and proof
 delivery. The client sends one `AppRequestProof`, validates the returned
 platform proof, and assembles `OAuthProof` and `Identity`.
 
