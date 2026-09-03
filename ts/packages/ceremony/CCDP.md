@@ -346,59 +346,81 @@ connection acceptance has no CCDP path and remains local.
 
 ## Protocol
 
+The protocol advances one named ceremony popup through
+[Prefetch](#prefetch-get-prefetch),
+[Authorization](#authorization-get-platformauthorizationurl),
+[Callback](#callback-get-callbackjs), and [Prover](#prover-get-prover). Those
+route sections own each document's inputs, context, response policy, and role;
+[Messages](#messages) owns the records crossing the popup connection. The
+phases below own their sequencing, entry conditions, and exit conditions.
+Navigation retires the source document, and no later message can reactivate an
+earlier phase.
+
 ### 1. Prefetch to Authorization
 
-On user activation, the Application opens one named popup at Prefetch and
-establishes its connection. An implementation may use scripted opening or
-preserve the same activation's real-anchor navigation when scripted opening is
-unavailable.
+The protocol enters this phase on user activation. The Application opens one
+named popup at [Prefetch](#prefetch-get-prefetch) and establishes its
+connection. An implementation may use scripted opening or preserve the same
+activation's real-anchor navigation when scripted opening is unavailable.
 
 Prefetch clears and validates its fragment, accepts the connection, registers
 the Worker, and dispatches the selected profile's fetches. It then sends
-[`PrefetchStarted`](#prefetchstarted). The Application navigates the retained
-popup to the frozen `platformAuthorizationUrl` without sending that URL through
-the carrier. This retires the Prefetch carrier while leaving the Application
-endpoint available for Callback.
+[`PrefetchStarted`](#prefetchstarted). Only after accepting that message, the
+Application navigates the retained popup to
+[Authorization](#authorization-get-platformauthorizationurl) at the frozen
+`platformAuthorizationUrl`, without sending that URL through the carrier. The
+navigation ends this phase: it retires the Prefetch carrier while leaving the
+Application endpoint available for Callback.
 
 ### 2. Authorization to Callback
 
-The OAuth Platform owns the popup until it returns approval or denial to the
-frozen `redirectUri`. The OAuth Bridge shell captures and clears the return,
-selects the CCDP version from `state`, and loads the matching Callback module.
-The [OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively
-defines ingress.
+This phase begins when [Authorization](#authorization-get-platformauthorizationurl)
+loads. The OAuth Platform owns the popup until it returns approval or denial to
+the frozen `redirectUri`. The OAuth Bridge shell captures and clears the
+return, selects the CCDP version from `state`, and loads the matching
+[Callback](#callback-get-callbackjs) module. The
+[OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively defines
+ingress.
 
 Callback accepts the Application connection and sends
 [`CallbackDeliverParams`](#callbackdeliverparams). No return reaches the
-Application before authentication.
+Application before authentication. Sending the message ends this phase and
+lets Callback begin the Prover transition; its receipt begins Application
+validation.
 
 ### 3. Callback to Prover
 
-After delivery, Callback asks its connection to navigate to Prover. The
-connection owns immediate cross-document continuity. Prover clears its fragment
-and accepts the same logical connection; no callback value enters a URL or
-signaling record.
+After delivery, [Callback](#callback-get-callbackjs) asks its connection to
+navigate to [Prover](#prover-get-prover). The connection owns immediate
+cross-document continuity. Prover clears its fragment and accepts the same
+logical connection; no callback value enters a URL or signaling record.
 
 The Application validates the delivered return under the selected
 platform/version. A malformed result rejects the ceremony and sends
 [`AppCancelCeremony`](#appcancelceremony). A valid denial resolves
 `{ status: 'denied' }` and sends the same cancellation. A valid acceptance sends one
-[`AppRequestProof`](#apprequestproof) after Prover is active.
+[`AppRequestProof`](#apprequestproof) after Prover is active. Acceptance of that
+request enters Prover execution; cancellation ends the protocol instead.
 
 ### 4. Prover execution
 
-Prover applies the selected platform/version rules before credential use. It
-sends zero or more [`ProverNotifyEvent`](#provernotifyevent) messages followed
-by one [`ProverDeliverProof`](#proverdeliverproof), unless it sends
+This phase begins only when [Prover](#prover-get-prover) accepts
+[`AppRequestProof`](#apprequestproof). Prover applies the selected
+platform/version rules before credential use. It sends zero or more
+[`ProverNotifyEvent`](#provernotifyevent) messages followed by one
+[`ProverDeliverProof`](#proverdeliverproof), unless it sends
 [`AbortCeremony`](#abortceremony) or receives
-[`AppCancelCeremony`](#appcancelceremony).
+[`AppCancelCeremony`](#appcancelceremony). The first terminal outcome—proof
+delivery, abort, or cancellation—ends the phase; later messages have no effect.
 
 ### 5. Terminal outcomes
 
-Proof delivery, cancellation, and abort are mutually terminal even when they
-race in transit. Cancellation has no acknowledgement. An observable abort
-rejects the live ceremony; a failure before connection acceptance is rendered
-locally. Terminal cleanup and popup ownership follow the protocol invariants.
+Terminal processing begins when the Application cancels an active Callback or
+Prover, Callback or Prover reports an abort, or Prover delivers a proof. These
+outcomes are mutually terminal even when they race in transit. Cancellation has
+no acknowledgement. An observable abort rejects the live ceremony; a failure
+before connection acceptance is rendered locally. Terminal cleanup and popup
+ownership follow the [protocol invariants](#protocol-invariants).
 
 ## End-to-end sequence
 
