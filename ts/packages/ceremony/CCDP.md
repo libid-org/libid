@@ -88,7 +88,7 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 ### Common
 
-#### Paths and versions
+#### Paths and versioning
 
 The CCDP routes above are relative to `/ccdp/v{CCDPVersion}`. Prefetch, Prover,
 and Worker resolve against `ccdpOrigin`; Callback resolves against the OAuth
@@ -97,11 +97,16 @@ not a CCDP route.
 
 Before launch, the Application freezes the CCDP origin, redirect URI, platform
 authorization URL, ceremony ID, platform ID, and platform ceremony version.
-This document defines `CCDPVersion = 1`. The version also appears in OAuth
-`state` and selects matching Callback code, CCDP Host documents and Worker,
-fragment grammars, navigation order, and message semantics. A message does not
-repeat the version selected before its participant runs. The OAuth Bridge API
-and popup connection controls are independently versioned.
+This document defines `CCDPVersion = 1`. The Application selects it in the
+Prefetch path, carries the same version through OAuth `state`, and uses the
+matching Prover path. Callback selects its implementation from that state;
+fragments and messages do not repeat the version.
+
+Compatible implementation changes keep the version. A breaking fragment
+grammar, navigation order, message shape, direction, ordering, or validation
+rule increments it, publishes new CCDP Host paths and Worker, and adds the
+Callback version to the OAuth Bridge shell's closed supported-version map. Old
+resources remain available for live ceremonies and a compatibility window.
 
 A later CCDP version substitutes its decimal version in the common path. The
 OAuth Bridge dynamically loads the matching Callback module; the CCDP Host
@@ -120,6 +125,10 @@ version at these paths. Prefetch, Prover, and Worker responses use normal HTTP
 cache revalidation, including an ETag, while implementation-private
 content-addressed assets remain long-lived and immutable. A breaking change
 uses a new CCDP-version path.
+
+Platform Ceremony Version independently versions one platform's authorization,
+OAuth, proof, and output semantics. Popup connection controls and the OAuth
+Bridge API are independently versioned as well.
 
 #### Popup and fragment model
 
@@ -170,7 +179,7 @@ sequenceDiagram
     Note over A,F: Popup connection acceptance and prefetch start
     F-->>A: ProverPrefetchingAssets
     A->>O: Navigate popup away to platformAuthorizationUrl
-    O->>C: Return to redirectUri; Bridge invokes Callback
+    O->>C: Return to redirectUri, then Bridge invokes Callback
     Note over C: Receive the cleared OAuth return
     C-->>A: CallbackDeliverParams over popup connection
     C->>P: Continue connection and navigate to prover + prove fragment
@@ -414,23 +423,3 @@ validate the opaque `proof` payload separately.
 - Cancellation and context-loss cleanup are best effort.
 - No ceremony recovery, durable browser checkpoint, or migration to another
   popup connection exists.
-
-## Versioning and compatibility
-
-The Application selects the CCDP version in the Prefetch path and carries the
-same version through OAuth `state`. The Callback selects its versioned
-implementation from that state, and the later Prover navigation uses the
-matching versioned path.
-Fragments and CCDP messages do not repeat the version.
-
-Compatible implementation changes keep the version. A breaking navigation
-order, message shape, direction, ordering, or validation rule increments the
-CCDP version, publishes new CCDP Host paths and Worker, and adds the Callback
-version to the bridge shell's closed supported-version map. Old resources remain available for live
-ceremonies and a compatibility window. Compatible implementations may change
-internal chunks without changing CCDP.
-
-Platform Ceremony Version remains independent and versions one platform's
-authorization, OAuth, proof, and output semantics. The popup-connection
-protocol independently versions its private controls. The OAuth Bridge API
-namespace is also independent.
