@@ -203,7 +203,7 @@ After selecting and importing a root, the bootstrap calls its sole entrypoint
 with one deeply frozen object:
 
 ```ts
-interface CallbackShellInputV1 {
+interface CallbackShellInput {
   shellVersion: 1
   locationInput: {
     query: string
@@ -215,7 +215,7 @@ interface CallbackShellInputV1 {
   }
 }
 
-declare function startCallback(input: CallbackShellInputV1): void
+declare function startCallback(input: CallbackShellInput): void
 ```
 
 `query` and `fragment` are the bounded byte-for-byte URL components captured
@@ -227,7 +227,7 @@ before using it and copies the origin list again before popup acceptance.
 `shellVersion` versions only the shell-to-root call. A root-map entry pins one
 exact shell version. Adding a field or changing its meaning creates a new input
 version and a compatible root entry; it never appends an optional field to
-`CallbackShellInputV1`. Adding a CCDP root whose input is unchanged may keep
+`CallbackShellInput`. Adding a CCDP root whose input is unchanged may keep
 shell version 1. The shell version does not enter OAuth `state`, CCDP messages,
 or public configuration.
 

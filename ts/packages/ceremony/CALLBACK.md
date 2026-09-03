@@ -48,7 +48,7 @@ callback storage does not.
 
 `locationInput` is the exact copied query and fragment, including their leading
 delimiter when nonempty. The shell passes it with a sealed shell version and
-immutable bridge configuration in one `CallbackShellInputV1` object. The
+immutable bridge configuration in one `CallbackShellInput` object. The
 callback exact-validates and freezes that object, then passes the copied allowed
 application origins to `PopupConnection.accept` before installing ceremony
 listeners. The selected callback root owns any package-supported fallback

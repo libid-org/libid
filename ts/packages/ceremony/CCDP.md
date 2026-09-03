@@ -93,7 +93,7 @@ nonempty, and clears both. It parses no platform-specific return field beyond
 locating the single routing state. After root selection it invokes:
 
 ```ts
-interface CallbackShellInputV1 {
+interface CallbackShellInput {
   shellVersion: 1
   locationInput: {
     query: string
@@ -105,7 +105,7 @@ interface CallbackShellInputV1 {
   }
 }
 
-declare function startCallback(input: CallbackShellInputV1): void
+declare function startCallback(input: CallbackShellInput): void
 ```
 
 The selected root exact-validates the versioned object. Its application origins
