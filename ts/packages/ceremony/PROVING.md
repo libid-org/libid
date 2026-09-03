@@ -7,7 +7,7 @@ browser documents, routes, isolation, presentation, messages, and navigation.
 
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). The browser boundary and its input/output
-messages are defined by [CCDP](CCDP.md#prover). This document owns only the
+messages are defined by [CCDP](CCDP.md#prover-get-prover). This document owns only the
 proof-generation implementation and its embedded `ProverAssets`; it may be
 deployed on an origin independent of the [OAuth bridge](OAUTH_BRIDGE.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined

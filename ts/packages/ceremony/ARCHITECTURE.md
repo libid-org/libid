@@ -250,9 +250,9 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback) served as the versioned CCDP Callback implementation |
+| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-callbackjs) served as the versioned CCDP Callback implementation |
 | `@libid/ceremony/prefetch` | dual-context browser entrypoint embedded by the versioned Prefetch document and served at the versioned Worker path |
-| `@libid/ceremony/prover` | [browser entrypoint](CCDP.md#prover) embedded by the versioned isolated Prover document |
+| `@libid/ceremony/prover` | [browser entrypoint](CCDP.md#prover-get-prover) embedded by the versioned isolated Prover document |
 
 The API below and the [CCDP records](CCDP.md#direction-and-ordering)
 are the launch surface.

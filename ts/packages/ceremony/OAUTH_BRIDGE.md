@@ -6,7 +6,7 @@ configuration, serves the OAuth callback document, and performs the one
 confidential platform exchange required by GitHub.
 
 The package API is defined in [ARCHITECTURE.md](ARCHITECTURE.md), the callback
-participant in [CCDP](CCDP.md#callback), and proof generation in
+participant in [CCDP](CCDP.md#callback-get-callbackjs), and proof generation in
 [PROVING.md](PROVING.md). The normative libID specification owns authorization,
 platform-return, token-exchange, and proof semantics; this document fixes only
 the bridge's public transport and deployment boundary.
@@ -47,7 +47,7 @@ One bridge deployment has these inputs:
 | CCDP origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID CCDP Host |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback implementations | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback) |
+| Callback implementations | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-get-callbackjs) |
 | GitHub settings | Client secret, redirect URI, token endpoint settings, and server-side notary settings when GitHub is enabled |
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
@@ -155,7 +155,7 @@ The OAuth Bridge owns the shell's input handling, clearing, version selection,
 response policy, and module invocation. It embeds only the closed
 supported-version map, optional input overrides, `allowedAppOrigins`, the
 configured CCDP origin, stylesheet hash, and fixed CSP sources. CCDP owns the
-invoked [Callback](CCDP.md#callback) behavior.
+invoked [Callback](CCDP.md#callback-get-callbackjs) behavior.
 
 ### Shell document
 
