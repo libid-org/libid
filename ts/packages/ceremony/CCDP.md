@@ -170,20 +170,20 @@ Asset caching and popup-connection construction are outside CCDP.
 ```mermaid
 sequenceDiagram
     participant A as Application
-    participant F as Prefetch document
-    participant O as OAuth Platform
+    participant F as Prefetch
+    participant O as Authorization
     participant C as Callback
-    participant P as Top-level prover
+    participant P as Prover
 
-    A->>F: Open popup at prefetch fragment
+    A->>F: Open popup at /prefetch
     Note over A,F: Popup connection acceptance and prefetch start
     F-->>A: ProverPrefetchingAssets
-    A->>O: Navigate popup away to platformAuthorizationUrl
-    O->>C: Return to redirectUri, then Bridge invokes Callback
+    A->>O: Navigate popup to platformAuthorizationUrl
+    O->>C: Return to redirectUri, then load /callback.js
     Note over C: Receive the cleared OAuth return
     C-->>A: CallbackDeliverParams over popup connection
-    C->>P: Continue connection and navigate to prover + prove fragment
-    Note over C,P: The prover replaces callback in the same popup
+    C->>P: Continue connection and navigate to /prover
+    Note over C,P: Prover replaces Callback in the same popup
     alt Application does not proceed
         A-->>P: AppCancelCeremony
     else Application requests proof
