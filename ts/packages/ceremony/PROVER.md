@@ -19,9 +19,9 @@ Normative proof relations and authorization semantics remain in the
 
 ## Component boundary
 
-The selected CCDP Prefetch root serves the Prefetch shell and its Service
-Worker. The separate Prover root serves the isolated Prover shell. CCDP defines
-their filenames, shell entrypoints, and fragments:
+The CCDP Host embeds the selected CCDP implementations directly into the
+versioned Prefetch and isolated Prover documents and serves their shared module
+Service Worker at CCDP's versioned worker path:
 
 ```text
 Before OAuth: top-level Prefetch accepts the popup connection
@@ -41,14 +41,14 @@ Shared Service Worker
 OAuth navigation prevents reuse of the Prefetch document; the worker and browser
 caches preserve its fetch work.
 
-After each CCDP shell clears the URL, it invokes that document's single
-entrypoint. The Prefetch root evaluated as a Service Worker installs the
+After each document clears and validates the URL, its embedded entrypoint runs.
+The worker entrypoint installs the
 `@libid/popup/worker` continuity handler beside its cache and prefetch handlers;
 it does not enter CCDP or a platform pipeline.
 
 The prover calls `PopupConnection.accept` with
 `allowedApplicationOrigins: '*'` after isolation and URL clearing. The
-Application exact-authenticates the configured Proving Host; the accepted peer
+Application exact-authenticates the configured CCDP Host; the accepted peer
 can submit only its own transient
 proof request. `@libid/popup` privately restores continuity or selects a fresh
 carrier before returning the same logical connection. Platform and proving
@@ -315,7 +315,7 @@ their causal lifecycle remains a platform-ceremony-version change.
 
 ### Visible prover presentation
 
-The active prover root renders the persistent inline libID logo and one
+The active Prover implementation renders the persistent inline libID logo and one
 accessible milestone-progress bar. Before the first event it shows
 **Preparing proof** with an empty active shimmer. Each valid platform event
 replaces the text label and moves only to its monotonic target; proof delivery
@@ -337,7 +337,7 @@ application composition may retain it for a larger wallet flow.
 
 ## Shared toolchain and assets
 
-The Proving Host embeds this exact record:
+The CCDP Host embeds this exact record:
 
 ```ts
 interface ProverProfile {
@@ -367,8 +367,8 @@ platform/version pair. A request, fragment, or browser message cannot add or
 replace these values.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
-Their JavaScript is part of the prover build; whether the CCDP-named root has
-immutable companion chunks is not deployment configuration. The build likewise
+Their JavaScript is part of the prover build; internal companion chunks are not
+deployment configuration. The build likewise
 owns every toolchain worker, WASM, and common reference string (CRS) location.
 A deployer cannot replace those dependencies through `ProverAssets`.
 
@@ -376,10 +376,10 @@ The build enumerates the complete transitive execution graph: companion chunks,
 spawner and nested worker modules, WASM, and exact CRS resource paths. Every
 same-origin emitted resource intended to reuse prefetch sits under the prover
 service worker's controlled scope; every external resource is prefetched under
-the exact immutable URL later used by the runtime. The root bootstrap graph
-which installs that worker cannot depend on the worker during its first
-evaluation; it is self-contained or loaded through the Proving Host's
-immutable root-module path.
+the exact immutable URL later used by the runtime. The Prefetch bootstrap which
+installs that worker cannot depend on the worker during its first evaluation;
+it is contained in the versioned document or uses an implementation-private
+immutable chunk.
 
 Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
@@ -421,7 +421,7 @@ platform reuses it and fetches only missing profile assets. X/GitHub after
 Google fetches 17,903,618 bytes of notary WASM and the bearer circuit; Google
 after X/GitHub fetches only its 1,312,738-byte circuit.
 
-The counts are before HTTP content encoding and exclude HTML, the root and
+The counts are before HTTP content encoding and exclude CCDP HTML, entry code, and
 worker JavaScript graph, headers, OAuth/notary traffic, and attestations. They
 are reproducible heavy-resource subtotals, not a promise about total
 transferred bytes. The JavaScript graph does not exist yet and must publish its
@@ -446,11 +446,11 @@ semantics.
 
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
 behavior, not configuration or action input. The Application opens the
-top-level `/ccdp/prefetch` document, whose Window branch accepts the popup
-connection, registers the selected CCDP Prefetch root as a module Service Worker,
+top-level `/ccdp/v{CCDPVersion}/prefetch` document, whose Window branch accepts
+the popup connection, registers `/ccdp/v{CCDPVersion}/worker.js` as a module Service Worker,
 and asks it to start only the selected platform/version profile's artifact
-single flights. Prefetch and proving use separate response-policy routes and
-root artifacts from the same package release.
+single flights. Prefetch, Prover, and Worker implementations come from one
+compatible package release.
 
 After registration, the Window branch selects the newest worker, waits for it
 to become active, posts the exact selected profile, and reports readiness
@@ -464,7 +464,7 @@ The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
 stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
-Proving Host deployment contract.
+CCDP Host deployment contract.
 
 The Prefetch bootstrap exact-validates its deployment-embedded `ProverAssets`
 and accepts only the closed, cleared profile selected by its fragment. It adds
@@ -487,7 +487,7 @@ cache. Merely importing bb.js is not CRS prefetch.
 
 Manifest prefetches use `credentials: 'same-origin'`, matching native
 same-origin module and worker requests while still omitting credentials from
-cross-origin asset requests. The proving origin is cookie-free. Fetch-event
+cross-origin asset requests. The CCDP origin is cookie-free. Fetch-event
 handling preserves the admitted request's URL and response semantics so Firefox
 can reuse a prefetched worker response rather than refetching or synthesizing a
 different module.
@@ -514,7 +514,7 @@ IndexedDB cache before proof generation.
 A later ceremony reuses every repeated artifact URL and the same CRS entries;
 only missing profile assets are fetched. OAuth navigation therefore neither
 restarts shared work nor downloads unrelated profiles. The Prefetch and active
-Prover share the proving origin and worker registration, so the final Prover
+Prover share the CCDP origin and worker registration, so the final Prover
 reuses the same fetches and caches.
 
 A new document reconnects to the worker rather than awaiting a Promise owned
@@ -531,28 +531,34 @@ state is never a ceremony checkpoint.
 
 ## Worker and network isolation
 
-`GET /ccdp/prefetch` and `GET /ccdp/prover` serve request-invariant documents
-which select their respective immutable roots. CCDP owns their fragment
-grammars, clearing, root selection, and entrypoints. The deployment embeds only
-the closed root map, stylesheet hash, `ProverAssets`, and fixed response-policy sources. No
-request parameter selects a platform, role, asset, bridge, or CSP.
+`GET /ccdp/v{CCDPVersion}/prefetch` and `GET /ccdp/v{CCDPVersion}/prover` serve request-invariant
+documents with their entry code inline. CCDP owns their paths, fragment
+grammars, clearing, and entrypoints. The deployment embeds only stylesheet
+bytes, `ProverAssets`, and fixed response-policy sources. No request parameter
+selects a platform, role, asset, bridge, or CSP. `GET /ccdp/v{CCDPVersion}/worker.js` serves
+their same-origin module Service Worker.
 
-The top-level Prefetch uses `Cross-Origin-Opener-Policy: unsafe-none`, no COEP,
-and `frame-ancestors 'none'` so its opener remains available for initial
+Both documents use `Content-Type: text/html`,
+`X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, a strong `ETag`,
+and `Referrer-Policy: no-referrer`. The top-level Prefetch uses
+`Cross-Origin-Opener-Policy: unsafe-none`, no COEP, and
+`frame-ancestors 'none'` so its opener remains available for initial
 popup-connection acceptance. It handles only public asset selection and
-prefetch. The Prover uses `Cross-Origin-Opener-Policy: same-origin`,
-`Cross-Origin-Embedder-Policy: require-corp`, `Content-Type: text/html`,
-`X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, and
-`Referrer-Policy: no-referrer`. Both documents use a CSP which denies by default
-and admits only the exact root, worker, `blob:`,
+prefetch. The Prover uses `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. Both documents use a CSP which
+denies by default and admits only the exact inline entry code, worker, `blob:`,
 WebAssembly, style hash, toolchain sources, and network classes needed by the
 closed prover implementation. The implementation exact-validates every
 OAuth-bridge endpoint derived from the proof request's frozen `redirectUri`
 before use; the response does not embed or enumerate bridge origins and remains
 byte-identical across them.
 
+The Worker response uses the module-Service-Worker JavaScript media type,
+`nosniff`, `Cache-Control: no-cache`, a strong ETag, and response policies
+compatible with the isolated Prover and its controlled scope.
+
 This is not browser-enforced compartmentalization between platform profiles or
-OAuth bridges: a compromised prover root can use every network class admitted
+OAuth bridges: a compromised Prover implementation can use every network class admitted
 by that response. Stronger confinement requires platform- or bridge-specific
 responses and is outside this shared deployment.
 

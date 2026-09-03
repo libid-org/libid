@@ -24,29 +24,34 @@ the distinction is immaterial.
 |---|---|---|
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
 | OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback document, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
-| Proving Host | proving origin | hosts the prefetch and isolated prover documents, prover roots, and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
+| CCDP Host | CCDP origin | owns and hosts the versioned Prefetch, Prover, and Worker implementations and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
 | OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
 | Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
 
-The Application, OAuth Bridge, and Proving Host may be operated together or
+The Application, OAuth Bridge, and CCDP Host may be operated together or
 independently and may be same-origin, same-site, or cross-site. CCDP assumes
 none of those relationships. Browser authority is always established against
-an exact origin. In particular, the Proving Host is not a wallet: both
+an exact origin. In particular, the CCDP Host is not a wallet: both
 external-wallet and native-wallet compositions consume the same independently
-hosted proving boundary.
+hosted CCDP boundary.
 
-## Browser documents and routes
+CCDP also owns Callback behavior. The OAuth Bridge serves its stable ingress
+shell and same-origin versioned implementation only because the registered
+OAuth redirect URI must terminate on the bridge origin.
 
-Before launch, the Application freezes the proving origin, redirect URI,
+## Browser resources and routes
+
+Before launch, the Application freezes the CCDP origin, redirect URI,
 platform authorization URL, ceremony ID, platform ID, and platform ceremony
-version. CCDP runs across these concrete browser documents and routes:
+version. CCDP uses these concrete browser resources and routes:
 
-| Document | Served by | Browser context | Route | Responsibility and lifetime |
+| Resource | Served by | Browser context | Route | Responsibility and lifetime |
 |---|---|---|---|---|
-| Prefetch | Proving Host | ceremony popup, top-level and non-isolated | `${provingOrigin}/ccdp/prefetch` | accepts the Application connection and starts selected-profile asset fetching |
+| Prefetch | CCDP Host | ceremony popup, top-level and non-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prefetch` | accepts the Application connection and starts selected-profile asset fetching |
 | Authorization | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to `redirectUri`; it is not a CCDP participant |
 | Returned Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | frozen `redirectUri` | delivers the OAuth-platform return and navigates to the Prover |
-| Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover` | receives the validated OAuth result, exposes visible progress, and generates the proof |
+| Prover | CCDP Host | ceremony popup, top-level and COOP/COEP-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prover` | receives the validated OAuth result, exposes visible progress, and generates the proof |
+| Worker | CCDP Host | module Service Worker shared by Prefetch and Prover | `${ccdpOrigin}/ccdp/v{CCDPVersion}/worker.js` | preserves popup MessagePorts across same-origin navigation and owns asset/CRS single flights and caches |
 
 The **ceremony popup** is a reusable browsing context, not an actor or document.
 It sequentially contains Prefetch → Authorization → Callback → Prover.
@@ -54,7 +59,7 @@ Navigation creates a new JavaScript heap each time; no participant relies on
 document-local state surviving it. These origins may all be cross-site, and
 same-site placement grants no protocol authority.
 
-The shell sections below define each fragment's full field set. Internal
+The document sections below define each fragment's full field set. Internal
 fragments use URL-search-parameter encoding after `#`. Producers emit each
 named field exactly once in the displayed order.
 Receivers require the exact field set, reject duplicates, and otherwise do not
@@ -62,12 +67,12 @@ depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
 Platform IDs use the exact identifiers defined by the selected platform
 profile; platform ceremony versions are unsigned 16-bit integers.
 
-The prefetch and prover routes have no query. Their fragments never reach either
-HTTP server and are copied and cleared before rendering, module import,
-storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
-one exact root module from a deployment-fixed supported map. No OAuth return,
-credential, proof input, or proof is placed in an internal fragment. The
-OAuth-platform-mandated query on `redirectUri` is the only protocol exception.
+The Prefetch and Prover routes have no query. Their fragments never reach the
+CCDP Host and are copied and cleared before rendering, storage, or network
+use. Their versioned paths select the CCDP implementation directly. No OAuth
+return, credential, proof input, or proof is placed in an internal fragment.
+The OAuth-platform-mandated query on `redirectUri` is the only protocol
+exception.
 
 CCDP is connection-neutral. It defines which document runs at each location,
 which participant initiates each navigation, what each message means, and their
@@ -76,48 +81,37 @@ direction and state before acting.
 
 ## Version
 
-This document defines CCDP version `1`. `ccdpVersion` is encoded in the
-prefetch/prover fragments and OAuth `state`.
-Version `1` selects matching callback, prefetch, and prover root modules, fragment
-grammars, navigation order, and message semantics. A message does not repeat
-the version selected before its module loads. The OAuth bridge API and popup
-connection controls are independently versioned.
+This document defines CCDP version `1`. The version appears in the CCDP Host
+paths and OAuth `state`. Version `1` selects matching Callback code, CCDP Host
+documents and Worker, fragment grammars, navigation order, and message
+semantics. A message does not repeat the version selected before its document
+loads. The OAuth bridge API and popup connection controls are independently
+versioned.
 
-The version-1 browser roots have these exact filenames:
+Version 1 has these deployed resources:
 
-| Document | Root module |
+| Resource | Location |
 |---|---|
-| Callback | `libid-ccdp-v1-callback.js` |
-| Prefetch | `libid-ccdp-v1-prefetch.js` |
-| Prover | `libid-ccdp-v1-prover.js` |
+| Callback implementation | `/ccdp/v1/callback.js` on the OAuth Bridge |
+| Prefetch document | `/ccdp/v1/prefetch` on the CCDP Host |
+| Prover document | `/ccdp/v1/prover` on the CCDP Host |
+| Shared module Service Worker | `/ccdp/v1/worker.js` on the CCDP Host |
 
-A later CCDP version uses the same pattern with its decimal version substituted
-for `1`. Each root is an immutable asset on its document's origin. The Prefetch
-and Prover roots share the Proving Host origin; the Callback root need not. The
-stable HTML shells embed closed
-CCDP-version-to-root maps; neither a request nor a CCDP message may supply a
-root URL.
+A later CCDP version substitutes its decimal version in these paths. The
+Callback shell imports its versioned implementation; the CCDP Host documents
+execute theirs directly. Internal bundle names are not protocol surface. The
+Prefetch and Prover documents and Worker share the CCDP origin.
 
-## Browser shells
+## Browser documents
 
-The OAuth bridge's configured callback path and the Proving Host's
-`GET /ccdp/prefetch` and `GET /ccdp/prover` routes serve the stable CCDP HTML
-shells. They are browser documents, not JSON API routes. A shell update may add
-a supported CCDP version to its closed map, while an already published root
-remains immutable and available through its compatibility window.
-
-The responses are request-invariant security shells containing one
-CSP-authorized inline clearing bootstrap and one empty mount point. They contain
-no application UI. Before storage, rendering, error reporting, module import,
-or subsequent network use, each bootstrap bounds and copies its URL input,
-clears the input with `history.replaceState`, exact-validates the grammar below,
-and imports the one root selected by the CCDP version. Missing, conflicting,
-malformed, or unsupported versions import nothing and render only a fixed
-failure after clearing. Selection replaces the module request the document
-already needs; it adds no HTTP redirect, loader script, or document navigation.
-An oversized input is not retained. A root import failure is terminal for that
-document and is not retried against the browser's failed module-map entry; a
-user retry starts in a fresh document.
+The OAuth Bridge's configured callback path and the CCDP Host's versioned
+Prefetch and Prover paths serve CCDP browser documents, not JSON API routes.
+Each response is request-invariant and contains one CSP-authorized inline
+bootstrap and one empty mount point. Before storage, rendering, error reporting,
+or subsequent network use, the bootstrap bounds and copies its URL input,
+clears it with `history.replaceState`, and exact-validates the grammar below.
+Malformed or oversized input runs no protocol code and renders only a fixed
+failure after clearing.
 
 ### Callback shell
 
@@ -128,7 +122,8 @@ and does not encode a CCDP version.
 
 The callback bootstrap accepts only the bounded OAuth-platform-defined query
 and fragment containing exactly one OAuth `state` in the form
-`v<version>.<ceremonyId>`, whose version selects the Callback root.
+`v<version>.<ceremonyId>`, whose version selects
+`/ccdp/v{CCDPVersion}/callback.js`.
 
 The selected platform ceremony version owns the exact platform authorization
 and return grammar. The authorization request uses the frozen `redirectUri`
@@ -141,38 +136,57 @@ It bounds the combined raw query and fragment to
 `MAX_OAUTH_RETURN_BYTES = 32 KiB`, preserves the leading `?` and `#` when
 nonempty, and clears both. It parses no platform-specific return field beyond
 locating the single routing state. The shell passes the copied query and
-fragment plus the selected root's deployment-controlled inputs to that root.
-Application origins and proving origin are immutable deployment data, never
-derived from `Origin`, `Referer`, or URL input. Shell-to-root invocation is
-outside CCDP and is not a protocol message. Google
+fragment plus the selected version's deployment-controlled inputs to that
+implementation.
+Application origins and CCDP origin are immutable deployment data, never
+derived from `Origin`, `Referer`, or URL input.
+Shell-to-implementation invocation is outside CCDP and is not a protocol
+message. Google
 credentials remain in the fragment and therefore never reach the bridge;
 OAuth-platform-mandated query parameters are the only credential-bearing URL
 exception.
 
-### Prefetch and Prover shells
+### Prefetch and Prover documents
 
-The Proving Host serves two response-policy shells, each with its own immutable
-root:
+The CCDP Host serves two versioned, request-invariant documents:
 
-- `/ccdp/prefetch#ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
+- `/ccdp/v{CCDPVersion}/prefetch#ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
   is top-level and non-isolated so it can accept the initial popup connection;
-- `/ccdp/prover#ccdpVersion=1&ceremonyId=<uuid>` is top-level and
+- `/ccdp/v{CCDPVersion}/prover#ceremonyId=<uuid>` is top-level and
   COOP/COEP-isolated for proof generation.
 
-The route selects the document role; no fragment field repeats it. The shells
-have different isolation headers and root maps but otherwise contain the same
-empty mount point, deployment-controlled proving inputs, and clearing
-bootstrap. Any other route or browser context imports nothing.
+The path selects both CCDP version and document role; no fragment field repeats
+either. Each response contains its clearing bootstrap and entry code directly,
+so no root map, standardized root filename, or second entry-script request
+exists. It may load implementation-private immutable chunks and proving assets.
+The two documents have different isolation headers but the same deployment
+inputs and empty mount point.
+
+`GET /ccdp/v{CCDPVersion}/worker.js` serves the same-origin module Service Worker registered
+by Prefetch. It composes temporary MessagePort continuity with asset and CRS
+single flights and caches for the later Prover. The route is required; whether
+its bytes are an on-disk file, generated output, or embedded in the CCDP Host
+binary is not part of CCDP.
+
+The CCDP Host may serve the latest implementation compatible with a CCDP
+version at these paths. Prefetch and Prover responses use normal HTTP
+cache revalidation, including an ETag, while implementation-private
+content-addressed assets remain long-lived and immutable. A breaking change
+uses a new CCDP-version path.
+
+The OAuth Bridge applies the same compatible-update and cache-revalidation
+policy to `/ccdp/v{CCDPVersion}/callback.js`. Its stable Callback shell admits
+only versions in its deployment-owned supported set.
+
 With `allowedApplicationOrigins: '*'`, the Prefetch and Prover accept any valid
 browser-observed HTTPS Application origin and pin that exact origin and source
-for each carrier. The Application exact-authenticates the configured Proving
-Host. Open admission there grants only public asset prefetch and processing of
+for each carrier. The Application exact-authenticates the configured CCDP Host.
+Open admission there grants only public asset prefetch and processing of
 the connecting Application's own proof request; neither document receives an
 OAuth return directly from the platform. The returned Callback
 exact-authenticates the Application against the OAuth Bridge's deployment
 allowlist before releasing that return.
-Shell-to-root invocation, asset caching, and popup-connection construction are
-outside CCDP.
+Asset caching and popup-connection construction are outside CCDP.
 
 ## End-to-end sequence
 
@@ -189,7 +203,7 @@ sequenceDiagram
     F-->>A: ProverPrefetchingAssets
     A->>O: Navigate popup away to platformAuthorizationUrl
     O->>C: Return same popup to redirectUri
-    Note over C: Clear return and select callback root by state version
+    Note over C: Clear return and select Callback implementation by state version
     C-->>A: CallbackDeliverParams over popup connection
     C->>P: Continue connection and navigate to prover + prove fragment
     Note over C,P: The prover replaces callback in the same popup
@@ -248,10 +262,11 @@ available for the returned Callback to reconnect.
 The OAuth Platform owns the popup until it navigates to the frozen `redirectUri`.
 That route serves the request-invariant callback shell. Its
 inline bootstrap bounds and clears both URL components, extracts exactly one
-`v<version>.<ceremonyId>` state, and imports the matching immutable callback
-root from its closed supported-version map in the same document. Unknown or
-malformed versions fail before the selected root loads. This replaces the callback
-module import the page already requires; it adds no document navigation.
+`v<version>.<ceremonyId>` state, and imports the matching
+`/ccdp/v{CCDPVersion}/callback.js` implementation after checking its closed
+supported-version map. Unknown or malformed versions fail before the
+implementation loads. This replaces the module import the page already
+requires; it adds no document navigation.
 
 ```ts
 interface CallbackDeliverParams {
@@ -437,20 +452,18 @@ validate the opaque `proof` payload separately.
 
 ## Versioning and compatibility
 
-The Application selects the CCDP version in its prefetch fragment and carries
-the same version through OAuth `state`. The Callback selects it from that state,
-the later Prover navigation repeats it in its fragment, and each shell loads
-that exact version's immutable root. The configured callback path and stable
-Proving Host paths do not select or encode a CCDP version.
+The Application selects the CCDP version in the Prefetch path and carries the
+same version through OAuth `state`. The Callback selects its versioned
+implementation from that state, and the later Prover navigation uses the
+matching versioned path.
+Fragments and CCDP messages do not repeat the version.
 
 Compatible implementation changes keep the version. A breaking navigation
 order, message shape, direction, ordering, or validation rule increments the
-CCDP version and publishes each affected versioned root. The shells add the new
-roots to their closed maps while old
-roots remain available for live ceremonies and a compatibility window. A root
-may gain immutable companion chunks without changing CCDP when its shell and
-protocol contracts remain compatible. No CCDP message repeats the
-already-selected version.
+CCDP version, publishes new CCDP Host paths and Worker, and adds the Callback
+version to the bridge shell's closed supported-version map. Old resources remain available for live
+ceremonies and a compatibility window. Compatible implementations may change
+internal chunks without changing CCDP.
 
 Platform Ceremony Version remains independent and versions one platform's
 authorization, OAuth, proof, and output semantics. The popup-connection

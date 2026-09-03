@@ -45,10 +45,10 @@ sequenceDiagram
     actor U as User
     participant A as Application composition
     participant C as Application-side client
-    participant F as Prefetch document / Proving Host
+    participant F as Prefetch document / CCDP Host
     participant O as Authorization document / OAuth Platform
     participant P as Callback document / OAuth Bridge
-    participant R as Prover document / Proving Host
+    participant R as Prover document / CCDP Host
 
     U->>A: Activate identity action
     A->>A: Create popup window and connection
@@ -143,10 +143,10 @@ Launch publishes one `@libid/ceremony` package:
 ├── ccdp
 │   └── index         ceremony records, directional codecs, and protocol version
 ├── client      CeremonyConfig fetch, application-side API, and orchestration
-├── callback    source entrypoint for the CCDP callback root
-├── prefetch    source entrypoint for the CCDP prefetch root, shared worker, and asset cache
+├── callback    source entrypoint for the versioned CCDP Callback implementation
+├── prefetch    source entrypoint for Prefetch, the shared worker, and asset cache
 ├── prover
-│   ├── index          source entrypoint for the CCDP prover root and WASM proving
+│   ├── index          source entrypoint for the isolated Prover and WASM proving
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    client-safe platform/version catalog and derived public result types
@@ -201,15 +201,16 @@ catalog and public result types, and is re-exported by the package root and
 client API. Prover leaves are internal imports of the prover entrypoint and
 never enter the client catalog.
 Individual platform leaves never import the aggregator. `callback`, `prefetch`,
-and `prover` are build entrypoints, not separately versioned packages. They emit the
-immutable roots whose filenames and shell selection are defined by CCDP, plus
-worker/WASM assets from one compatible package release. The Prefetch artifact
-runs in Window and Service Worker contexts: its Window branch dispatches the
-selected asset profile, while its Service Worker branch composes popup
-continuity with ceremony-owned asset single flights and cache. The Prover root
-runs only in the active top-level Prover and joins those cached flights. That
-registration belongs only to the proving origin; the OAuth-bridge callback
-installs no shared worker.
+and `prover` are build entrypoints, not separately versioned packages. Callback
+supplies the implementation served by the OAuth Bridge's versioned route. The CCDP Host
+embeds Prefetch and Prover entry code directly into their versioned documents
+and serves the Prefetch Service Worker at CCDP's versioned worker path; internal
+bundle filenames are deployment details. The Prefetch entrypoint runs in Window
+and Service Worker contexts: its Window branch dispatches the selected asset
+profile, while its Service Worker branch composes popup continuity with
+ceremony-owned asset single flights and cache. The Prover runs only in the
+active top-level document and joins those cached flights. The OAuth-bridge
+callback installs no shared worker.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
@@ -251,9 +252,9 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) implementing the CCDP-selected callback root |
-| `@libid/ceremony/prefetch` | dual-context browser entrypoint implementing the CCDP-selected Prefetch root and its Service Worker asset/cache behavior |
-| `@libid/ceremony/prover` | browser entrypoint implementing the isolated CCDP-selected Prover root and proof execution |
+| `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) served as the versioned CCDP Callback implementation |
+| `@libid/ceremony/prefetch` | dual-context browser entrypoint embedded by the versioned Prefetch document and served at the versioned Worker path |
+| `@libid/ceremony/prover` | browser entrypoint embedded by the versioned isolated Prover document |
 
 The API below and the [CCDP records](CCDP.md#direction-and-ordering)
 are the launch surface.
@@ -379,7 +380,7 @@ second authorization secret.
 nonce, derives the code verifier from it and the Authorization Digest by the
 normative Proof Key for Code Exchange (PKCE) construction where required, and
 constructs the authorization request with the [CCDP-defined OAuth
-state](CCDP.md#browser-documents-and-routes), and returns the `Ceremony` with its launch
+state](CCDP.md#browser-resources-and-routes), and returns the `Ceremony` with its launch
 URL ready. OAuth `state` carries the CCDP
 routing version plus `ceremonyId`; it is not a second identifier:
 
@@ -423,7 +424,7 @@ function activate(event: MouseEvent) {
   const popupWindow = PopupWindow.open(target)
   const connection = PopupConnection.connect<Message>(popupWindow, {
     connectionId: ceremonyId,
-    allowedPopupOrigins: [provingOrigin, new URL(redirectUri).origin],
+    allowedPopupOrigins: [ccdpOrigin, new URL(redirectUri).origin],
   })
   const ceremony = ceremonies.new(ceremonyId, {
     connection,
@@ -473,7 +474,7 @@ no-ceremony-recovery launch scope.
 
 The client fetches and validates the origin-controlled
 [`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
-the chosen platform, version, client ID, redirect URI, and proving origin.
+the chosen platform, version, client ID, redirect URI, and CCDP origin.
 Callback and prover never fetch it.
 
 ## Result and lifecycle
@@ -721,9 +722,10 @@ output-shape versions. A proof change normally changes the assembled
 public compatibility axis. One package release may retain older platform-version
 validators during its compatibility window.
 
-[`CCDPVersion`](CCDP.md#version) independently versions callback, prefetch, and
-prover roots, navigation, fragments, and browser messages. Fragments and OAuth `state` select
-it before module loading; messages do not repeat it. The OAuth bridge API
+[`CCDPVersion`](CCDP.md#version) independently versions the Callback implementation,
+CCDP Host documents and Worker, navigation, fragments, and browser messages.
+CCDP Host paths and OAuth `state` select it before protocol code runs;
+messages do not repeat it. The OAuth bridge API
 namespace remains independent. The popup package's
 [`ConnectionVersion`](../popup/CONNECTION.md) independently versions private
 connection controls. Local Job schema versioning

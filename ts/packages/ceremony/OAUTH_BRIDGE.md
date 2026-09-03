@@ -18,19 +18,21 @@ The OAuth bridge owns:
 - OAuth application registrations, public client IDs, and confidential client
   credentials;
 - the public ceremony configuration;
-- the callback document, its configured path, response policy, and
-  immutable callback modules; and
+- callback ingress, its configured path, response policy, and deployment
+  inputs; and
 - GitHub's confidential token exchange and token attestation when GitHub is
   enabled.
 
-It does not serve the prover document, prover modules, circuits, notarization
+CCDP owns the versioned Callback implementation; the bridge serves that code at
+the CCDP-defined same-origin route. The bridge does not serve the Prover
+document, prover modules, circuits, notarization
 client, proving toolchain, or prover Service Worker. It owns no ceremony Job and
 keeps no ceremony progress, OAuth return, proof, retry, cancellation, or
 recovery state. Google and X require no confidential bridge route.
 
-The OAuth bridge and prover may use different origins or sites. The bridge
+The OAuth Bridge and CCDP Host may use different origins or sites. The bridge
 origin is a code-supply-chain boundary for OAuth callback code and public
-configuration; the proving origin is an independent code-supply-chain boundary
+configuration; the CCDP origin is an independent code-supply-chain boundary
 for proof generation. Supplying the bridge origin to the prover at runtime does
 not make the prover response deployment-specific.
 
@@ -42,10 +44,10 @@ One bridge deployment has these inputs:
 |---|---|
 | Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted to fetch configuration and authenticate the callback popup connection |
-| Proving origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID Proving Host |
+| CCDP origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID CCDP Host |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback roots | Closed CCDP root map, immutable filenames, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-shell) |
+| Callback implementations | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required by [CCDP](CCDP.md#callback-shell) |
 | GitHub settings | Client secret, redirect URI, token endpoint settings, and server-side notary settings when GitHub is enabled |
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
@@ -53,14 +55,14 @@ deployment error rather than something the bridge normalizes. The set drives
 configuration CORS and is embedded into the callback document. It is never
 inferred from a request's `Origin`, `Referer`, query, fragment, or body.
 
-The proving origin is likewise deployment data. It is returned to the
+The CCDP origin is likewise deployment data. It is returned to the
 application in public configuration and embedded into the callback document so
 the callback can navigate the popup to the prover. It does not identify an
 artifact, circuit, or notary endpoint.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
-platform/version pairs supported by its selected Proving Host.
+platform/version pairs supported by its selected CCDP Host.
 
 ## Route surface
 
@@ -68,9 +70,10 @@ The bridge exposes only:
 
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
-| `GET` | `/api/v1/ceremony/config` | always | public platform and prover configuration | exact request `Origin` member of `allowedAppOrigins`; exact noncredentialed CORS |
+| `GET` | `/api/v1/ceremony/config` | always | public platform and CCDP configuration | exact request `Origin` member of `allowedAppOrigins`; exact noncredentialed CORS |
 | `GET` | configured callback path, default `/auth/callback` | always | registered OAuth callback shell | none at HTTP ingress; callback authenticates its popup connection after clearing its input |
-| `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured proving origin; exact noncredentialed CORS |
+| `GET` | `/ccdp/v{CCDPVersion}/callback.js` | for each supported CCDP version | versioned Callback implementation | same-origin module resource; path fixes the version and query or request headers cannot select its bytes |
+| `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured CCDP origin; exact noncredentialed CORS |
 
 Top-level navigation may omit `Origin`, and an OAuth-platform callback may
 identify the platform rather than the application. `Referer` is never an
@@ -78,7 +81,7 @@ authority input. The callback document is therefore public and
 request-invariant; its browser protocol authenticates the application after it
 loads.
 
-No prover, artifact, preparation, continuation, polling, status, result,
+No prover, proving-asset, preparation, continuation, polling, status, result,
 cancellation, browser TLS bridge, or proof-recovery route exists on the
 OAuth bridge. Unsupported methods fail without route work. Except for the
 OAuth-platform-mandated callback query and the GitHub JSON request, bridge routes
@@ -104,7 +107,7 @@ interface PlatformConfig {
 
 interface CeremonyConfig {
   redirectUri: string
-  provingOrigin: string
+  ccdpOrigin: string
   platforms: Readonly<Record<string, PlatformConfig>>
 }
 ```
@@ -114,7 +117,7 @@ The response rules are:
 - `PlatformCeremonyVersion` is an unsigned 16-bit integer.
 - `redirectUri` is the canonical registered URL on the bridge origin. It
   contains no credentials, query, or fragment.
-- `provingOrigin` is the configured canonical HTTPS origin with no credentials,
+- `ccdpOrigin` is the configured canonical HTTPS origin with no credentials,
   path, query, or fragment.
 - Each platform entry has one public client ID and a nonempty, duplicate-free
   list of supported ceremony versions. List order has no meaning.
@@ -132,7 +135,7 @@ The request must carry an `Origin` which exactly matches an
 returning configuration. Request values do not alter the response record.
 
 The application-scoped `CeremonyClient` fetches and validates this record once
-at creation. It freezes the selected client ID, redirect URI, proving origin,
+at creation. It freezes the selected client ID, redirect URI, CCDP origin,
 and mutually supported platform ceremony version in each live ceremony.
 Prefetch, callback, and prover documents never fetch bridge configuration.
 
@@ -142,15 +145,16 @@ The configured callback path serves one deployment-generated callback document.
 Each enabled OAuth application registers the same URL as its `redirect_uri`.
 There is no callback alias or HTTP redirect.
 
-The response is invariant across requests. Its HTML, headers, root map, CSP,
-embedded `allowedAppOrigins`, and proving origin do not depend on request
+The response is invariant across requests. Its HTML, headers, supported-version map, CSP,
+embedded `allowedAppOrigins`, and CCDP origin do not depend on request
 `Origin`, `Referer`, query, fragment, platform, or ceremony. The document is
 top-level, non-isolated, and non-frameable so it preserves the application
 opener whenever OAuth-platform policy permits.
 
-[CCDP](CCDP.md#callback-shell) owns the shell's input, clearing, and root
-selection. The bridge embeds only that closed root map, `allowedAppOrigins`,
-the configured proving origin, stylesheet hash, and fixed CSP sources.
+[CCDP](CCDP.md#callback-shell) owns the shell's input, clearing, and
+implementation selection. The bridge embeds only the closed supported-version
+map, optional input overrides, `allowedAppOrigins`, the configured CCDP origin,
+stylesheet hash, and fixed CSP sources.
 
 ### Shell document
 
@@ -174,37 +178,34 @@ The response contains only the semantic equivalent of:
 The exact bootstrap is inline so it can clear credentials before requesting any
 subresource. Its CSP hash is generated from its exact deployment bytes. The
 document contains no external config script, preload, analytics, application
-markup, or request-derived interpolation. The root module owns all later UI.
+markup, or request-derived interpolation. The Callback implementation owns all
+later UI.
 
-The bootstrap embeds one current default input tuple and a closed map from
-supported CCDP versions to immutable, same-origin callback root URLs. A root
-entry may override the tuple when needed. Version 1 is equivalent to:
+The bootstrap embeds one current default input tuple, a closed list of supported
+CCDP versions, and optional per-version input overrides. The implementation URL
+is derived only after the version is found in that list. Version 1 is equivalent
+to:
 
 ```ts
 const defaultInputs = deepFreeze([
   ['https://app.example'],
-  'https://prove.lib.id',
+  'https://ccdp.lib.id',
 ])
 
-const callbackRoots = Object.freeze({
-  1: Object.freeze({
-    moduleUrl: new URL(
-      '/assets/libid-ccdp-v1-callback.js',
-      location.origin,
-    ).href,
-  }),
-})
+const supportedCCDPVersions = Object.freeze([1])
+const callbackInputOverrides: Readonly<
+  Partial<Record<number, readonly unknown[]>>
+> = Object.freeze({})
 ```
 
-The displayed asset path is illustrative; a deployment may use any immutable
-same-origin path. Neither URL input nor a network response can add or replace a
-map entry.
+Neither URL input nor a network response can add a supported version or input
+override.
 
-### Stable root input
+### Stable implementation input
 
-After selecting and importing a root, the bootstrap calls its sole entrypoint
-with the captured location followed by its override or the deeply frozen
-default inputs:
+After selecting and importing an implementation, the bootstrap calls its sole
+entrypoint with the captured location followed by its override or the deeply
+frozen default inputs:
 
 ```ts
 interface CallbackLocationInput {
@@ -212,31 +213,39 @@ interface CallbackLocationInput {
   fragment: string
 }
 
-const root = await import(selected.moduleUrl)
-root.startCallback(locationInput, ...(selected.inputs ?? defaultInputs))
+const moduleUrl = new URL(
+  `/ccdp/v${version}/callback.js`,
+  location.origin,
+).href
+const callback = await import(moduleUrl)
+callback.startCallback(
+  locationInput,
+  ...(callbackInputOverrides[version] ?? defaultInputs),
+)
 ```
 
 `query` and `fragment` are the bounded byte-for-byte OAuth-return URL components
 captured before clearing, including their leading delimiter when nonempty. The
-root exact-validates the selected shape, including unknown fields, before using
-it and copies the origin list again before popup acceptance. For
-CCDP version 1, the root defines and exact-validates this signature:
+implementation exact-validates the selected shape, including unknown fields,
+before using it and copies the origin list again before popup acceptance. For
+CCDP version 1, the implementation defines and exact-validates this signature:
 
 ```ts
 declare function startCallback(
   locationInput: CallbackLocationInput,
   allowedApplicationOrigins: readonly string[],
-  provingOrigin: string,
+  ccdpOrigin: string,
 ): void
 ```
 
-The shell-to-root contract is deliberately unversioned and fixed. URL input is
-always the raw query/fragment pair, while both default and overridden `inputs`
-are opaque to the shell. Each immutable CCDP root defines and exact-validates
-its own argument tuple. Roots use the latest deployment values by default. Before
-changing the tuple incompatibly, the deployment pins the previous tuple only on
-roots that still require it. This changes neither the shell algorithm nor the
-browser URL. Neither URL input nor a network response may supply arguments.
+The shell-to-implementation contract is deliberately unversioned and fixed.
+URL input is always the raw query/fragment pair, while both default and overridden `inputs`
+are opaque to the shell. Each CCDP Callback implementation defines and
+exact-validates its own argument tuple. Implementations use the latest deployment
+values by default. Before changing the tuple incompatibly, the deployment pins
+the previous tuple only on versions that still require it. This changes neither
+the shell algorithm nor the browser URL. Neither URL input nor a network
+response may supply arguments.
 
 ### Bootstrap algorithm
 
@@ -248,12 +257,13 @@ the inline bootstrap:
 3. accepts only an OAuth-platform return containing exactly one routing `state`;
 4. reads only the `v<version>.` prefix from OAuth `state` and rejects malformed
    or unsupported values;
-5. selects the corresponding closed root and its optional input override;
+5. selects the corresponding version and its optional input override;
 6. deeply freezes the captured location and resolved inputs; and
-7. imports the immutable root and invokes
-   `startCallback(locationInput, ...(selected.inputs ?? defaultInputs))` once.
+7. imports `/ccdp/v{CCDPVersion}/callback.js` and invokes its `startCallback`
+   entrypoint once with the resolved inputs.
 
-Any failure imports no other root and renders only fixed text after clearing.
+Any failure imports no other implementation and renders only fixed text after
+clearing.
 The bootstrap never parses a platform credential, selects a prover asset, or
 uses `Origin` or `Referer` as configuration.
 
@@ -270,18 +280,19 @@ The callback response uses:
   `Cache-Control: no-store`, and `Referrer-Policy: no-referrer`;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
-- `frame-src` admitting only the exact configured proving origin;
+- `frame-src` admitting only the exact configured CCDP origin;
 - `connect-src` admitting only fixed sources required by the configured popup
   fallback;
 - `style-src` permitting only the exact package stylesheet hash;
-- one exact hash for the inline clearing bootstrap and only the closed immutable
-  callback-root sources; and
+- one exact hash for the inline clearing bootstrap and only the exact supported
+  Callback implementation paths; and
 - no broad scheme, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
 
-The callback root and its companion assets use immutable versioned URLs, exact
-media types, `X-Content-Type-Options: nosniff`, compatible CORS/CORP policy, and
-`Cache-Control: public, max-age=31536000, immutable`. A URL is never reused for
-different bytes or execution-relevant headers. Markup, styles, and logo remain
+Callback implementation routes use exact media types,
+`X-Content-Type-Options: nosniff`, compatible CORS/CORP policy,
+`Cache-Control: no-cache`, and strong ETags so a versioned path may receive
+backward-compatible updates. Implementation-private content-addressed companion
+assets remain long-lived and immutable. Markup, styles, and logo remain
 package-owned; the bridge exposes no separate template or theme contract.
 
 ## GitHub token endpoint
@@ -338,7 +349,7 @@ authoritative.
 The endpoint contract is:
 
 - the query is empty and the request media type is exactly `application/json`;
-- preflight and POST `Origin` exactly equal the configured proving origin;
+- preflight and POST `Origin` exactly equal the configured CCDP origin;
 - successful preflight admits only `POST` and `Content-Type`, uses no
   credentials, and returns no ceremony data;
 - malformed UTF-8, JSON, or fields fail before token exchange;

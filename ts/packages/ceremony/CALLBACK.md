@@ -1,15 +1,15 @@
 # `@libid/ceremony` callback architecture
 
 This document defines the browser participant implemented by the selected CCDP
-callback root. The fixed, non-isolated shell runs only at the configured
+Callback implementation. The fixed, non-isolated shell runs only at the configured
 OAuth-platform callback. It accepts the application connection and delegates
 typed delivery and same-popup navigation to `@libid/popup`.
 
 The exact cross-document records and their order are defined by
 [CCDP](CCDP.md), while popup connection lifecycle, authentication, carrier
 selection, and continuity are defined by
-[`@libid/popup`](../popup/README.md). The shell, root
-filename, URL inputs, and entrypoint call are defined by
+[`@libid/popup`](../popup/README.md). The shell, implementation
+route, URL inputs, and entrypoint call are defined by
 [CCDP](CCDP.md#callback-shell); its OAuth-bridge-owned deployment values and
 response headers are defined by the
 [OAuth bridge contract](OAUTH_BRIDGE.md#callback-document). Prover
@@ -25,7 +25,7 @@ transition to the Prover, script-owned transition UI, and one-shot cleanup.
 cross-document connection continuity, and popup replacement.
 
 The callback installs no Service Worker. It accepts its application connection,
-delivers the OAuth return, and navigates the same popup to the configured proving
+delivers the OAuth return, and navigates the same popup to the configured CCDP
 origin. A MessagePort cannot cross that origin change:
 the prover establishes a fresh carrier through its opener or the configured
 fallback under the same logical popup connection.
@@ -40,10 +40,10 @@ does not.
 
 `locationInput` is the exact copied query and fragment, including their leading
 delimiter when nonempty. The shell passes it first, followed by the selected
-CCDP root's opaque, immutable resolved input tuple. The version-1 callback exact-validates
-its allowed application origins and proving origin arguments, then passes the
+CCDP implementation's opaque resolved input tuple. The version-1 callback exact-validates
+its allowed application origins and CCDP origin arguments, then passes the
 copied origins to `PopupConnection.accept` before installing ceremony listeners.
-The selected callback root owns any package-supported fallback construction;
+The selected Callback implementation owns any package-supported fallback construction;
 the shell passes data, never a function.
 
 The callback accepts only the bounded raw OAuth-platform return containing one
@@ -119,7 +119,7 @@ record is written.
 
 | Boundary | Owner |
 |---|---|
-| URL size, clearing order, immutable module root, and embedded allowlist | CCDP callback shell |
+| URL size, clearing order, versioned implementation selection, and embedded allowlist | CCDP callback shell |
 | HTTP response and logging policy | OAuth bridge |
 | Application source/origin, connection ID/version, carrier selection, and continuity | `@libid/popup` |
 | CCDP shape, direction, order, live ceremony, platform OAuth grammar, OAuth-platform outcome, and frozen configuration | Ceremony Client and callback/prover participants |
@@ -133,7 +133,7 @@ to configuration.
 
 ## Compatibility and acceptance
 
-The CCDP shell selects the callback root before this participant runs; no
+The CCDP shell selects the Callback implementation before this participant runs; no
 callback message repeats its version. The accepted popup connection
 independently exact-matches its private `ConnectionVersion`. An unsupported
 CCDP version fails before package code loads. Version axes are defined in
