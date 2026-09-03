@@ -78,9 +78,9 @@ connection; the exact accepted grammar and non-reuse rule are defined by the
 preserve, transfer, or replace it transparently across document changes. If no
 carrier can continue or be established, the logical connection fails closed.
 Same-origin replacement may preserve a `MessagePort` through the continuity
-worker. Cross-origin replacement never transfers a port between Service
-Workers: the next participating document authenticates a fresh carrier through
-its opener or the configured fallback.
+worker. Cross-origin replacement, including navigation to another site, never
+transfers a port between Service Workers: the next participating document
+authenticates a fresh carrier through its opener or the configured fallback.
 
 ```ts
 interface PopupConnection<M extends Message> {

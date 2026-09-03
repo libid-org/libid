@@ -6,7 +6,8 @@ establishes a bidirectional channel to an application page, moves caller-defined
 values, selects one carrier for each participating popup document, and preserves
 a transferable native resource across same-origin participating-document
 replacement. Different participating popup documents may use different
-caller-approved origins. It is not a generic document-to-document abstraction.
+caller-approved origins, including origins on different sites. It is not a
+generic document-to-document abstraction.
 
 `PopupConnection` represents one logical connection. It retains a usable
 carrier for as long as possible and may preserve, transfer, or replace that
@@ -436,13 +437,14 @@ interpret caller-owned fields:
   WebRTC carrier, then replaces its current document.
 
 A selected MessagePort is preserved through `PortKeeper` only when the target
-has the current popup origin. For a different origin, connection does not send
-the port to the source origin's worker. It retires that popup endpoint and leaves
-the application listener armed; an allowed destination establishes a fresh
-MessagePort through its surviving opener. If isolation removes that opener, only
-the configured fallback can establish the destination carrier. The logical
-connection ID and caller registrations remain unchanged, but caller values sent
-before the replacement carrier is selected are not queued.
+has the current popup origin. For a different origin, including one on another
+site, connection does not send the port to the source origin's worker. It
+retires that popup endpoint and leaves the application listener armed; an
+allowed destination establishes a fresh MessagePort through its surviving
+opener. If isolation removes that opener, only the configured fallback can
+establish the destination carrier. The logical connection ID and caller
+registrations remain unchanged, but caller values sent before the replacement
+carrier is selected are not queued.
 
 For WebRTC replacement, connection gives the caller-selected target unchanged
 to the carrier's package-private preparation hook and navigates only to the
@@ -589,10 +591,10 @@ or identify the next signaling round and terminates the logical connection.
 
 A transferable carrier may preserve its authenticated native resource across
 an immediate same-origin participating-document replacement. A cross-origin
-replacement establishes a fresh carrier. A nontransferable carrier
-instead prepares its replacement before navigation and installs it after the
-destination authenticates. The caller observes neither mechanism and cannot
-recover from continuity loss.
+replacement, including a cross-site replacement, establishes a fresh carrier.
+A nontransferable carrier instead prepares its replacement before navigation
+and installs it after the destination authenticates. The caller observes
+neither mechanism and cannot recover from continuity loss.
 
 The [MessagePort carrier](message-port.md)
 owns transferable-port preservation, its Service Worker bridge, timing, and

@@ -59,13 +59,13 @@ the exact retained `WindowProxy` only while the handle is non-null and not
 closed. A popup endpoint calling `navigate` acts locally and sends no
 `Navigate`. In either popup-side path, the endpoint stops accepting controls,
 preserves a same-origin transferable carrier, releases it for cross-origin
-rebind, or prepares a nontransferable replacement as required, then calls
-`location.replace(url)`. Replacement avoids adding the current document to
-popup history and creates no browsing context. Failure to preserve or prepare a
-carrier rejects before navigation. A cross-origin rebind may fail only after
-the destination loads; that failure releases no caller value and selects no
-weaker carrier. The caller commits its state and clears sensitive inputs before
-requesting navigation.
+rebind including across sites, or prepares a nontransferable replacement as
+required, then calls `location.replace(url)`. Replacement avoids adding the
+current document to popup history and creates no browsing context. Failure to
+preserve or prepare a carrier rejects before navigation. A cross-origin rebind
+may fail only after the destination loads; that failure releases no caller
+value and selects no weaker carrier. The caller commits its state and clears
+sensitive inputs before requesting navigation.
 
 When the exact retained `WindowProxy` is non-null and not closed, `close` calls
 it directly, regardless of carrier state. Otherwise it sends `ClosePopup` over
