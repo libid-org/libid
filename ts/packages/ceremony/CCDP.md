@@ -443,17 +443,19 @@ sequenceDiagram
 
     Note over A,P: Phase 1 - Prefetch to Authorization
     A->>P: Navigate to Prefetch
-    P->>P: Prefetch clears fragment and accepts connection
+    P->>P: Prefetch accepts connection
     P->>P: Prefetch registers Worker and dispatches selected-profile fetches
     P-->>A: PrefetchStarted
     A->>P: Navigate away to Authorization
 
     Note over A,P: Phase 2 - Authorization to Callback
     Note over P: User completes login and consent in Authorization
-    P->>P: OAuth Platform navigates to redirectUri
-    P->>P: Bridge shell captures and clears return
-    P->>P: Select CCDP version and load Callback
+    P->>P: OAuth Platform redirects to redirectUri
+    P->>P: Bridge loads Callback
     P->>P: Callback accepts authenticated connection
+    break Callback fails after connection acceptance
+        P-->>A: AbortCeremony
+    end
     P-->>A: CallbackDeliverParams
 
     Note over A,P: Phase 3 - Callback to Prover
@@ -461,7 +463,13 @@ sequenceDiagram
         A->>A: Validate return
     and Popup activates Prover
         P->>P: Callback prepares continuity and navigates to Prover
-        P->>P: Prover clears fragment and accepts connection
+        P->>P: Prover accepts connection
+    end
+    break Prover activation fails
+        P-->>A: AbortCeremony
+    end
+    break Application cancels, receives denial, or rejects return
+        A-->>P: AppCancelCeremony
     end
     A-->>P: AppRequestProof
 
@@ -469,10 +477,12 @@ sequenceDiagram
     loop Zero or more progress events
         P-->>A: ProverNotifyEvent
     end
+    break Prover fails
+        P-->>A: AbortCeremony
+    end
     P-->>A: ProverDeliverProof
 ```
 
-Only successful OAuth acceptance and proof delivery are shown. Cancellation and
-failure follow [Terminal outcomes](#terminal-outcomes) and the
-[message contracts](#messages). Carrier mechanics and proof-generation
-internals are omitted.
+Terminal exits are shown without their cleanup details, which follow
+[Terminal outcomes](#terminal-outcomes) and the [message contracts](#messages).
+Carrier mechanics and proof-generation internals are omitted.
