@@ -9,7 +9,7 @@ libID's popup-based protocols.
 
 This document is the normative owner of the logical connection between an
 application document and a sequence of popup documents: how endpoints are
-identified and admitted, what a message is, what delivery guarantees a
+identified and allowlisted, what a message is, what delivery guarantees a
 protocol above may rely on, how navigation and closure behave, what
 continuity is guaranteed across popup-document replacement, and how failure
 is reported. A protocol layered on this transport cites these rules instead
@@ -51,8 +51,8 @@ Application Endpoint: The connection endpoint in the Application Document.
 Popup Endpoint: The connection endpoint in one Participating Document. Each
    Participating Document constructs its own.
 
-Admission Set: The immutable set of origins an endpoint accepts as its peer:
-   the Application Endpoint's popup origins and the Popup Endpoint's
+Origin Allowlist: The immutable set of origins an endpoint accepts as its
+   peer: the Application Endpoint's popup origins and the Popup Endpoint's
    application origins (§6).
 
 Carrier: The native browser channel the Logical Connection currently uses.
@@ -100,16 +100,16 @@ Continuity: Preservation of the current Carrier across the replacement of one
 ## 4. Security properties
 
 The properties below hold against a hostile Non-participating Document, a
-hostile document on an unadmitted origin holding a reference to either
+hostile document on an origin outside the allowlist holding a reference to either
 window, and a hostile peer that learned the Connection ID. They assume an
 unmodified implementation and user agent (ASM-POPUP-01).
 
 - SP-POPUP-01:
-  Only a document on an origin in the peer's Admission Set becomes an
+  Only a document on an origin in the peer's Origin Allowlist becomes an
   endpoint of the Logical Connection, and only after the transport has
   authenticated both browser-stamped origins. Depends on ASM-POPUP-01.
 - SP-POPUP-02:
-  One Logical Connection admits at most one Popup browsing context. A
+  One Logical Connection binds at most one Popup browsing context. A
   document in another window cannot bind, select, replace, or control it,
   whatever it knows.
 - SP-POPUP-03:
@@ -149,34 +149,34 @@ unmodified implementation and user agent (ASM-POPUP-01).
   ID as authority and MUST NOT expose it to the protocol above through
   transported values.
 
-## 6. Admission and binding
+## 6. Origin allowlists and binding
 
-- REQ-POPUP-ADMIT-01:
-  Each endpoint MUST be constructed with a nonempty Admission Set of
+- REQ-POPUP-ALLOW-01:
+  Each endpoint MUST be constructed with a nonempty Origin Allowlist of
   canonical HTTPS origins without duplicates. An empty set or a malformed,
   noncanonical, non-HTTPS, credentialed, or repeated member MUST be rejected
   before any carrier work.
-- REQ-POPUP-ADMIT-02:
+- REQ-POPUP-ALLOW-02:
   An endpoint MUST accept a peer only when the peer's browser-stamped origin
-  is a member of its Admission Set, and MUST bind that exact observed origin
+  is a member of its Origin Allowlist, and MUST bind that exact observed origin
   for the life of the resulting Carrier. Sequential Participating Documents
   MAY bind different members.
-- REQ-POPUP-ADMIT-03:
+- REQ-POPUP-ALLOW-03:
   The Application Endpoint MUST accept peer traffic only from the window it
   created or, on the native-anchor path, from the one window whose first
   exact authentication it accepted. The Popup Endpoint MUST accept peer
   traffic only from its opener.
-- REQ-POPUP-ADMIT-04:
+- REQ-POPUP-ALLOW-04:
   A Carrier MUST become selectable only after both endpoints have
   authenticated each other. A mismatch of origin, source, Connection ID,
   transport version, or direction MUST select nothing and release no value.
-- REQ-POPUP-ADMIT-05:
+- REQ-POPUP-ALLOW-05:
   An event that does not carry the transport's own authentication
   discriminator together with this Connection ID is not an authentication
   attempt and MUST be ignored. In particular, a valid attempt for another
   Connection ID and any message a Non-participating Document sends to the
   Application Document MUST NOT affect the Logical Connection.
-- REQ-POPUP-ADMIT-06:
+- REQ-POPUP-ALLOW-06:
   When scripted creation returns no handle, the Application Endpoint MUST
   bind the Popup created by the same activation's anchor only through the
   exact initial authentication of §6, and MUST perform no browser operation
@@ -226,7 +226,7 @@ unmodified implementation and user agent (ASM-POPUP-01).
   at most once.
 - REQ-POPUP-DELIVER-02:
   No Caller Message is delivered before both endpoints have authenticated
-  (REQ-POPUP-ADMIT-04), and every Caller Message stays behind that
+  (REQ-POPUP-ALLOW-04), and every Caller Message stays behind that
   authentication on the ordered channel.
 - REQ-POPUP-DELIVER-03:
   Sending is not an acknowledgement. The transport provides no delivery
@@ -365,20 +365,20 @@ this specification.
 - TEST-POPUP-01 (exercises REQ-POPUP-ID-01):
   Uppercase, noncanonical, wrong-version, wrong-variant, and malformed
   Connection IDs are rejected before any carrier work.
-- TEST-POPUP-02 (exercises REQ-POPUP-ADMIT-01, REQ-POPUP-ADMIT-02):
+- TEST-POPUP-02 (exercises REQ-POPUP-ALLOW-01, REQ-POPUP-ALLOW-02):
   An empty set or a duplicate, non-HTTPS, noncanonical, or credentialed
-  member is rejected; a peer on an unadmitted origin never becomes an
-  endpoint; sequential Participating Documents on two admitted origins bind
+  member is rejected; a peer on an origin outside the allowlist never becomes
+  an endpoint; sequential Participating Documents on two allowlisted origins bind
   under one Logical Connection.
-- TEST-POPUP-03 (exercises REQ-POPUP-ADMIT-03, REQ-POPUP-ADMIT-04, REQ-POPUP-ADMIT-05):
+- TEST-POPUP-03 (exercises REQ-POPUP-ALLOW-03, REQ-POPUP-ALLOW-04, REQ-POPUP-ALLOW-05):
   Wrong source, origin, version, or direction selects nothing; a valid
   attempt for another Connection ID and unrelated traffic from the Popup
   are ignored; two concurrent Logical Connections on one page never reject
   each other.
-- TEST-POPUP-04 (exercises REQ-POPUP-ADMIT-06):
+- TEST-POPUP-04 (exercises REQ-POPUP-ALLOW-06):
   With scripted creation blocked, the activation's anchor creates the Popup
   and only the exact initial authentication binds it; `noopener` and an
-  unadmitted origin never bind.
+  origin outside the allowlist never bind.
 - TEST-POPUP-05 (exercises REQ-POPUP-MSG-01 to REQ-POPUP-MSG-07):
   Reserved discriminators and duplicate registrations are rejected; the
   decoder runs exactly once and its object is delivered; unknown, malformed,
@@ -411,11 +411,11 @@ this specification.
 
 - The Connection ID appears in the Popup's URL under most protocols above
   and reaches every Non-participating Document the Popup visits. By
-  REQ-POPUP-ADMIT-05 such a document can neither bind nor deliver; by
+  REQ-POPUP-ALLOW-05 such a document can neither bind nor deliver; by
   SP-POPUP-06 the worst it can do is terminate the connection, which it
   could also do by never returning.
-- Admission Sets are deployment configuration. Admitting an origin that
-  serves attacker-controlled documents admits that attacker as a peer; the
+- Origin Allowlists are deployment configuration. Listing an origin that
+  serves attacker-controlled documents accepts that attacker as a peer; the
   transport cannot distinguish them.
 - Direct Control depends on the retained handle reporting closed after a
   browsing-context-group switch (ASM-POPUP-02). An engine that violated this
@@ -436,9 +436,9 @@ from; those documents keep the mechanics.
 | Requirement | Source |
 |---|---|
 | REQ-POPUP-ID-01 to ID-04 | connection.md, Connection ID |
-| REQ-POPUP-ADMIT-01, ADMIT-02 | connection.md, API (`allowedPopupOrigins`, `allowedApplicationOrigins`) |
-| REQ-POPUP-ADMIT-03 to ADMIT-05 | message-port.md, Failure and security invariants; Authentication |
-| REQ-POPUP-ADMIT-06 | connection.md, Popup creation and native-anchor fallback |
+| REQ-POPUP-ALLOW-01, ADMIT-02 | connection.md, API (`allowedPopupOrigins`, `allowedApplicationOrigins`) |
+| REQ-POPUP-ALLOW-03 to ADMIT-05 | message-port.md, Failure and security invariants; Authentication |
+| REQ-POPUP-ALLOW-06 | connection.md, Popup creation and native-anchor fallback |
 | REQ-POPUP-MSG-01 to MSG-07 | connection.md, `send` and `on` rules; message-port.md, Message delivery |
 | REQ-POPUP-DELIVER-01 to DELIVER-05 | connection.md, Failure and security rules; message-port.md, invariants |
 | REQ-POPUP-LIFE-01, LIFE-02 | connection.md, Selection |
