@@ -51,11 +51,11 @@ version. CCDP uses these concrete browser resources and routes:
 
 | Resource | Served by | Browser context | Route | Responsibility and lifetime |
 |---|---|---|---|---|
-| Prefetch | CCDP Host | ceremony popup, top-level and non-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prefetch` | accepts the Application connection and starts selected-profile asset fetching |
-| Authorization | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to the bridge-owned document at `redirectUri`; it is not a CCDP participant |
-| Callback | OAuth Bridge | dynamically loaded into the top-level, non-isolated callback document | `/ccdp/v{CCDPVersion}/callback.js` | accepts the bridge-captured OAuth-platform return, delivers it, and navigates to the Prover |
-| Prover | CCDP Host | ceremony popup, top-level and COOP/COEP-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prover` | receives the validated OAuth result, exposes visible progress, and generates the proof |
-| Worker | CCDP Host | module Service Worker shared by Prefetch and Prover | `${ccdpOrigin}/ccdp/v{CCDPVersion}/worker.js` | preserves popup MessagePorts across same-origin navigation and owns asset/CRS single flights and caches |
+| [Prefetch](#prefetch) | CCDP Host | ceremony popup, top-level and non-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prefetch` | accepts the Application connection and starts selected-profile asset fetching |
+| [Authorization](#authorization) | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to the bridge-owned document at `redirectUri`; it is not a CCDP participant |
+| [Callback](#callback) | OAuth Bridge | dynamically loaded into the top-level, non-isolated callback document | `/ccdp/v{CCDPVersion}/callback.js` | accepts the bridge-captured OAuth-platform return, delivers it, and navigates to the Prover |
+| [Prover](#prover) | CCDP Host | ceremony popup, top-level and COOP/COEP-isolated | `${ccdpOrigin}/ccdp/v{CCDPVersion}/prover` | receives the validated OAuth result, exposes visible progress, and generates the proof |
+| [Worker](#worker) | CCDP Host | module Service Worker shared by Prefetch and Prover | `${ccdpOrigin}/ccdp/v{CCDPVersion}/worker.js` | preserves popup MessagePorts across same-origin navigation and owns asset/CRS single flights and caches |
 
 #### Popup and fragment model
 
@@ -122,6 +122,51 @@ return directly from the platform. Callback exact-authenticates the Application
 against the OAuth Bridge's deployment allowlist before releasing that return.
 Asset caching and popup-connection construction are outside CCDP.
 
+### Prefetch
+
+#### Location
+
+`GET /ccdp/v{CCDPVersion}/prefetch#ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
+is a versioned, request-invariant, top-level document.
+
+#### Lifecycle
+
+Prefetch accepts the initial Application connection, registers the Worker,
+dispatches prefetch for the exact fragment-selected platform profile, emits
+`ProverPrefetchingAssets`, and is then navigated away to the OAuth Platform. It
+receives no authorization URL, OAuth return, or proof input.
+
+#### Response policy
+
+The response uses `Content-Type: text/html`,
+`X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, a strong `ETag`,
+`Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: unsafe-none`, no
+COEP, and `frame-ancestors 'none'`. Its CSP denies by default and admits only
+the resources required by the closed Prefetch implementation.
+
+### Authorization
+
+#### Location
+
+The frozen `platformAuthorizationUrl` is served by the selected OAuth Platform;
+it is not a CCDP route or implementation.
+
+#### Lifecycle
+
+After Prefetch reports readiness, the Application navigates the ceremony popup
+to this URL. The OAuth Platform owns login and consent, then returns approval or
+denial to the exact frozen `redirectUri`, where Callback begins. No CCDP
+participant runs and no CCDP message or popup connection is exposed to the
+Authorization document.
+
+#### Response policy
+
+CCDP places no requirement on the Authorization document's markup, scripts,
+headers, or origin transitions. In particular, it may sever the opener or
+browsing-context group. Callback therefore reconnects without assuming direct
+window continuity. The selected platform ceremony version owns authorization
+request and return semantics.
+
 ### Callback
 
 #### Location
@@ -157,28 +202,6 @@ cleanup clears retained OAuth-return bytes, removes listeners, and releases
 unneeded references. A failure before connection acceptance is locally
 rendered and cannot release the return; an observable failure after acceptance
 uses `AbortCeremony`.
-
-### Prefetch
-
-#### Location
-
-`GET /ccdp/v{CCDPVersion}/prefetch#ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`
-is a versioned, request-invariant, top-level document.
-
-#### Lifecycle
-
-Prefetch accepts the initial Application connection, registers the Worker,
-dispatches prefetch for the exact fragment-selected platform profile, emits
-`ProverPrefetchingAssets`, and is then navigated away to the OAuth Platform. It
-receives no authorization URL, OAuth return, or proof input.
-
-#### Response policy
-
-The response uses `Content-Type: text/html`,
-`X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, a strong `ETag`,
-`Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: unsafe-none`, no
-COEP, and `frame-ancestors 'none'`. Its CSP denies by default and admits only
-the resources required by the closed Prefetch implementation.
 
 ### Prover
 
