@@ -13,10 +13,10 @@ is defined in [CALLBACK.md](CALLBACK.md), and the prover subsystem in
 [PROVER.md](PROVER.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
 The OAuth bridge's routes, deployment inputs, and callback response policy are
-defined in [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md). The
-package's measurement and export
-boundary is defined in [METRICS.md](METRICS.md). These documents are
-implementation architecture, not part of the normative protocol specification.
+defined in [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md). The package's measurement and
+export boundary is defined in [METRICS.md](METRICS.md). This document and the
+linked component documents define implementation architecture; CCDP defines
+the browser protocol.
 
 The normative libID specification owns the proof statement and authorization
 encoding. See the
@@ -131,7 +131,7 @@ portable baseline.
 
 ## Ceremony Cross-Document Protocol
 
-[CCDP.md](CCDP.md) defines the package-owned protocol between the application,
+[CCDP.md](CCDP.md) defines the protocol between the application,
 callback, and isolated prover; [`@libid/popup`](../popup/README.md) carries it;
 and [CALLBACK.md](CALLBACK.md) defines the callback's local
 state and UI. This document owns only the package and public client contracts
@@ -163,6 +163,35 @@ It performs no platform dispatch, browser work, storage, network, authorization
 construction, or cryptographic proof verification. Those entrypoints use the
 caller-supplied `@libid/popup` connection without owning its carriers or
 continuity machinery.
+
+### CCDP codecs
+
+The implementation represents each CCDP record with one TypeScript interface
+and a same-named decoder companion. A shared assertion performs the plain-record,
+exact-field-set, and discriminator checks; each companion validates its own
+field types and bounds. Decoding returns the received object without coercion,
+normalization, defaults, field removal, or replacement allocation.
+
+```ts
+const ProverDeliverProof = {
+  type: 'prover-deliver-proof',
+
+  decode(value: unknown): ProverDeliverProof {
+    assertMessage(value, this.type, ['proof'])
+    return value
+  },
+} as const satisfies MessageType<ProverDeliverProof>
+```
+
+Each endpoint registers only its permitted inbound companions with its popup
+connection. The connection dispatches by the companion discriminator, invokes
+that decoder once, and gives the handler the narrowed record. Direction and
+ceremony state remain handler checks. The platform proof stays opaque at this
+layer and is validated by the selected platform/version module. There is no
+aggregate runtime decoder, global registration, import-time registration, or
+plugin API; any aggregate TypeScript union exists only for compile-time
+connection typing.
+
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
@@ -221,12 +250,12 @@ The package-facing API surface is:
 | Export or entrypoint | Contract |
 |---|---|
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
-| `@libid/ceremony/ccdp` | internal CCDP `Message` union and decoders, `CCDPVersion`, and direction/order rules; no application export |
+| `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CALLBACK.md) implementing the CCDP-selected callback root |
 | `@libid/ceremony/prover` | dual-context browser entrypoint implementing the CCDP-selected prover root; its Window branch runs prefetch or proving, while its Service Worker branch composes popup continuity with package-private asset prefetch and cache |
 
-The API below and the [CCDP records](CCDP.md#closed-message-union)
+The API below and the [CCDP records](CCDP.md#direction-and-ordering)
 are the launch surface.
 Implementation-private helpers may change without changing authority or wire
 behavior.
@@ -310,8 +339,8 @@ interface CeremonyClient {
 validator and returns the generic CCDP envelope narrowed to that validator's
 derived proof type. Any implementation-only assertion needed to express the
 indexed dispatch to TypeScript remains behind this validated aggregation
-boundary; the Ceremony Client performs no cast. CCDP continues to use
-`ProverDeliverProof<unknown>` and does not import the catalog.
+boundary; the Ceremony Client performs no cast. The CCDP codec layer keeps the
+proof opaque and does not import the catalog.
 
 The prover entrypoint imports matching `prover` leaves through an exhaustive
 internal dispatch. Adding a platform or version changes the catalog,
@@ -660,7 +689,7 @@ errors.
 
 `CeremonyEvent` is advisory. The application may project it into broader Job
 progress, but confirmation, submission, and finality remain outside this
-package. [CCDP](CCDP.md#progress-and-proof-delivery) defines authenticated
+package. [CCDP](CCDP.md#proof-execution) defines authenticated
 connection delivery ordering.
 
 ## Versioning and compatibility
