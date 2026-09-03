@@ -178,17 +178,20 @@ document contains no external config script, preload, analytics, application
 markup, or request-derived interpolation. The root module owns all later UI.
 
 The bootstrap embeds a closed map from supported CCDP versions to immutable,
-same-origin callback root URLs and the shell-input version accepted by each
-root. Version 1 is equivalent to:
+same-origin callback root URLs and opaque root-owned configuration. Version 1
+is equivalent to:
 
 ```ts
 const callbackRoots = Object.freeze({
   1: Object.freeze({
-    shellVersion: 1,
     moduleUrl: new URL(
       '/assets/libid-ccdp-v1-callback.js',
       location.origin,
     ).href,
+    config: deepFreeze({
+      allowedApplicationOrigins: ['https://app.example'],
+      proverOrigin: 'https://prove.lib.id',
+    }),
   }),
 })
 ```
@@ -197,25 +200,28 @@ The displayed asset path is illustrative; a deployment may use any immutable
 same-origin path. Neither URL input nor a network response can add or replace a
 map entry.
 
-### Versioned root input
+### Stable root input
 
 After selecting and importing a root, the bootstrap calls its sole entrypoint
 with one deeply frozen object:
 
 ```ts
-interface CallbackShellInput {
-  shellVersion: 1
+interface CallbackShellInput<Config> {
   locationInput: {
     query: string
     fragment: string
   }
-  config: {
-    allowedApplicationOrigins: readonly string[]
-    proverOrigin: string
-  }
+  config: Config
 }
 
-declare function startCallback(input: CallbackShellInput): void
+interface CallbackConfig {
+  allowedApplicationOrigins: readonly string[]
+  proverOrigin: string
+}
+
+declare function startCallback(
+  input: CallbackShellInput<CallbackConfig>,
+): void
 ```
 
 `query` and `fragment` are the bounded byte-for-byte URL components captured
@@ -224,16 +230,12 @@ launch, `locationInput` contains the launch fragment rather than an OAuth
 return. The root exact-validates the selected shape, including unknown fields,
 before using it and copies the origin list again before popup acceptance.
 
-`shellVersion` versions only the shell-to-root call. A root-map entry pins one
-exact shell version. Adding a field or changing its meaning creates a new input
-version and a compatible root entry; it never appends an optional field to
-`CallbackShellInput`. Adding a CCDP root whose input is unchanged may keep
-shell version 1. The shell version does not enter OAuth `state`, CCDP messages,
-or public configuration.
-
-This single-object boundary deliberately leaves room for future
-deployment-controlled fields without exposing a generic property bag, dynamic
-module URL, or caller extension point.
+The shell-to-root contract is deliberately unversioned and fixed. URL input is
+always the raw query/fragment pair, while `config` is an opaque deeply frozen
+value to the shell. Each selected immutable root owns and exact-validates its
+concrete config type. A later root may add or change deployment fields inside
+that config without changing the shell, its entrypoint call, or browser URL.
+Neither URL input nor a network response may supply config.
 
 ### Bootstrap algorithm
 
@@ -246,9 +248,9 @@ the inline bootstrap:
    exactly one routing `state`;
 4. reads only `ccdpVersion` from launch input or the `v<version>.` prefix from
    OAuth `state` and rejects malformed, conflicting, or unsupported values;
-5. selects the corresponding closed root and shell-input version;
-6. constructs and deeply freezes that version's exact input from captured bytes
-   and deployment constants; and
+5. selects the corresponding closed root and its root-owned config;
+6. constructs and deeply freezes the stable input from captured bytes and that
+   config; and
 7. imports the immutable root and invokes `startCallback` once.
 
 Any failure imports no other root and renders only fixed text after clearing.

@@ -93,27 +93,31 @@ nonempty, and clears both. It parses no platform-specific return field beyond
 locating the single routing state. After root selection it invokes:
 
 ```ts
-interface CallbackShellInput {
-  shellVersion: 1
+interface CallbackShellInput<Config> {
   locationInput: {
     query: string
     fragment: string
   }
-  config: {
-    allowedApplicationOrigins: readonly string[]
-    proverOrigin: string
-  }
+  config: Config
 }
 
-declare function startCallback(input: CallbackShellInput): void
+interface CallbackConfig {
+  allowedApplicationOrigins: readonly string[]
+  proverOrigin: string
+}
+
+declare function startCallback(
+  input: CallbackShellInput<CallbackConfig>,
+): void
 ```
 
-The selected root exact-validates the versioned object. Its application origins
-and prover origin are immutable deployment data, never derived from `Origin`,
-`Referer`, or URL input. The object is an entrypoint dependency, not a CCDP
-message or pure `ccdp` export. The identity bridge owns its concrete shell and
-forward-compatible versioning in
-[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#versioned-root-input). Google
+The shell uses this stable generic wrapper without interpreting `config`; the
+selected root exact-validates its concrete `CallbackConfig`. Its application
+origins and prover origin are immutable deployment data, never derived from
+`Origin`, `Referer`, or URL input. The object is an entrypoint dependency, not a
+CCDP message or pure `ccdp` export. The identity bridge owns its concrete shell
+and root configuration in
+[IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#stable-root-input). Google
 credentials remain in the fragment and therefore never reach the bridge;
 provider-mandated query parameters are the only credential-bearing URL
 exception.
@@ -524,9 +528,9 @@ repeats it in its fragment, and each shell loads that exact version's immutable
 root. The configured callback path and stable `/ccdp/prover` path do not select
 or encode a CCDP version.
 
-Compatible implementation changes keep the version. A breaking shell input
-grammar, root entrypoint contract, navigation order, message shape, direction,
-ordering, or validation rule increments `CCDPVersion` and publishes both new
+Compatible implementation changes keep the version. A breaking navigation
+order, message shape, direction, ordering, or validation rule increments
+`CCDPVersion` and publishes both new
 versioned roots. The shells add the new roots to their closed maps while old
 roots remain available for live ceremonies and a compatibility window. A root
 may gain immutable companion chunks without changing CCDP when its shell and
