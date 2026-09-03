@@ -43,38 +43,27 @@ because the registered OAuth redirect URI must terminate on the bridge origin.
 
 ### Prefetch `GET /prefetch`
 
-**Parameters**
-
-| Name | Location | Contract |
-|---|---|---|
-| `ceremonyId` | fragment | lowercase UUIDv4 |
-| `platformId` | fragment | exact identifier from the selected platform profile |
-| `ceremonyVersion` | fragment | unsigned 16-bit platform ceremony version |
-
 | Property | Contract |
 |---|---|
+| Parameters | <table><tr><th>Name</th><td><code>ceremonyId</code></td><td><code>platformId</code></td><td><code>ceremonyVersion</code></td></tr><tr><th>Values</th><td>fragment; lowercase UUIDv4</td><td>fragment; exact identifier from the selected platform profile</td><td>fragment; unsigned 16-bit platform ceremony version</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, and non-isolated ceremony-popup document |
 | Lifecycle | Accepts the initial Application connection, registers the Worker, dispatches prefetch for the exact fragment-selected platform profile, emits `ProverPrefetchingAssets`, and is then navigated away to the OAuth Platform. It receives no authorization URL, OAuth return, or proof input. |
 | Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: unsafe-none`; no COEP; and `frame-ancestors 'none'`. CSP denies by default and admits only resources required by the closed Prefetch implementation. |
 
 ### Authorization `GET platformAuthorizationUrl`
 
-The complete frozen URL is opaque to CCDP. The selected platform ceremony
-version owns its parameters.
-
 | Property | Contract |
 |---|---|
+| Parameters | The complete frozen URL is opaque to CCDP. The selected platform ceremony version owns its parameters. |
 | Host and context | Selected OAuth Platform; top-level ceremony-popup document |
 | Lifecycle | After Prefetch reports readiness, the Application navigates the popup here. The OAuth Platform owns login and consent, then returns approval or denial to the exact frozen `redirectUri`, where Callback begins. No CCDP participant runs and no CCDP message or popup connection is exposed to this document. |
 | Response policy | Controlled entirely by the OAuth Platform. CCDP assumes nothing about its markup, scripts, headers, or origin transitions; it may sever the opener or browsing-context group. Callback reconnects without assuming direct window continuity. The selected platform ceremony version owns authorization request and return semantics. |
 
 ### Callback `GET /callback.js`
 
-This module has no URL parameters. The OAuth Bridge shell supplies its
-already-cleared callback input and deployment configuration.
-
 | Property | Contract |
 |---|---|
+| Parameters | None. The OAuth Bridge shell supplies the module's already-cleared callback input and deployment configuration. |
 | Host and context | Same-origin module dynamically loaded by the OAuth Bridge's top-level, non-isolated callback shell |
 | Lifecycle | Accepts the Application connection, locates the single routing `state` in the already-cleared return, emits `CallbackDeliverParams`, and asks the connection to replace the same popup with the Prover. It installs no Service Worker, retains no state across navigation, and does not classify the platform result, prefetch, load platform configuration, prove, verify, persist a checkpoint, or close the popup. |
 | Response policy | The OAuth Bridge contract alone defines the shell, registered `redirectUri`, URL clearing, version selection, response policy, and module invocation. |
@@ -82,14 +71,9 @@ already-cleared callback input and deployment configuration.
 
 ### Prover `GET /prover`
 
-**Parameters**
-
-| Name | Location | Contract |
-|---|---|---|
-| `ceremonyId` | fragment | lowercase UUIDv4 |
-
 | Property | Contract |
 |---|---|
+| Parameters | <table><tr><th>Name</th><td><code>ceremonyId</code></td></tr><tr><th>Values</th><td>fragment; lowercase UUIDv4</td></tr></table> |
 | Host and context | CCDP Host; versioned, request-invariant, top-level, COOP/COEP-isolated ceremony-popup document |
 | Lifecycle | Clears and validates its fragment, accepts the continuing Application connection, consumes one exact `AppRequestProof`, and emits only `ProverNotifyEvent`, `ProverDeliverProof`, or `AbortCeremony`. [PROVING.md](PROVING.md) defines proof-generation pipelines, assets, notarization, and caching. |
 | Response policy | `Content-Type: text/html`; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; `Referrer-Policy: no-referrer`; `Cross-Origin-Opener-Policy: same-origin`; and `Cross-Origin-Embedder-Policy: require-corp`. CSP denies by default and admits only the exact inline entry code, Worker, `blob:`, WebAssembly, styles, toolchain resources, and network classes required by the closed implementation. Proving starts only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
@@ -97,10 +81,9 @@ already-cleared callback input and deployment configuration.
 
 ### Worker `GET /worker.js`
 
-This route has no parameters.
-
 | Property | Contract |
 |---|---|
+| Parameters | None. |
 | Host and context | CCDP Host; same-origin module Service Worker registered by Prefetch |
 | Lifecycle | Composes temporary MessagePort continuity with asset and CRS single flights and caches for the later Prover. |
 | Response policy | Module Service Worker JavaScript media type; `X-Content-Type-Options: nosniff`; `Cache-Control: no-cache`; strong `ETag`; and policies compatible with the isolated Prover and its controlled scope. Whether its bytes are an on-disk file, generated output, or embedded in the CCDP Host binary is not part of CCDP. |
