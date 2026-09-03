@@ -379,7 +379,7 @@ second authorization secret.
 nonce, derives the code verifier from it and the Authorization Digest by the
 normative Proof Key for Code Exchange (PKCE) construction where required, and
 constructs the authorization request with the [CCDP-defined OAuth
-state](CCDP.md#browser-documents-and-locations), and returns the `Ceremony` with its launch
+state](CCDP.md#browser-documents-and-routes), and returns the `Ceremony` with its launch
 URL ready. OAuth `state` carries the CCDP
 routing version plus `ceremonyId`; it is not a second identifier:
 

@@ -17,6 +17,8 @@ An actor is an operator or external system. An origin is the exact
 scheme/host/port authority used by browser security checks. A site is only the
 browser's schemeful registrable-domain grouping: same-site actors may remain
 cross-origin and do not gain authority over each other.
+`Application` denotes both the actor and its top-level browser document when
+the distinction is immaterial.
 
 | Actor | Browser authority | Responsibility |
 |---|---|---|
@@ -33,21 +35,19 @@ an exact origin. In particular, the Proving Host is not a wallet: both
 external-wallet and native-wallet compositions consume the same independently
 hosted proving boundary.
 
-## Browser documents and locations
+## Browser documents and routes
 
 Before launch, the Application freezes the proving origin, redirect URI,
 platform authorization URL, ceremony ID, platform ID, and platform ceremony
-version. CCDP runs across these concrete browser documents and locations:
+version. CCDP runs across these concrete browser documents and routes:
 
-| Document | Served by | Browser context | Location | Responsibility and lifetime |
+| Document | Served by | Browser context | Route | Responsibility and lifetime |
 |---|---|---|---|---|
-| Application | Application | ordinary top-level tab | application-defined | owns the live ceremony, operation inputs, message order, and result; remains open independently of the popup |
-| Popup reservation | Browser | ceremony popup | `about:blank` | reserves the named browsing context before protocol navigation |
-| Initial Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | `${redirectUri}#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` | accepts the Application connection and starts prefetch |
-| Prefetch | Proving Host | child iframe of the Initial Callback | `${provingOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` | starts selected-profile asset fetching, then disappears with its parent Callback |
+| Initial Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | `${redirectUri}#launch` | accepts the Application connection and starts prefetch |
+| Prefetch | Proving Host | child iframe of the Initial Callback | `${provingOrigin}/ccdp/prover#prefetch` | starts selected-profile asset fetching, then disappears with its parent Callback |
 | Authorization | OAuth Platform | ceremony popup | frozen `platformAuthorizationUrl` | renders platform login/consent and returns to `redirectUri`; it is not a CCDP participant |
-| Returned Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | frozen `redirectUri` followed by the OAuth-platform-defined query or fragment | delivers the OAuth return and navigates to the Prover |
-| Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` | receives the validated OAuth result, exposes visible progress, and generates the proof |
+| Returned Callback | OAuth Bridge | ceremony popup, top-level and non-isolated | frozen `redirectUri` | delivers the OAuth-platform return and navigates to the Prover |
+| Prover | Proving Host | ceremony popup, top-level and COOP/COEP-isolated | `${provingOrigin}/ccdp/prover#prove` | receives the validated OAuth result, exposes visible progress, and generates the proof |
 
 The **ceremony popup** is a reusable browsing context, not an actor or document.
 It sequentially contains Callback → Authorization → a new Callback → Prover.
@@ -57,10 +57,11 @@ JavaScript heap each time; no participant relies on document-local state
 surviving it. These origins may all be cross-site, and same-site placement
 grants no protocol authority.
 
-Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
-shown above. Producers emit each named field exactly once in the displayed
-order. Receivers require the exact field set, reject duplicates, and otherwise
-do not depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
+The shell sections below define each fragment's full field set. Internal
+fragments use the literal mode, `?`, and URL-search-parameter encoding shown
+there. Producers emit each named field exactly once in the displayed order.
+Receivers require the exact field set, reject duplicates, and otherwise do not
+depend on parameter order. Ceremony IDs are lowercase UUIDv4 values.
 Platform IDs use the exact identifiers defined by the selected platform
 profile; platform ceremony versions are unsigned 16-bit integers.
 
@@ -70,19 +71,6 @@ storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
 one exact root module from a deployment-fixed supported map. No OAuth return,
 credential, proof input, or proof is placed in an internal fragment. The
 OAuth-platform-mandated query on `redirectUri` is the only protocol exception.
-
-The prefetch location carries only the selected public profile. It needs no
-ceremony ID: the Callback binds its one child by browser source, and the child
-does not join the Application popup connection.
-
-The selected platform ceremony version owns the exact platform authorization
-and return grammar. OAuth `state` has the exact CCDP routing form
-`v1.<ceremonyId>`: the version selects the Callback namespace and the lowercase
-UUIDv4 suffix remains the popup connection ID. The authorization request uses
-that state and the frozen `redirectUri`; CCDP owns the surrounding popup
-navigation but does not duplicate platform fields. `redirectUri` is the exact
-absolute configured callback URL for that platform; its default path is
-`/auth/callback` and does not change between CCDP versions.
 
 CCDP is connection-neutral. It defines which document runs at each location,
 which participant initiates each navigation, what each message means, and their
@@ -134,18 +122,26 @@ user retry starts in a fresh document.
 ### Callback shell
 
 The OAuth bridge serves the callback shell at one developer-configurable
-path whose default is `/auth/callback`. The application uses its absolute
+path whose default is `/auth/callback`. The Application uses its absolute
 URL for initial launch, and every enabled OAuth application registers that same
 URL as its `redirect_uri`. It is not an HTTP redirect and does not encode a
 CCDP version.
 
 The callback bootstrap accepts exactly two input modes:
 
-- initial launch: an empty query and the `launch` fragment defined above, whose
-  `ccdpVersion` selects the callback root; or
+- initial launch: an empty query and the exact fragment
+  `#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>`,
+  whose `ccdpVersion` selects the Callback root; or
 - OAuth-platform return: the bounded OAuth-platform-defined query and fragment containing
   exactly one OAuth `state` in the form `v<version>.<ceremonyId>`, whose version
-  selects the callback root.
+  selects the Callback root.
+
+The selected platform ceremony version owns the exact platform authorization
+and return grammar. The authorization request uses the frozen `redirectUri`
+and OAuth `state` `v1.<ceremonyId>`: the version selects the Callback namespace,
+and the lowercase UUIDv4 suffix remains the popup connection ID. `redirectUri`
+is the exact absolute configured callback URL for that platform; its default
+path is `/auth/callback` and does not change between CCDP versions.
 
 It bounds the combined raw query and fragment to
 `MAX_OAUTH_RETURN_BYTES = 32 KiB`, preserves the leading `?` and `#` when
@@ -161,11 +157,18 @@ exception.
 
 ### Prover shell
 
-The prover bootstrap accepts an empty query and exactly one of the `prefetch`
-or `prove` fragments defined above. Both modes receive byte-identical HTML,
-headers, deployment-controlled proving inputs, and the same selected prover
-root. Prefetch is valid only in a child iframe; prove is valid only in the
-popup's top-level browsing context. Any other context imports nothing.
+The prover bootstrap accepts an empty query and exactly one of these fragments:
+
+- `#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` in a child
+  iframe; or
+- `#prove?ccdpVersion=1&ceremonyId=<uuid>` in the popup's top-level browsing
+  context.
+
+Both modes receive byte-identical HTML, headers, deployment-controlled proving
+inputs, and the same selected Prover root. Any other context imports nothing.
+Prefetch carries only the selected public profile and no ceremony ID: the
+Callback binds its one child by browser source, and the child does not join the
+Application popup connection.
 Shell-to-root invocation, asset caching, and popup-connection construction are
 outside CCDP.
 
@@ -212,10 +215,10 @@ are required at the transitions below.
 
 ### 1. Launch and prefetch
 
-The Application reserves one named popup and establishes its authenticated
-connection. On user activation it navigates that popup to the initial callback
-location. An implementation may use scripted opening or preserve the same
-activation's real-anchor navigation when scripted opening is unavailable.
+On user activation, the Application opens one named popup at the Initial
+Callback location and establishes its authenticated connection. An
+implementation may use scripted opening or preserve the same activation's
+real-anchor navigation when scripted opening is unavailable.
 
 After clearing and validating the launch fragment, the callback starts popup
 connection acceptance and loads exactly one selected-profile prefetch iframe
