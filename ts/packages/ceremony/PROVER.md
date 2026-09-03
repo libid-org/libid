@@ -279,7 +279,7 @@ Profiles add these spans before the proof engine:
 | Profile | Platform-step codes |
 |---|---|
 | `google` | `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` |
-| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; parent `token-session` with `token-session-create` → `token-websocket-connect` → `token-prover-setup` → `token-provider-request` → `token-reveal`; then parent `identity-session` with `identity-session-create` → `identity-websocket-connect` → `identity-prover-setup` → `identity-provider-request` → `identity-reveal`; then `token-attestation` → `identity-attestation` → `circuit-inputs` |
+| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; parent `token-session` with `token-session-create` → `token-websocket-connect` → `token-prover-setup` → `token-platform-request` → `token-reveal`; then parent `identity-session` with `identity-session-create` → `identity-websocket-connect` → `identity-prover-setup` → `identity-platform-request` → `identity-reveal`; then `token-attestation` → `identity-attestation` → `circuit-inputs` |
 | `github` | `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` |
 
 `prover-readiness` covers awaiting selected artifact single flights; downloads

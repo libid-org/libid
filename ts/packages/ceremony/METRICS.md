@@ -124,18 +124,18 @@ machine codes should remain closed package constants.
 | Measurement | Boundaries or facts |
 |---|---|
 | user-perceived attempt | application activation to accepted, denied, canceled, or failed result |
-| provider interval | provider navigation to cleared callback bootstrap; includes provider and human time |
-| post-provider machinery | cleared callback bootstrap to accepted proof result or terminal failure |
+| OAuth authorization interval | OAuth-platform navigation to cleared callback bootstrap; includes platform and human time |
+| post-OAuth machinery | cleared callback bootstrap to accepted proof result or terminal failure |
 | proof request | `AppRequestProof` to locally validated proof delivery |
 | result assembly | proof receipt, exact shape validation, preview derivation, and public result resolution |
 | configuration | config fetch, decode, validation, selected platform/version, and failure code |
 | ceremony construction | input validation, authorization digest/PKCE work, and frozen configuration |
-| launch | popup creation result, callback bootstrap readiness, and provider navigation |
+| launch | popup creation result, callback bootstrap readiness, and OAuth-platform navigation |
 | cancellation | request to observed terminal cancellation and close result |
 
-The provider interval is reported separately so human consent time never
+The OAuth authorization interval is reported separately so human consent time never
 distorts machinery regressions. Application UI may display both, but automated
-performance qualification compares the post-provider and proof-request spans.
+performance qualification compares the post-OAuth and proof-request spans.
 
 ### Callback ingress
 
@@ -147,7 +147,7 @@ performance qualification compares the post-provider and proof-request spans.
 | proof handoff | authenticated OAuth delivery through prover navigation |
 
 OAuth query/fragment lengths may be reported only as coarse, code-defined
-size buckets. Values, field names supplied by a provider, and URLs are never
+size buckets. Values, field names supplied by an OAuth platform, and URLs are never
 reported.
 
 ### Prefetch, cache, and assets
@@ -160,7 +160,7 @@ reported.
 | ordinary artifacts | count, declared bytes, cache hits/misses, network fetches, transferred bytes, decoded bytes, and total duration |
 | CRS artifacts | the same aggregate fields, reported separately from ordinary artifacts |
 | asset class | code-defined class and logical asset code, never a URL |
-| pre-OAuth work | prefetch start through provider navigation |
+| pre-OAuth work | prefetch start through OAuth-platform navigation |
 | post-callback join | prover start through selected-flight readiness |
 | prefetch benefit | work completed before proof start and residual single-flight wait |
 | storage health | cache put failure, quota/eviction observation, and stale-release pruning outcome |
@@ -230,10 +230,10 @@ receive only the sanitized stable code.
 
 Diagnostics must never contain:
 
-- OAuth query, fragment, code, token, verifier, state, credential, or provider
+- OAuth query, fragment, code, token, verifier, state, credential, or platform
   response;
 - ceremony/action/job IDs or operation fields;
-- app, callback, provider, notary, asset, collector, or worker URLs or origins;
+- app, callback, OAuth-platform, notary, asset, collector, or worker URLs or origins;
 - identity fields or handles;
 - request/response headers or bodies;
 - attestations, transcripts, commitments, openings, witnesses, public inputs,
@@ -256,7 +256,7 @@ navigation, suspension, crash, or page close cannot change the ceremony.
 
 Automated spans cannot answer every browser UX question. A manual report adds
 the tester-supplied browser, OS/device, normal/private mode, popup presentation,
-backgrounding behavior, memory warning or termination, provider UI outcome,
+backgrounding behavior, memory warning or termination, OAuth-platform UI outcome,
 and whether the user perceived a stall. It attaches the sanitized diagnostic
 summary, not credentials or a raw browser log.
 
@@ -274,7 +274,7 @@ Qualification compares at least:
 
 The first implementation should expose only:
 
-1. end-to-end, provider, post-provider, and proof-request spans;
+1. end-to-end, OAuth authorization, post-OAuth, and proof-request spans;
 2. callback bootstrap, OAuth parsing, proof handoff, delivery, and ceremony
    cleanup spans, plus the popup package's sanitized connection diagnostics;
 3. cache/prefetch aggregates and benefit/residual-wait facts;

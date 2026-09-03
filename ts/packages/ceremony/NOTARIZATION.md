@@ -28,7 +28,7 @@ its deterministic sibling `tlsn_wasm_bg.wasm`.
 
 The enclosing prover supplies the deployment's common `notaryAddress` when the
 module starts. Applications, ceremony inputs, OAuth responses, and CCDP
-messages cannot replace that address or select a provider request, disclosure
+messages cannot replace that address or select an OAuth-platform request, disclosure
 layout, or Notary Service behavior.
 
 ## Internal contract

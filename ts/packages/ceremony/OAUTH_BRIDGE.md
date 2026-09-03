@@ -72,8 +72,8 @@ The bridge exposes only:
 | `GET` | configured callback path, default `/auth/callback` | always | callback shell for initial launch and registered OAuth `redirect_uri` | none at HTTP ingress; callback authenticates its popup connection after clearing and classifying its input |
 | `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured proving origin; exact noncredentialed CORS |
 
-Top-level and iframe navigation may omit `Origin`, and a provider callback may
-identify the provider rather than the application. `Referer` is never an
+Top-level and iframe navigation may omit `Origin`, and an OAuth-platform callback may
+identify the platform rather than the application. `Referer` is never an
 authority input. The callback document is therefore public and
 request-invariant; its browser protocol authenticates the application after it
 loads.
@@ -81,7 +81,7 @@ loads.
 No prover, artifact, preparation, continuation, polling, status, result,
 cancellation, browser TLS bridge, or proof-recovery route exists on the
 OAuth bridge. Unsupported methods fail without route work. Except for the
-provider-mandated callback query and the GitHub JSON request, bridge routes
+OAuth-platform-mandated callback query and the GitHub JSON request, bridge routes
 accept no query or request body.
 
 The `v1` in `/api/v1/ceremony/...` versions the bridge's JSON API.
@@ -147,7 +147,7 @@ The response is invariant across requests. Its HTML, headers, root map, CSP,
 embedded `allowedAppOrigins`, and proving origin do not depend on request
 `Origin`, `Referer`, query, fragment, platform, or ceremony. The document is
 top-level, non-isolated, and non-frameable so it preserves the application
-opener whenever provider policy permits.
+opener whenever OAuth-platform policy permits.
 
 [CCDP](CCDP.md#callback-shell) owns the shell's input modes, clearing and root
 selection. The bridge embeds only that closed root map, `allowedAppOrigins`,
@@ -247,7 +247,7 @@ the inline bootstrap:
 
 1. bounds and copies the raw query and fragment;
 2. clears both with `history.replaceState` while retaining the same path;
-3. accepts either an empty-query launch fragment or a provider return containing
+3. accepts either an empty-query launch fragment or an OAuth-platform return containing
    exactly one routing `state`;
 4. reads only `ccdpVersion` from launch input or the `v<version>.` prefix from
    OAuth `state` and rejects malformed, conflicting, or unsupported values;
@@ -261,7 +261,7 @@ The bootstrap never parses a platform credential, selects a prover asset, or
 uses `Origin` or `Referer` as configuration.
 
 Google returns its credential in the fragment, which is never sent to the
-bridge. X and GitHub return provider-mandated callback parameters in the query.
+bridge. X and GitHub return OAuth-platform-mandated callback parameters in the query.
 The bridge and every upstream proxy suppress or redact callback query strings
 from access logs, traces, analytics, metrics labels, and error reports. No
 later URL carries the captured return.
@@ -351,7 +351,7 @@ The endpoint contract is:
 - success is status `200` with exact noncredentialed CORS,
   `Content-Type: application/json`, `Cache-Control: no-store`, and one bounded
   `TokenResponse`;
-- credentials and provider-return values never enter logs, traces, analytics,
+- credentials and OAuth-platform-return values never enter logs, traces, analytics,
   metrics labels, or error bodies; and
 - failure returns no partial credential, attestation, or caller-selected
   diagnostic content.

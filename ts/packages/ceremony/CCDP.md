@@ -23,7 +23,7 @@ cross-origin and do not gain authority over each other.
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
 | OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback document, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
 | Proving Host | proving origin | hosts the prefetch and isolated prover documents, prover roots, and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
-| OAuth Provider | platform-owned origin set | hosts authorization/login documents and issues the provider return |
+| OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
 | Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
 
 The Application, OAuth Bridge, and Proving Host may be operated together or
@@ -41,7 +41,7 @@ CCDP runs across these concrete browser documents:
 |---|---|---|---|
 | Application document | application origin | ordinary top-level application tab | owns the live ceremony, operation inputs, message order, and result; remains open independently of the popup |
 | Callback document | OAuth Bridge at the OAuth bridge origin | ceremony popup, top-level and non-isolated | runs once for initial launch and again as a fresh document on OAuth return; the same configured URL is the registered `redirect_uri` |
-| Authorization document | OAuth Provider's platform-owned origins | ceremony popup | renders provider login/consent and navigates back to the callback URL; it is not a CCDP participant |
+| Authorization document | OAuth Platform at an OAuth-platform origin | ceremony popup | renders platform login/consent and navigates back to the callback URL; it is not a CCDP participant |
 | Prefetch document | Proving Host at the proving origin | child iframe of the initial callback document | loads `/ccdp/prover#prefetch`, starts selected-profile asset fetching, then disappears with its parent callback document |
 | Prover document | Proving Host at the proving origin | ceremony popup, top-level and COOP/COEP-isolated | loads `/ccdp/prover#prove`, receives the validated OAuth result, exposes visible progress, and generates the proof |
 
@@ -50,8 +50,8 @@ It sequentially contains Callback → Authorization → a new Callback → Prove
 The Prefetch document is a distinct iframe instance of the same stable prover
 shell and never becomes the top-level Prover document. Navigation creates a new
 JavaScript heap each time; no participant relies on document-local state
-surviving it. The application, OAuth bridge, provider, and proving origins may
-all be cross-site, and same-site placement grants no protocol authority.
+surviving it. These origins may all be cross-site, and same-site placement
+grants no protocol authority.
 
 CCDP is connection-neutral. It defines which document runs at each location,
 which participant initiates each navigation, what each message means, and their
@@ -112,7 +112,7 @@ The callback bootstrap accepts exactly two input modes:
 
 - initial launch: an empty query and the `launch` fragment defined below, whose
   `ccdpVersion` selects the callback root; or
-- provider return: the bounded provider-defined query and fragment containing
+- OAuth-platform return: the bounded OAuth-platform-defined query and fragment containing
   exactly one OAuth `state` in the form `v<version>.<ceremonyId>`, whose version
   selects the callback root.
 
@@ -125,7 +125,7 @@ Application origins and proving origin are immutable deployment data, never
 derived from `Origin`, `Referer`, or URL input. Shell-to-root invocation is
 outside CCDP and is not a protocol message. Google
 credentials remain in the fragment and therefore never reach the bridge;
-provider-mandated query parameters are the only credential-bearing URL
+OAuth-platform-mandated query parameters are the only credential-bearing URL
 exception.
 
 ### Prover shell
@@ -141,7 +141,7 @@ outside CCDP.
 ## Protocol locations
 
 Before launch, the Application freezes the proving origin, redirect URI,
-provider authorization URL, ceremony ID, platform ID, and platform ceremony
+platform authorization URL, ceremony ID, platform ID, and platform ceremony
 version. CCDP uses the following browser locations:
 
 | Location | Browser context | Exact form |
@@ -149,8 +149,8 @@ version. CCDP uses the following browser locations:
 | Popup reservation | popup | `about:blank` |
 | Initial callback | popup | `${redirectUri}#launch?ccdpVersion=1&ceremonyId=<uuid>&platformId=<id>&ceremonyVersion=<uint>` |
 | Selected-profile prefetch | callback child iframe | `${provingOrigin}/ccdp/prover#prefetch?ccdpVersion=1&platformId=<id>&ceremonyVersion=<uint>` |
-| Platform authorization | popup | the frozen `providerAuthorizationUrl` defined by the selected platform ceremony version |
-| Provider return | popup | the frozen `redirectUri` followed by the provider-defined query or fragment return |
+| Platform authorization | popup | the frozen `platformAuthorizationUrl` defined by the selected platform ceremony version |
+| OAuth-platform return | popup | the frozen `redirectUri` followed by the OAuth-platform-defined query or fragment return |
 | Proof generation | popup | `${provingOrigin}/ccdp/prover#prove?ccdpVersion=1&ceremonyId=<uuid>` |
 
 Internal fragments use the literal mode, `?`, and URL-search-parameter encoding
@@ -165,13 +165,13 @@ HTTP server and are copied and cleared before rendering, module import,
 storage, or network use. Their clearing bootstraps use `ccdpVersion` to select
 one exact root module from a deployment-fixed supported map. No OAuth return,
 credential, proof input, or proof is placed in an internal fragment. The
-provider-mandated query on `redirectUri` is the only protocol exception.
+OAuth-platform-mandated query on `redirectUri` is the only protocol exception.
 
 The prefetch location carries only the selected public profile. It needs no
 ceremony ID: the callback binds its one child by browser source, and the child
 does not join the application popup connection.
 
-The selected platform ceremony version owns the exact provider authorization
+The selected platform ceremony version owns the exact platform authorization
 and return grammar. OAuth `state` has the exact CCDP routing form
 `v1.<ceremonyId>`: the version selects the callback namespace and the lowercase
 UUIDv4 suffix remains the popup connection ID. The authorization request
@@ -187,7 +187,7 @@ sequenceDiagram
     participant A as Application
     participant C as Callback document
     participant F as Prefetch iframe
-    participant O as OAuth provider
+    participant O as OAuth Platform
     participant P as Top-level prover
 
     A->>C: Open popup at callback + launch fragment
@@ -195,7 +195,7 @@ sequenceDiagram
     C->>F: Load prover + prefetch fragment
     F-->>C: ProverPrefetchingAssets
     C-->>A: ProverPrefetchingAssets after connection acceptance
-    A->>O: Navigate same popup to providerAuthorizationUrl
+    A->>O: Navigate same popup to platformAuthorizationUrl
     O->>C: Return same popup to redirectUri
     Note over C: Clear return and select callback root by state version
     C-->>A: CallbackDeliverParams over popup connection
@@ -250,16 +250,16 @@ profile through its cleared launch input; echoing it would compare the
 Application with its own values. Popup connection authentication and
 correlation are independent of CCDP. Prefetch may start before connection
 establishment, but no CCDP message crosses that boundary. Acceptance may cause
-only navigation of that popup to the provider URL already frozen by the live
+only navigation of that popup to the platform authorization URL already frozen by the live
 ceremony.
 
 After acceptance, the application connection navigates the retained popup to
-the frozen `providerAuthorizationUrl`. That navigation destroys the initial
+the frozen `platformAuthorizationUrl`. That navigation destroys the initial
 callback and prefetch iframe.
 
-### 2. Provider authorization and return
+### 2. OAuth-platform authorization and return
 
-The provider owns the popup until it navigates to the frozen `redirectUri`.
+The OAuth Platform owns the popup until it navigates to the frozen `redirectUri`.
 That route serves the same request-invariant callback shell used at launch. Its
 inline bootstrap bounds and clears both URL components, extracts exactly one
 `v<version>.<ceremonyId>` state, and imports the matching immutable callback
@@ -282,13 +282,13 @@ its clearing bootstrap. It extracts the ceremony ID suffix from the state and
 does not classify approval, denial, OAuth transport, or platform fields.
 
 On the successful path, `CallbackDeliverParams` is the first CCDP message after
-provider return and reaches the application only through the authenticated
+OAuth-platform return and reaches the application only through the authenticated
 popup connection. The `Callback` prefix records its creator even when
 connection continuity delivers it after callback replacement.
 
 The Application uses the live ceremony already bound to that connection and
 its platform/version rules to exact-validate response location, fields, state,
-OAuth client, redirect, success, and provider denial. A stale,
+OAuth client, redirect, success, and OAuth-platform denial. A stale,
 replayed, retired, or post-reload delivery changes no live state.
 
 ### 3. Prover activation and application decision
@@ -320,7 +320,7 @@ interface AppRequestProof {
 }
 ```
 
-A malformed result rejects the ceremony. A valid provider denial resolves
+A malformed result rejects the ceremony. A valid OAuth-platform denial resolves
 `{ status: 'denied' }` and sends `AppCancelCeremony`. A valid acceptance creates
 one `AppRequestProof` from the selected platform/version, frozen client ID and
 redirect, derived code verifier, and unchanged OAuth return.
@@ -392,7 +392,7 @@ interface AbortCeremony {
 ```
 
 `AppCancelCeremony` is the parameterless downstream command for explicit user
-cancellation, valid provider denial, invalid callback classification, or
+cancellation, valid OAuth-platform denial, invalid callback classification, or
 retired application authority. Reachable proving work clears queued input; no
 acknowledgement or platform-specific cancel path exists. Callback and prover
 never close or navigate the popup in response.
@@ -410,8 +410,8 @@ The following table is the complete CCDP version-1 message set.
 
 | Message | Created by | Received by | Valid position and cardinality |
 |---|---|---|---|
-| `ProverPrefetchingAssets` | prover prefetch child, forwarded unchanged by callback | application | exactly once through the accepted popup connection before provider navigation |
-| `CallbackDeliverParams` | callback | application | exactly once after provider return and popup-connection acceptance, before the application decision |
+| `ProverPrefetchingAssets` | prover prefetch child, forwarded unchanged by callback | application | exactly once through the accepted popup connection before OAuth-platform navigation |
+| `CallbackDeliverParams` | callback | application | exactly once after OAuth-platform return and popup-connection acceptance, before the application decision |
 | `AppRequestProof` | application | active prover | exactly once after an accepted callback result; starts proving |
 | `AppCancelCeremony` | application | active callback or prover endpoint | at most once before another terminal message; makes later messages inert and requests downstream cleanup |
 | `ProverNotifyEvent` | prover | application | zero or more after `AppRequestProof` and before a terminal message |

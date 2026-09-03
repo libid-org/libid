@@ -47,7 +47,7 @@ sequenceDiagram
     participant C as Application-side client
     participant P as Callback document / OAuth Bridge
     participant F as Prefetch document / Proving Host
-    participant O as Authorization document / OAuth Provider
+    participant O as Authorization document / OAuth Platform
     participant R as Prover document / Proving Host
 
     U->>A: Activate identity action
@@ -59,7 +59,7 @@ sequenceDiagram
     P->>F: Start selected-profile prefetch
     F-->>P: Prefetch dispatched
     P-->>C: Report prefetch readiness
-    C->>P: Continue with frozen provider URL
+    C->>P: Continue with frozen platform authorization URL
     P->>O: Navigate through platform authorization
     U->>O: Approve or deny
     O-->>P: Return to callback URL
@@ -111,7 +111,7 @@ frame chain. With interoperable browser support, libID could keep the prover in
 an isolated cross-origin iframe while the non-isolated ceremony popup retains
 its ordinary opener communication. That would remove the top-level
 callback-to-prover replacement and its popup-connection continuity machinery. It
-would not protect against an OAuth provider response that itself severs the
+would not protect against an OAuth-platform response that itself severs the
 opener with COOP; an opener-independent popup connection remains necessary for
 that independent case.
 
@@ -362,7 +362,7 @@ opaque. It requires the selected platform to be enabled by validated
 `CeremonyConfig`, chooses the numerically greatest ceremony version supported
 both locally and by that platform, generates a fresh 32-byte authorization nonce,
 computes the authorization digest and code verifier, and freezes all of those
-values before constructing OAuth or allowing provider navigation. Client
+values before constructing OAuth or allowing OAuth-platform navigation. Client
 initialization has already fetched and validated `CeremonyConfig`, so `new`
 does only local synchronous work.
 
@@ -441,10 +441,10 @@ function activate(event: MouseEvent) {
 When `CallbackDeliverParams` arrives on the retained connection,
 `proveUserIdentity()` parses its OAuth `state`, exact-matches the CCDP version
 and ceremony ID against this instance's frozen values, and consumes that return
-once. It then sends the minimal proving inputs, validates the provider return,
+once. It then sends the minimal proving inputs, validates the OAuth-platform return,
 performs exchange and proving, constructs the non-authoritative identity preview
 and OAuth proof, and resolves with an accepted `IdentityResult`. A valid
-ceremony-bound provider denial
+ceremony-bound OAuth-platform denial
 resolves with a denied `IdentityResult`; popup closure, malformed return,
 invalid proving input, isolation failure, and proving failure are ordinary
 ceremony failures, not denial.
@@ -612,7 +612,7 @@ record from those retained fields after `validateProofMessage` returns the
 platform-and-version-typed proof value.
 The ceremony validates with its retained platform/version and recomputes the
 authorization digest before resolving `proveUserIdentity()`. `status: 'accepted'` means the selected parser
-classified the provider parameters as success and local checks succeeded; only Ledger Verifier
+classified the OAuth-platform parameters as success and local checks succeeded; only Ledger Verifier
 acceptance makes Identity authoritative. Callers cannot supply or override
 Identity fields.
 
@@ -622,7 +622,7 @@ redirect, derived code verifier, and supplied popup connection. A restart create
 with a fresh nonce, digest, and verifier. After proof acceptance, the Job may
 store the accepted `IdentityResult` and its public `OAuthProof` fields. Before
 acceptance, no Job or IndexedDB index stores the authorization nonce or digest,
-code verifier, provider credential, or private witness. No separate OAuth-state
+code verifier, OAuth-platform credential, or private witness. No separate OAuth-state
 value or pre-proof checkpoint is ever persisted.
 
 The ceremony receives no action kind, job revision, chain RPC, Registry client,

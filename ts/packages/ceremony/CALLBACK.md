@@ -2,7 +2,7 @@
 
 This document defines the browser participant implemented by the selected CCDP
 callback root. The same fixed, non-isolated shell runs before OAuth and at the
-configured provider callback. The callback accepts the application connection
+configured OAuth-platform callback. The callback accepts the application connection
 and delegates typed delivery and same-popup navigation to `@libid/popup`.
 
 The exact cross-document records and their order are defined by
@@ -20,7 +20,7 @@ owns only the callback participant's local lifecycle.
 
 The callback owns:
 
-- classifying its already-cleared input as an initial launch or provider
+- classifying its already-cleared input as an initial launch or OAuth-platform
   callback;
 - starting selected-profile prefetch before OAuth;
 - constructing, decoding, and handling its CCDP values; and
@@ -31,7 +31,7 @@ cross-document connection continuity, and popup replacement.
 
 The callback installs no Service Worker. During initial launch, its
 cross-origin prover-prefetch child registers and activates the proving origin's
-worker for prefetch and cache. On provider return, the callback accepts its
+worker for prefetch and cache. On OAuth-platform return, the callback accepts its
 application connection, delivers the OAuth return, and navigates the same popup
 to the configured proving origin. A MessagePort cannot cross that origin change:
 the prover establishes a fresh carrier through its opener or the configured
@@ -39,7 +39,7 @@ fallback under the same logical popup connection.
 
 It does not fetch `CeremonyConfig`, import the platform catalog, parse a
 platform-specific OAuth result, generate or verify a proof, own an application
-Job, persist a checkpoint, or submit any downstream operation. Provider
+Job, persist a checkpoint, or submit any downstream operation. OAuth-platform
 navigation replaces the initial document, so the callback starts in a fresh
 JavaScript heap. The caller-supplied logical popup connection owns continuity;
 callback storage does not.
@@ -57,7 +57,7 @@ the shell passes data, never a function.
 The callback accepts the two closed inputs defined by CCDP:
 
 - **Initial launch:** the cleared launch input.
-- **Provider callback:** the bounded raw provider return containing one routing
+- **OAuth-platform callback:** the bounded raw OAuth-platform return containing one routing
   state.
 
 The callback recognizes only enough callback grammar to find that single routing
@@ -78,7 +78,7 @@ initial launch
     -> after both complete, report readiness
     -> OAuth navigation
 
-provider callback
+OAuth-platform callback
   validate OAuth state
     -> accept the returned popup connection; claim a preserved port when present
     -> deliver the OAuth return
@@ -99,7 +99,7 @@ no state.
 | Lifetime | Accepts and emits | Callback side effect |
 |---|---|---|
 | Initial launch | valid launch input; child `ProverPrefetchingAssets` | start popup-connection acceptance and bind the prefetch child concurrently; forward readiness only after both complete; missing profile or child load fails, ordinary fetch failure continues cold |
-| Provider return | one OAuth state and `CallbackDeliverParams` | accept the popup connection and deliver the unchanged return |
+| OAuth-platform return | one OAuth state and `CallbackDeliverParams` | accept the popup connection and deliver the unchanged return |
 | Prover transition | delivered `CallbackDeliverParams` | ask the popup connection to replace this document with the CCDP proof-generation location |
 
 Prefetch handles public assets and needs no application reply or timeout. It
@@ -107,13 +107,13 @@ starts without awaiting carrier establishment, while connection acceptance
 does not await prefetch. If the child reports first, the callback retains only
 that local readiness until `PopupConnection.accept` succeeds. No CCDP value
 crosses to the application before connection authentication. The callback
-never constructs the provider URL. After provider return it likewise releases
+never constructs the platform authorization URL. After OAuth-platform return it likewise releases
 no OAuth return until acceptance succeeds. Carrier deadlines, selection, and
 fallback are popup-package concerns. A connection-continuity failure clears the
 return and renders the fixed prover-load failure instead of navigating.
 
 During initial launch, a prefetch failure waits for an accepted connection
-before reporting terminal `AbortCeremony`. After provider return, an observable
+before reporting terminal `AbortCeremony`. After OAuth-platform return, an observable
 abort likewise uses the accepted connection. Failure to accept a connection
 has no CCDP path, follows
 the [undeliverable-failure rule](METRICS.md#undeliverable-failures), and renders
@@ -153,7 +153,7 @@ record is written.
 | URL size, clearing order, immutable module root, and embedded allowlist | CCDP callback shell |
 | HTTP response and logging policy | OAuth bridge |
 | Application source/origin, connection ID/version, carrier selection, and continuity | `@libid/popup` |
-| CCDP shape, direction, order, live ceremony, platform OAuth grammar, provider outcome, and frozen configuration | Ceremony Client and callback/prover participants |
+| CCDP shape, direction, order, live ceremony, platform OAuth grammar, OAuth-platform outcome, and frozen configuration | Ceremony Client and callback/prover participants |
 | Platform/version proving input, credential extraction, isolation, witness, and proof generation | prover and selected platform module |
 | Job authority and use of the returned Identity | application composition |
 
