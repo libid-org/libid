@@ -477,7 +477,7 @@ state is never a ceremony checkpoint.
 
 ## Execution isolation
 
-[CCDP](CCDP.md#documents-and-routes) owns the Prefetch, Prover, and Worker
+[CCDP](CCDP.md#documents-and-routes) owns the Prefetch, Bridge, Prover, and Worker
 routes, document isolation, and response policy. Deployment embeds only
 stylesheet bytes, `ProverAssets`, and fixed response-policy sources. No request
 parameter selects a platform, role, asset, bridge, or CSP. The implementation
