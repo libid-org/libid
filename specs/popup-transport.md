@@ -108,7 +108,10 @@ unmodified implementation and user agent (ASM-POPUP-01).
 - SP-POPUP-01:
   Only a document on an origin in the peer's Origin Allowlist becomes an
   endpoint of the Logical Connection, and only after the transport has
-  authenticated both browser-stamped origins. Depends on ASM-POPUP-01.
+  authenticated both browser-stamped origins. A Popup Endpoint deployed with
+  the wildcard allowlist (REQ-POPUP-ALLOW-01) accepts any HTTPS origin that
+  opened it; the exact observed origin and source are still bound. Depends
+  on ASM-POPUP-01.
 - SP-POPUP-02:
   One Logical Connection binds at most one Popup browsing context. A
   document in another window cannot bind, select, replace, or control it,
@@ -156,7 +159,10 @@ unmodified implementation and user agent (ASM-POPUP-01).
   Each endpoint MUST be constructed with a nonempty Origin Allowlist of
   canonical HTTPS origins without duplicates. An empty set or a malformed,
   noncanonical, non-HTTPS, credentialed, or repeated member MUST be rejected
-  before any carrier work.
+  before any carrier work. A Popup Endpoint MAY instead be constructed with
+  the wildcard allowlist `'*'`, which accepts any canonical HTTPS origin the
+  user agent stamped on the opener's authentication and rejects an opaque or
+  non-HTTPS one. An Application Endpoint MUST NOT accept a wildcard.
 - REQ-POPUP-ALLOW-02:
   An endpoint MUST accept a peer only when the peer's browser-stamped origin
   is a member of its Origin Allowlist, and MUST bind that exact observed origin
@@ -274,6 +280,17 @@ unmodified implementation and user agent (ASM-POPUP-01).
   Control only while its retained handle is non-null and does not report
   closed; while native-anchor binding is pending it MUST perform no browser
   operation; otherwise it MUST reject.
+- REQ-POPUP-CONTROL-04A:
+  Navigation away, for a Non-participating destination: the Application
+  Endpoint MUST navigate its retained handle through Direct Control without
+  sending the destination over any Carrier, MUST retire the current Carrier
+  without attempting Continuity, and MUST remain ready to authenticate the
+  next Participating Document. It MUST reject once the handle is absent or
+  reports closed, and MUST perform no browser operation while native-anchor
+  binding is pending. A Popup Endpoint navigating away MUST release its
+  Carrier and replace its document without attempting Continuity.
+  REQ-POPUP-LIFE-03 applies until the next Participating Document
+  authenticates.
 - REQ-POPUP-CONTROL-05:
   Popup-side navigation acts locally and sends no Control. Either path on
   the popup side MUST prepare Continuity where §10 applies, then replace the
@@ -370,7 +387,9 @@ this specification.
   An empty set or a duplicate, non-HTTPS, noncanonical, or credentialed
   member is rejected; a peer on an origin outside the allowlist never becomes
   an endpoint; sequential Participating Documents on two allowlisted origins bind
-  under one Logical Connection.
+  under one Logical Connection. Under the wildcard, a Popup Endpoint binds
+  any HTTPS opener origin exactly, rejects an opaque or non-HTTPS one, and an
+  Application Endpoint rejects the wildcard.
 - TEST-POPUP-03 (exercises REQ-POPUP-ALLOW-03, REQ-POPUP-ALLOW-04, REQ-POPUP-ALLOW-05):
   Wrong source, origin, version, or direction selects nothing; a valid
   attempt for another Connection ID and unrelated traffic from the Popup
@@ -391,7 +410,9 @@ this specification.
 - TEST-POPUP-07 (exercises REQ-POPUP-CONTROL-01 to REQ-POPUP-CONTROL-06, REQ-POPUP-LIFE-06):
   Controls are application-to-popup and one-shot; malformed destinations
   fail before any browser operation; navigation uses the Carrier when
-  selected and Direct Control otherwise; closure works directly with a
+  selected and Direct Control otherwise; navigation away sends nothing over
+  the Carrier, keeps nothing, rejects without Direct Control, and the next
+  Participating Document authenticates afresh; closure works directly with a
   usable handle and over the Carrier after Isolation, and is idempotent.
 - TEST-POPUP-08 (exercises REQ-POPUP-LIFE-02, REQ-POPUP-LIFE-05):
   A document without opener and without a Fallback Carrier fails closed
@@ -417,7 +438,11 @@ this specification.
   could also do by never returning.
 - Origin Allowlists are deployment configuration. Listing an origin that
   serves attacker-controlled documents accepts that attacker as a peer; the
-  transport cannot distinguish them.
+  transport cannot distinguish them. A wildcard Popup Endpoint accepts every
+  HTTPS site that opens it with a valid Connection ID, so it must carry a
+  Carried Protocol that grants nothing to an unknown application, and the
+  Application Endpoint's exact allowlist remains the only origin check on
+  that side.
 - Direct Control depends on the retained handle reporting closed after a
   browsing-context-group switch (ASM-POPUP-02). An engine that violated this
   would navigate a discarded context, a silent no-op, never a wrong window.
