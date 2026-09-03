@@ -356,7 +356,9 @@ earlier phase.
 - Cancellation and context-loss cleanup are best effort. CCDP has no durable
   checkpoint, ceremony recovery, or migration to another popup connection.
 
-### 1. Prefetch to Authorization
+### Phases
+
+#### 1. Prefetch to Authorization
 
 The protocol enters this phase on user activation. The Application opens one
 named popup at [Prefetch](#prefetch-get-prefetch) and establishes its
@@ -372,7 +374,7 @@ Application navigates the retained popup to
 navigation ends this phase: it retires the Prefetch carrier while leaving the
 Application endpoint available for Callback.
 
-### 2. Authorization to Callback
+#### 2. Authorization to Callback
 
 This phase begins when [Authorization](#authorization-get-platformauthorizationurl)
 loads. The OAuth Platform owns the popup until it returns approval or denial to
@@ -388,7 +390,7 @@ Application before authentication. Sending the message ends this phase and
 lets Callback begin the Prover transition; its receipt begins Application
 validation.
 
-### 3. Callback to Prover
+#### 3. Callback to Prover
 
 After delivery, [Callback](#callback-get-callbackjs) asks its connection to
 navigate to [Prover](#prover-get-prover). The connection owns immediate
@@ -402,7 +404,7 @@ platform/version. A malformed result rejects the ceremony and sends
 [`AppRequestProof`](#apprequestproof) after Prover is active. Acceptance of that
 request enters Prover execution; cancellation ends the protocol instead.
 
-### 4. Prover execution
+#### 4. Prover execution
 
 This phase begins only when [Prover](#prover-get-prover) accepts
 [`AppRequestProof`](#apprequestproof). Prover applies the selected
@@ -413,7 +415,7 @@ platform/version rules before credential use. It sends zero or more
 [`AppCancelCeremony`](#appcancelceremony). The first terminal outcome—proof
 delivery, abort, or cancellation—ends the phase; later messages have no effect.
 
-### 5. Terminal outcomes
+#### 5. Terminal outcomes
 
 Terminal processing begins when the Application cancels an active Callback or
 Prover, Callback or Prover reports an abort, or Prover delivers a proof. These
