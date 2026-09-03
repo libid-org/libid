@@ -155,9 +155,10 @@ preserves the already authenticated port without repeating its handshake.
 value.
 
 This path is strictly same-origin: the source and destination must resolve the
-same Service Worker registration. Before cross-origin navigation, connection
-does not call `keep`; it releases the old popup endpoint and an allowed
-destination performs a fresh handshake through its opener or fallback.
+same Service Worker registration. Before cross-origin navigation, including
+navigation to another site, connection does not call `keep`; it releases the
+old popup endpoint and an allowed destination performs a fresh handshake
+through its opener or fallback.
 
 This is a short in-memory continuity bridge, not persistence or recovery.
 Worker loss breaks continuity; no later document can reconstruct or resume the
