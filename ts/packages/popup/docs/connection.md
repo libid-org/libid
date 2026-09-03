@@ -4,8 +4,9 @@ This document defines the popup connection architecture. A `PopupWindow`
 owns one popup from creation through closure. A `PopupConnection` composes over it,
 establishes a bidirectional channel to an application page, moves caller-defined
 values, selects one carrier for each participating popup document, and preserves
-a transferable native resource across participating-document replacement. It is not a generic
-document-to-document abstraction.
+a transferable native resource across same-origin participating-document
+replacement. Different participating popup documents may use different
+caller-approved origins. It is not a generic document-to-document abstraction.
 
 `PopupConnection` represents one logical connection. It retains a usable
 carrier for as long as possible and may preserve, transfer, or replace that
@@ -84,14 +85,14 @@ The connection must:
 `PopupConnection` owns:
 
 - one logical connection bound to the caller-supplied connection ID and
-  connection version;
+  connection version, plus its immutable allowed popup-origin set;
 - composition over an injected `PopupWindow` and connected navigation and
   closure;
 - selection and ownership of one authenticated carrier;
 - ordered delivery and continuity across popup document replacement;
   and
 - one active carrier at a time, carrier replacement after external navigation,
-  navigation, connection closure, cleanup, and race resolution.
+  connected navigation, connection closure, cleanup, and race resolution.
 
 Carriers own endpoint authentication, establishment, physical serialization
 where required, native framing, resource cleanup, and delivery mechanics. Each
@@ -136,7 +137,7 @@ authentication inputs:
 const openedWindow = PopupWindow.open(anchor.target)
 const applicationConnection = PopupConnection.connect<Messages>(openedWindow, {
   connectionId,
-  popupOrigin,
+  allowedPopupOrigins,
   fallback,
   onDiagnostic,
 })
@@ -172,6 +173,13 @@ connection ID before selecting a new carrier. A matching entry restores its
 native port; no entry leaves the fresh endpoint to use its available opener or
 signaling resources normally.
 
+`connect` copies a nonempty, duplicate-free set of canonical HTTPS
+`allowedPopupOrigins`. Every initial or later participating popup document must
+authenticate from one exact member, and the selected carrier binds that observed
+origin. The set admits participants; it neither selects navigation destinations
+nor turns an external document into a participant. Each popup endpoint likewise
+copies its nonempty `allowedApplicationOrigins` and binds one observed member.
+
 There is no public role field or per-operation role branch. Callers never
 supply a keeper, route, or phase.
 
@@ -184,7 +192,7 @@ ID lives for the logical connection; individual carrier attempts do not consume
 it.
 
 A popup endpoint constructed from `PopupWindow.current()` and an immutable
-target-origin set sends the MessagePort carrier's private handshake before
+application-origin set sends the MessagePort carrier's private handshake before
 carrier selection. For that carrier, its connection ID and connection version
 are correlation metadata, not capabilities or caller values. WebRTC uses the
 randomized connection ID only as rendezvous correlation combined with the
@@ -196,7 +204,7 @@ caller code.
 binds a returned handle privately. When the browser
 returns no handle, `PopupConnection.connect` listens for the popup created by the
 native anchor. It considers only the expected initial private control with the exact
-connection ID and connection version from the configured popup origin. After
+connection ID and connection version from an allowed popup origin. After
 exact validation it internally calls
 `PopupWindow.bind(MessageEvent.source)` once.
 Wrong source, origin, ID, version, direction, or initial control rejects the
@@ -224,7 +232,7 @@ function activate(event: MouseEvent) {
   const popupWindow = PopupWindow.open(anchor.target)
   const connection = PopupConnection.connect(popupWindow, {
     connectionId,
-    popupOrigin,
+    allowedPopupOrigins,
   })
 
   void connection.navigate(anchor.href)
@@ -241,7 +249,7 @@ the destination. When creation returns `null`, the caller leaves the same
 activation's native anchor navigation untouched and `navigate` performs no
 browser operation while that binding is pending. The application connection
 binds only the popup whose initial private control authenticates for this
-connection ID and configured origin.
+connection ID and one of its allowed popup origins.
 
 The anchor must use that same valid, unique target and
 must not request `noopener` or `noreferrer`: the MessagePort fallback needs its
@@ -304,7 +312,7 @@ declare const PopupConnection: {
     popupWindow: PopupWindow,
     options: {
       connectionId: string
-      popupOrigin: string
+      allowedPopupOrigins: readonly string[]
       fallback?: CarrierConstructor
       onDiagnostic?: (event: PopupDiagnostic) => void
     },
@@ -423,8 +431,18 @@ interpret caller-owned fields:
   and not closed; while native-anchor binding is pending it performs no browser
   operation; and
 - either the popup endpoint calling `navigate` or the popup receiving that
-  control preserves a transferable carrier or privately prepares a replacement
-  for a non-transferable WebRTC carrier, then replaces its current document.
+  control preserves a transferable carrier, deliberately releases it for a
+  cross-origin rebind, or privately prepares a replacement for a non-transferable
+  WebRTC carrier, then replaces its current document.
+
+A selected MessagePort is preserved through `PortKeeper` only when the target
+has the current popup origin. For a different origin, connection does not send
+the port to the source origin's worker. It retires that popup endpoint and leaves
+the application listener armed; an allowed destination establishes a fresh
+MessagePort through its surviving opener. If isolation removes that opener, only
+the configured fallback can establish the destination carrier. The logical
+connection ID and caller registrations remain unchanged, but caller values sent
+before the replacement carrier is selected are not queued.
 
 For WebRTC replacement, connection gives the caller-selected target unchanged
 to the carrier's package-private preparation hook and navigates only to the
@@ -570,7 +588,8 @@ not preservation. After RTC is active, an unmanaged navigation cannot prepare
 or identify the next signaling round and terminates the logical connection.
 
 A transferable carrier may preserve its authenticated native resource across
-an immediate participating-document replacement. A nontransferable carrier
+an immediate same-origin participating-document replacement. A cross-origin
+replacement establishes a fresh carrier. A nontransferable carrier
 instead prepares its replacement before navigation and installs it after the
 destination authenticates. The caller observes neither mechanism and cannot
 recover from continuity loss.

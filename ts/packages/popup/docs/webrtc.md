@@ -77,7 +77,8 @@ authenticate the signaling service. No second nonce is added.
 The signaling contract accepts only:
 
 - one application subscription from an allowed application origin;
-- one popup offer from the configured popup origin;
+- one popup offer from an allowed popup origin, bound as the exact origin of
+  that round;
 - one fresh application answer;
 - bounded trickled ICE candidate updates from the bound roles; and
 - terminal connected, failed, or abandoned cleanup.
@@ -95,7 +96,9 @@ storage.
 
 The signaling service handles independent one-shot rounds. It does not retain a
 subscription for the logical connection, detect popup navigation, or understand
-carrier continuity.
+carrier continuity. Consecutive rounds may authenticate different popup origins
+from the application's immutable allowed set; every round remains bound to the
+one exact browser-stamped popup origin that created its offer.
 
 ### Private navigation preparation
 
@@ -190,7 +193,7 @@ interface ApplicationWebRTCOptions {
   signalingServiceUrl: string
   stunUrls: readonly string[]
   connectionId: string
-  popupOrigin: string
+  allowedPopupOrigins: readonly string[]
   signal: AbortSignal
 }
 
@@ -224,7 +227,7 @@ to `PopupConnection`:
 fallback: signal => connectApplicationWebRTC({
   ...webRTCOptions,
   connectionId,
-  popupOrigin,
+  allowedPopupOrigins,
   signal,
 })
 ```
@@ -342,10 +345,10 @@ logical connection; unexpected carrier failure closes the connection.
 ## Failure and security invariants
 
 - Signaling carries no transported value.
-- The application signaling handshake requires an allowed browser-stamped
-  `Origin`; the popup handshake requires the exact configured popup origin.
-  Origin restricts browser callers but is not accepted as a standalone client
-  credential.
+- Both signaling roles require an allowed browser-stamped `Origin`. Each round
+  binds one exact application origin and one exact popup origin from their
+  respective immutable admission sets; a set match is not accepted as a
+  standalone client credential.
 - The caller-generated, canonical UUIDv4 connection ID is randomized logical
   rendezvous correlation, not a standalone capability. It is exact-matched with
   the authenticated endpoint origin and role and the bounded monotonic round
