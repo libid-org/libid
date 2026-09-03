@@ -422,7 +422,7 @@ no acknowledgement. An observable abort rejects the live ceremony; a failure
 before connection acceptance is rendered locally. Terminal cleanup and popup
 ownership follow the [invariants](#invariants).
 
-## End-to-end sequence
+### End-to-end sequence
 
 ```mermaid
 sequenceDiagram
