@@ -216,3 +216,35 @@ jobs:
             missing=1
           done
           exit "$missing"
+
+  # ---------------------------------------------------------------------------
+  # Browser tests: every package's Playwright suite (`test:e2e`), each against
+  # its own local server, with browsers installed by the package's own
+  # `test:e2e:install`. No external service is involved.
+  # ---------------------------------------------------------------------------
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm -C ts install --frozen-lockfile
+
+      # Each package that has a Playwright suite installs the browsers it
+      # needs and runs its own suite; packages without one are skipped.
+      - name: Install browsers
+        run: pnpm -C ts -r --if-present run test:e2e:install
+
+      - name: Browser tests
+        run: pnpm -C ts -r --if-present run test:e2e
