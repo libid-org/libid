@@ -48,7 +48,7 @@ callback storage does not.
 
 `locationInput` is the exact copied query and fragment, including their leading
 delimiter when nonempty. The shell passes it first, followed by the selected
-CCDP root's opaque, immutable input tuple. The version-1 callback exact-validates
+CCDP root's opaque, immutable resolved input tuple. The version-1 callback exact-validates
 its allowed application origins and prover origin arguments, then passes the
 copied origins to `PopupConnection.accept` before installing ceremony listeners.
 The selected callback root owns any package-supported fallback construction;

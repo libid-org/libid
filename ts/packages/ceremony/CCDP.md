@@ -106,11 +106,12 @@ declare function startCallback(
 ```
 
 The unversioned shell invokes this as
-`startCallback(locationInput, ...selected.inputs)` without interpreting the
-root-owned tuple. The version-1 root exact-validates each argument. Application
+`startCallback(locationInput, ...(selected.inputs ?? defaultInputs))` without
+interpreting the resolved tuple. The version-1 root exact-validates each argument. Application
 origins and prover origin are immutable deployment data, never derived from
 `Origin`, `Referer`, or URL input. The entrypoint is not a CCDP message or pure
-`ccdp` export. The identity bridge owns its concrete shell and per-root inputs in
+`ccdp` export. The identity bridge owns its concrete shell, default inputs, and
+optional per-root overrides in
 [IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#stable-root-input). Google
 credentials remain in the fragment and therefore never reach the bridge;
 provider-mandated query parameters are the only credential-bearing URL

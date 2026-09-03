@@ -177,21 +177,22 @@ subresource. Its CSP hash is generated from its exact deployment bytes. The
 document contains no external config script, preload, analytics, application
 markup, or request-derived interpolation. The root module owns all later UI.
 
-The bootstrap embeds a closed map from supported CCDP versions to immutable,
-same-origin callback root URLs and root-owned argument tuples. Version 1 is
-equivalent to:
+The bootstrap embeds one current default input tuple and a closed map from
+supported CCDP versions to immutable, same-origin callback root URLs. A root
+entry may override the tuple when needed. Version 1 is equivalent to:
 
 ```ts
+const defaultInputs = deepFreeze([
+  ['https://app.example'],
+  'https://prove.lib.id',
+])
+
 const callbackRoots = Object.freeze({
   1: Object.freeze({
     moduleUrl: new URL(
       '/assets/libid-ccdp-v1-callback.js',
       location.origin,
     ).href,
-    inputs: deepFreeze([
-      ['https://app.example'],
-      'https://prove.lib.id',
-    ]),
   }),
 })
 ```
@@ -203,7 +204,8 @@ map entry.
 ### Stable root input
 
 After selecting and importing a root, the bootstrap calls its sole entrypoint
-with the captured location followed by that root's deeply frozen inputs:
+with the captured location followed by its override or the deeply frozen
+default inputs:
 
 ```ts
 interface CallbackLocationInput {
@@ -212,7 +214,7 @@ interface CallbackLocationInput {
 }
 
 const root = await import(selected.moduleUrl)
-root.startCallback(locationInput, ...selected.inputs)
+root.startCallback(locationInput, ...(selected.inputs ?? defaultInputs))
 ```
 
 `query` and `fragment` are the bounded byte-for-byte URL components captured
@@ -231,11 +233,12 @@ declare function startCallback(
 ```
 
 The shell-to-root contract is deliberately unversioned and fixed. URL input is
-always the raw query/fragment pair, while the selected `inputs` tuple is opaque
-to the shell. Each immutable CCDP root defines and exact-validates its own
-argument tuple. A later CCDP version may add or change arguments in its map
-entry without changing the shell algorithm or browser URL. Neither URL input
-nor a network response may supply those arguments.
+always the raw query/fragment pair, while both default and overridden `inputs`
+are opaque to the shell. Each immutable CCDP root defines and exact-validates
+its own argument tuple. Roots use the latest deployment values by default. Before
+changing the tuple incompatibly, the deployment pins the previous tuple only on
+roots that still require it. This changes neither the shell algorithm nor the
+browser URL. Neither URL input nor a network response may supply arguments.
 
 ### Bootstrap algorithm
 
@@ -248,10 +251,10 @@ the inline bootstrap:
    exactly one routing `state`;
 4. reads only `ccdpVersion` from launch input or the `v<version>.` prefix from
    OAuth `state` and rejects malformed, conflicting, or unsupported values;
-5. selects the corresponding closed root and root-owned input tuple;
-6. deeply freezes the captured location and selected inputs; and
+5. selects the corresponding closed root and its optional input override;
+6. deeply freezes the captured location and resolved inputs; and
 7. imports the immutable root and invokes
-   `startCallback(locationInput, ...inputs)` once.
+   `startCallback(locationInput, ...(selected.inputs ?? defaultInputs))` once.
 
 Any failure imports no other root and renders only fixed text after clearing.
 The bootstrap never parses a platform credential, selects a prover asset, or
