@@ -177,6 +177,10 @@ unmodified implementation and user agent (ASM-POPUP-01).
   A Carrier MUST become selectable only after both endpoints have
   authenticated each other. A mismatch of origin, source, Connection ID,
   transport version, or direction MUST select nothing and release no value.
+  An attempt from a window other than the expected peer, or from an origin
+  outside the Origin Allowlist, is not an attempt on this connection and MUST
+  be ignored without state change; only a malformed record from the expected
+  peer fails the connection.
 - REQ-POPUP-ALLOW-05:
   An event that does not carry the transport's own authentication
   discriminator together with this Connection ID is not an authentication
@@ -208,12 +212,15 @@ unmodified implementation and user agent (ASM-POPUP-01).
 - REQ-POPUP-MSG-04:
   An inbound value that is not a plain record, whose `type` is not a
   registered discriminator, or whose decoder throws MUST fail the Logical
-  Connection and reach no handler. The registered set therefore fixes the
-  accepted direction of each message; ordering and protocol state remain the
-  handler's responsibility.
+  Connection and reach no handler. An exception thrown by the handler itself
+  belongs to the Carried Protocol: it MUST propagate untouched and MUST NOT
+  change connection state or reach diagnostics. The registered set therefore
+  fixes the accepted direction of each message; ordering and protocol state
+  remain the handler's responsibility.
 - REQ-POPUP-MSG-05:
-  The Carried Protocol MUST register its handlers before yielding to the event
-  loop after obtaining its endpoint. The transport delivers inbound values
+  Both endpoint constructors return synchronously and select a Carrier
+  afterwards. The Carried Protocol MUST register its handlers before yielding
+  to the event loop after obtaining its endpoint. The transport delivers inbound values
   as later tasks and MUST NOT queue a value for a handler registered later.
 - REQ-POPUP-MSG-06:
   Sending without a selected Carrier, or after closure, MUST fail
@@ -260,7 +267,8 @@ unmodified implementation and user agent (ASM-POPUP-01).
   that does not answer within the implementation's published deadline,
   commits the fallback. An authentication failure is terminal and MUST NOT
   select a weaker path. Without a Fallback Carrier, an unreachable opener
-  fails the Logical Connection.
+  fails the Logical Connection. A same-origin continuity owner that does not
+  answer is treated as holding nothing.
 - REQ-POPUP-CONTROL-01:
   Controls travel from the Application Endpoint to the Popup Endpoint only.
   A Control received by the Application Endpoint MUST fail the Logical
@@ -288,7 +296,10 @@ unmodified implementation and user agent (ASM-POPUP-01).
   next Participating Document. It MUST reject once the handle is absent or
   reports closed, and MUST perform no browser operation while native-anchor
   binding is pending. A Popup Endpoint navigating away MUST release its
-  Carrier and replace its document without attempting Continuity.
+  Carrier and replace its document without attempting Continuity. The
+  destination of navigation away is private to the endpoint that performs
+  it: no Control carries it, so it never reaches a Carrier or its signaling,
+  and a Popup under Isolation MUST initiate its own departure.
   REQ-POPUP-LIFE-03 applies until the next Participating Document
   authenticates.
 - REQ-POPUP-CONTROL-05:
@@ -308,11 +319,13 @@ unmodified implementation and user agent (ASM-POPUP-01).
   through the transport; there is no reliable runtime probe for
   closability after Isolation.
 - REQ-POPUP-LIFE-03:
-  Navigation to a Non-participating Document leaves the Application
-  Endpoint without a usable Carrier until the next Participating Document
-  authenticates, and the Application Endpoint cannot observe that window.
-  Protocol Messages and Controls sent meanwhile succeed locally and are lost;
-  closure still uses Direct Control while the handle is usable.
+  A connected navigation to a Non-participating Document leaves the
+  Application Endpoint without a usable Carrier until the next Participating
+  Document authenticates, and the Application Endpoint cannot observe that
+  window. Protocol Messages and Controls sent meanwhile succeed locally and
+  are lost; closure still uses Direct Control while the handle is usable.
+  After navigation away the Carrier is retired instead, and sending fails
+  synchronously.
 - REQ-POPUP-LIFE-04:
   Any navigation of the Popup outside the transport's own operation loses
   the current Carrier. A later Participating Document MAY establish a fresh
@@ -355,7 +368,10 @@ unmodified implementation and user agent (ASM-POPUP-01).
   state.
 - REQ-POPUP-CONT-06:
   No Continuity mechanism MAY carry a Protocol Message, and none MAY persist
-  beyond its bound or across a Non-participating Document.
+  beyond its bound. The transport cannot tell a Participating destination
+  from a Non-participating one before it loads: a same-origin document that
+  arrives within the bound MAY find the preserved Carrier whatever showed in
+  between. A Carried Protocol that requires retirement uses navigation away.
 
 ## 11. Failure semantics
 
@@ -365,8 +381,10 @@ unmodified implementation and user agent (ASM-POPUP-01).
   or select a weaker Carrier.
 - REQ-POPUP-FAIL-02:
   An operation the Carried Protocol invoked reports failure through that
-  operation. A failure with no invoking operation is reported only through
-  the implementation's local diagnostics.
+  operation, carrying its stable code. Every endpoint exposes its terminal
+  outcome, settled exactly once as closed or failed with the stable code;
+  a failure with no invoking operation reaches the Carried Protocol only
+  there, and the implementation's local diagnostics additionally record it.
 - REQ-POPUP-FAIL-03:
   Diagnostics MUST NOT contain an origin, URL, Connection ID, message
   discriminator, transported value, or raw exception, and MUST NOT leave
@@ -389,7 +407,8 @@ this specification.
   an endpoint; sequential Participating Documents on two allowlisted origins bind
   under one Logical Connection. Under the wildcard, a Popup Endpoint binds
   any HTTPS opener origin exactly, rejects an opaque or non-HTTPS one, and an
-  Application Endpoint rejects the wildcard.
+  Application Endpoint rejects the wildcard. A handshake from another window
+  or an unlisted origin leaves a live connection untouched.
 - TEST-POPUP-03 (exercises REQ-POPUP-ALLOW-03, REQ-POPUP-ALLOW-04, REQ-POPUP-ALLOW-05):
   Wrong source, origin, version, or direction selects nothing; a valid
   attempt for another Connection ID and unrelated traffic from the Popup
@@ -462,8 +481,8 @@ from; those documents keep the mechanics.
 | Requirement | Source |
 |---|---|
 | REQ-POPUP-ID-01 to ID-04 | connection.md, Connection ID |
-| REQ-POPUP-ALLOW-01, ADMIT-02 | connection.md, API (`allowedPopupOrigins`, `allowedApplicationOrigins`) |
-| REQ-POPUP-ALLOW-03 to ADMIT-05 | message-port.md, Failure and security invariants; Authentication |
+| REQ-POPUP-ALLOW-01, ALLOW-02 | connection.md, API (`allowedPopupOrigins`, `allowedApplicationOrigins`) |
+| REQ-POPUP-ALLOW-03 to ALLOW-05 | message-port.md, Failure and security invariants; Authentication |
 | REQ-POPUP-ALLOW-06 | connection.md, Popup creation and native-anchor fallback |
 | REQ-POPUP-MSG-01 to MSG-07 | connection.md, `send` and `on` rules; message-port.md, Message delivery |
 | REQ-POPUP-DELIVER-01 to DELIVER-05 | connection.md, Failure and security rules; message-port.md, invariants |
