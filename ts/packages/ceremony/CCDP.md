@@ -90,33 +90,27 @@ The callback bootstrap accepts exactly two input modes:
 It bounds the combined raw query and fragment to
 `MAX_OAUTH_RETURN_BYTES = 32 KiB`, preserves the leading `?` and `#` when
 nonempty, and clears both. It parses no platform-specific return field beyond
-locating the single routing state. After root selection it invokes:
+locating the single routing state. The version-1 root defines:
 
 ```ts
-interface CallbackShellInput<Config> {
-  locationInput: {
-    query: string
-    fragment: string
-  }
-  config: Config
-}
-
-interface CallbackConfig {
-  allowedApplicationOrigins: readonly string[]
-  proverOrigin: string
+interface CallbackLocationInput {
+  query: string
+  fragment: string
 }
 
 declare function startCallback(
-  input: CallbackShellInput<CallbackConfig>,
+  locationInput: CallbackLocationInput,
+  allowedApplicationOrigins: readonly string[],
+  proverOrigin: string,
 ): void
 ```
 
-The shell uses this stable generic wrapper without interpreting `config`; the
-selected root exact-validates its concrete `CallbackConfig`. Its application
+The unversioned shell invokes this as
+`startCallback(locationInput, ...selected.inputs)` without interpreting the
+root-owned tuple. The version-1 root exact-validates each argument. Application
 origins and prover origin are immutable deployment data, never derived from
-`Origin`, `Referer`, or URL input. The object is an entrypoint dependency, not a
-CCDP message or pure `ccdp` export. The identity bridge owns its concrete shell
-and root configuration in
+`Origin`, `Referer`, or URL input. The entrypoint is not a CCDP message or pure
+`ccdp` export. The identity bridge owns its concrete shell and per-root inputs in
 [IDENTITY_BRIDGE.md](IDENTITY_BRIDGE.md#stable-root-input). Google
 credentials remain in the fragment and therefore never reach the bridge;
 provider-mandated query parameters are the only credential-bearing URL

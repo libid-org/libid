@@ -47,12 +47,12 @@ callback storage does not.
 ## Entrypoint and trusted inputs
 
 `locationInput` is the exact copied query and fragment, including their leading
-delimiter when nonempty. The shell passes it with opaque, immutable
-root-specific bridge configuration in one stable `CallbackShellInput` object.
-The callback root exact-validates its concrete config, then passes the copied
-allowed application origins to `PopupConnection.accept` before installing
-ceremony listeners. The selected callback root owns any package-supported
-fallback construction; the shell passes data, never a function.
+delimiter when nonempty. The shell passes it first, followed by the selected
+CCDP root's opaque, immutable input tuple. The version-1 callback exact-validates
+its allowed application origins and prover origin arguments, then passes the
+copied origins to `PopupConnection.accept` before installing ceremony listeners.
+The selected callback root owns any package-supported fallback construction;
+the shell passes data, never a function.
 
 The callback accepts the two closed inputs defined by CCDP:
 
