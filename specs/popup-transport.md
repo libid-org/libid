@@ -2,7 +2,6 @@
 
 Part of the [libID protocol specification](libid.md).
 
-
 ## 1. Scope
 
 This document is the normative owner of the logical connection between an
