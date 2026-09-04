@@ -393,21 +393,21 @@ owns each selected immutable asset fetch from the first byte, keys
 ordinary artifact single flights by canonical URL, starts the fixed launch
 bb.js CRS loaders—
 `Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single
-flights, rejects a manifest conflict, and extends the initiating worker event
-through completion. Those loaders use bb.js's fixed CRS endpoints and IndexedDB
-cache. Merely importing bb.js is not CRS prefetch.
+flights, and extends the initiating worker event through completion. Those
+loaders use bb.js's fixed CRS endpoints and IndexedDB cache. Merely importing
+bb.js is not CRS prefetch.
 
-Manifest prefetches use `credentials: 'same-origin'`, matching native module
+Ordinary asset prefetches use `credentials: 'same-origin'`, matching native module
 and worker requests. Fetch-event handling preserves the admitted request's URL
 and response semantics so Firefox can reuse a prefetched worker response rather
 than refetching or synthesizing a different module.
 
 Its package-private prefetch call is an implementation detail, not a CCDP
 message or exported ceremony API. The worker intercepts only exact immutable
-asset requests admitted by the active build/profile manifest. It leaves every
-other request to the browser unchanged: ceremony routes, the GitHub token
-exchange, platform APIs, OAuth navigation, HTML, and configuration are never
-cached, rewritten, or synthesized by this worker.
+asset requests in the selected platform/version leaf's pinned prefetch set. It
+leaves every other request to the browser unchanged: ceremony routes, the
+GitHub token exchange, platform APIs, OAuth navigation, HTML, and configuration
+are never cached, rewritten, or synthesized by this worker.
 
 As soon as active-worker selection and the prefetch request settle, without
 waiting for download completion, the Prefetch emits CCDP's `PrefetchStarted`.
