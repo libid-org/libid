@@ -31,10 +31,11 @@ scope.
 Package acceptance requirements are indexed by [TEST_PLAN.md](TEST_PLAN.md).
 
 The specification's **Ceremony Client** role maps to this package's closed
-client, callback, airlock, prover, and platform implementation as a whole. Its
-**Ceremony Popup** is the auxiliary browser window; the package documents
-running inside it are the prefetch, callback, airlock, and prover. `@libid/popup`
-owns the window and connection but is not a ceremony-protocol participant.
+client, platform implementation, and CCDP [resources](CCDP.md#documents-and-routes)
+as a whole. Its
+**Ceremony Popup** is the auxiliary browser window containing the CCDP
+[documents](CCDP.md#documents-and-routes). `@libid/popup` owns the window and
+connection but is not a ceremony-protocol participant.
 
 ## System boundary
 
@@ -486,8 +487,8 @@ no-ceremony-recovery launch scope.
 
 The client fetches and validates the origin-controlled
 [`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
-the chosen platform, version, client ID, redirect URI, and CCDP origin.
-Prefetch, Callback, Airlock, and Prover never fetch it.
+the chosen platform, version, client ID, redirect URI, and CCDP origin. CCDP
+[resources](CCDP.md#documents-and-routes) never fetch it.
 
 ## Result and lifecycle
 
@@ -736,9 +737,9 @@ output-shape versions. A proof change normally changes the assembled
 public compatibility axis. One package release may retain older platform-version
 validators during its compatibility window.
 
-[`CCDPVersion`](CCDP.md#paths-and-versioning) independently versions the
-Callback implementation, CCDP Distribution documents and Worker, navigation,
-fragments, and browser messages.
+[`CCDPVersion`](CCDP.md#paths-and-versioning) independently versions CCDP
+[resources](CCDP.md#documents-and-routes), navigation, fragments, and browser
+messages.
 CCDP paths and OAuth `state` select it before protocol code runs;
 messages do not repeat it. The OAuth bridge API
 namespace remains independent. The popup package's

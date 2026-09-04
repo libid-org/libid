@@ -37,9 +37,9 @@ templating, source resolution, archive extraction, or remote asset fetch.
 
 ### Protocol resources
 
-The Distribution exposes the exact versioned Callback, Prefetch, Airlock,
-Prover, and Worker paths defined by [CCDP](CCDP.md#documents-and-routes). Their
-fragments, roles, and execution contexts remain CCDP rules.
+The Distribution exposes the exact versioned
+[resources](CCDP.md#documents-and-routes) defined by CCDP. Their fragments,
+roles, and execution contexts remain CCDP rules.
 
 Prefetch, Airlock, and Prover contain their clearing bootstrap and entry code
 directly, with no browser-visible manifest or second entry-script request. They

@@ -25,9 +25,9 @@ The OAuth bridge owns:
 
 CCDP owns and serves the versioned Callback implementation. The bridge serves
 only the registered callback shell, which loads that implementation from its
-configured CCDP origin. The bridge does not serve the Prefetch, Callback,
-Airlock, or Prover implementations, prover modules, circuits, notarization
-client, proving toolchain, or Worker. It owns no ceremony Job and keeps no
+configured CCDP origin. The bridge does not serve CCDP
+[resources](CCDP.md#documents-and-routes), prover modules, circuits,
+notarization client, or proving toolchain. It owns no ceremony Job and keeps no
 ceremony progress, OAuth return, proof, retry, cancellation, or recovery state.
 Google and X require no confidential bridge route.
 
@@ -147,9 +147,8 @@ returning configuration. Request values do not alter the response record.
 
 The application-scoped `CeremonyClient` fetches and validates this record once
 at creation. It freezes the selected client ID, redirect URI, CCDP origin,
-and mutually supported platform ceremony version in each live ceremony.
-Prefetch, Callback, Airlock, and Prover documents never fetch bridge
-configuration.
+and mutually supported platform ceremony version in each live ceremony. CCDP
+[resources](CCDP.md#documents-and-routes) never fetch bridge configuration.
 
 ## Callback document
 

@@ -1,7 +1,7 @@
 # Ceremony Cross-Document Protocol (CCDP)
 
-This document defines the closed browser protocol across the Application,
-Prefetch, Callback, Airlock, and isolated Prover. It owns ceremony locations,
+This document defines the closed browser protocol across the Application and
+the [documents](#documents-and-routes) it uses. It owns ceremony locations,
 navigations, messages, ordering, and compatibility. Authorization,
 platform-proof, and final-proof semantics are defined by the normative
 [common ceremony](../../../specs/ceremony-common.md) and
@@ -25,7 +25,7 @@ the distinction is immaterial.
 |---|---|---|
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
 | OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback shell, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
-| CCDP Distribution | CCDP origin | contains the versioned Prefetch, Callback, Airlock, Prover, and Worker implementations and proving assets used by any number of OAuth Bridges; it may be the canonical libID distribution or an operator-selected replacement |
+| CCDP Distribution | CCDP origin | contains the versioned [resources](#documents-and-routes) and proving assets used by any number of OAuth Bridges; it may be the canonical libID distribution or an operator-selected replacement |
 | OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
 
 The Application and OAuth Bridge may be operated together or independently;
@@ -47,6 +47,9 @@ registry or reciprocal allowlist and exposes identical public CCDP resources
 across that relationship.
 
 ## Documents and Routes
+
+**Resources** collectively means Prefetch, Callback, Airlock, Prover, and
+Worker. Authorization is an external document, not a CCDP resource.
 
 ### Prefetch `GET /prefetch`
 
@@ -111,8 +114,8 @@ Prover iframe without that top-level navigation.
 
 #### Paths and versioning
 
-The CCDP routes above are relative to `/ccdp/v{CCDPVersion}`. Prefetch,
-Callback, Airlock, Prover, and Worker resolve against `ccdpOrigin`.
+The CCDP routes above are relative to `/ccdp/v{CCDPVersion}`. All
+[resources](#documents-and-routes) resolve against `ccdpOrigin`.
 Authorization is the external frozen
 `platformAuthorizationUrl`, not a CCDP route.
 
@@ -131,9 +134,9 @@ resources remain available for live ceremonies and a compatibility window.
 
 A later CCDP version substitutes its decimal version in the common path. The
 OAuth Bridge dynamically loads the matching Callback module from the CCDP
-origin; Prefetch, Airlock, and Prover execute their implementations directly.
-Internal bundle names are not protocol surface. Callback, Prefetch, Airlock,
-Prover, and Worker share the CCDP origin.
+origin; the top-level [resources](#documents-and-routes) execute their
+implementations directly. Internal bundle names are not protocol surface. All
+[resources](#documents-and-routes) share the CCDP origin.
 
 The Prefetch, Airlock, and Prover paths select both CCDP version and document
 role.
