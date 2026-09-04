@@ -30,20 +30,69 @@ configuration, while the Host serves the same public resources to all of them.
 
 ## Static distribution
 
-The ceremony build emits hostable static responses for each supported CCDP
-version: Prefetch, Callback, Airlock, Prover, Worker, and their immutable
-browser dependencies and proving assets. It fetches or reads the pinned source
-releases, safely extracts any archives, validates the code-declared members,
-and lays out the complete `/ccdp/assets/` tree. It also emits the matching
-response metadata needed to apply this document's media types, cache rules, and
-security headers. On-disk layout and build tooling are not protocol surface.
+### Build command
+
+`@libid/ceremony` owns one static-distribution command:
+
+```sh
+pnpm --filter @libid/ceremony build:static -- --out-dir <directory>
+```
+
+It emits hostable static responses for each supported CCDP version: Prefetch,
+Callback, Airlock, Prover, Worker, and their immutable browser dependencies and
+proving assets. It fetches or reads the pinned source releases, safely extracts
+any archives, validates the code-declared members, and lays out the complete
+`/ccdp/assets/` tree.
+
+First-party modules declare dependencies through ordinary module/asset imports;
+the module which owns a non-imported proving resource declares it once by
+logical role. This includes platform-version circuits, notarization resources,
+and shared toolchain data. The build consumes the compiler/bundler's emitted
+graph and filenames. It does not maintain another filename list, scrape
+generated JavaScript for paths, or require a Host template to name an internal
+output. Changing an internal source or generated filename therefore needs no
+manual mapping update. Adding or renaming an externally published release
+member still requires an intentional change to its single code-owned pin.
+
+The command writes a build-private `distribution.json` beside the response
+bodies:
+
+```ts
+interface StaticDistribution {
+  format: 1
+  responses: Readonly<Record<string, {
+    file: string
+    headers: Readonly<Record<string, string>>
+  }>>
+}
+```
+
+Each key is an exact public path; `file` is a relative generated-body path; and
+`headers` is the complete response metadata required by this document. The
+build derives all three from logical entries and emitted outputs, rejects a
+missing referenced body or unindexed static dependency, and writes the index
+only after the complete graph succeeds. The index is deployment input, not a
+browser resource or protocol manifest.
+
+For local development, the same command accepts `--watch`. It rebuilds affected
+outputs and atomically replaces `distribution.json` only after the new graph is
+complete. A local Host reloads that index; source, chunk, Worker, or emitted
+WASM filename changes require no manual copying, route edits, or restart. An
+external release-member change is made once in its code-owned pin and propagates
+through the same generated graph. Pinned source releases are cached by immutable
+identity rather than fetched on each rebuild. Watch mode changes no browser
+protocol or response policy.
+
+### Host consumption and activation
 
 A CCDP Host consumes that output and maps it to the protocol routes. It may
 serve the files from disk, embed them in a binary, or publish them through a
 static CDN. Serving the output needs no JavaScript runtime. A host deployment
 may run the ceremony build itself, but need not do so when it consumes a
 published distribution. The host does not compile, template, import, or execute
-ceremony code while handling a request.
+ceremony code while handling a request. It treats `distribution.json` as a
+closed build artifact and does not merge it with request or runtime
+configuration.
 
 Release activation is asset-complete. Every immutable resource referenced by
 an updated protocol resource or Worker is retrievable with its final bytes and
@@ -61,10 +110,11 @@ Worker. Their paths, fragments, roles, and execution contexts remain CCDP
 rules.
 
 Prefetch, Airlock, and Prover responses contain their clearing bootstrap and
-entry code directly, with no root manifest or second entry-script request. They
-may load implementation-private immutable chunks and expose only an empty mount
-point to package-owned presentation. Callback remains a separate module because
-the OAuth Bridge shell loads the version selected from OAuth `state`.
+entry code directly, with no browser-visible root manifest or second
+entry-script request. They may load implementation-private immutable chunks and
+expose only an empty mount point to package-owned presentation. Callback remains
+a separate module because the OAuth Bridge shell loads the version selected
+from OAuth `state`.
 
 Each supported path has one request-invariant representation and policy.
 Standard conditional caching may return `304 Not Modified`; otherwise query
