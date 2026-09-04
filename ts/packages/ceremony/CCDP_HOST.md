@@ -137,15 +137,39 @@ content-addressed path, or build-generated immutable path satisfies the same
 contract.
 
 The host may resolve a pinned path from a local asset directory or a configured
-remote backing origin. That choice is private deployment policy: the host
-returns the asset itself without redirecting the browser or exposing the
-upstream location. A path has the same immutable bytes and metadata regardless
-of its backing source.
+remote file. Its startup configuration is an `assetSources` list:
+
+```text
+./assets/*
+/opt/libid/circuits/*
+https://cdn.lib.id/notary/tlsn_wasm.js
+https://cdn.lib.id/notary/tlsn_wasm_bg.wasm
+```
+
+A local source is an absolute path or a path resolved relative to the host
+configuration file. It may end in the sole supported wildcard, `/*`, to include
+the directory's direct regular files. A remote source is one concrete HTTPS
+file URL; wildcard and directory URLs are invalid. The configured URL's final
+path segment or local filename becomes its name under `/ccdp/assets/`.
+
+At startup the host expands local sources, fetches remote sources, and builds
+one in-memory or local-file catalog. It rejects duplicate names, invalid names,
+missing required build assets, non-file local matches, failed fetches, and
+non-HTTPS remote redirects before becoming ready. It never redirects the
+browser, exposes an upstream URL, lists the catalog, or fetches an asset on a
+browser request. A published distribution may supply the complete default
+catalog; configuration only selects or supplements its sources.
+
+This source mechanism is private deployment policy. To preserve the immutable
+route contract, a configured source must yield the same bytes and metadata
+across process restarts; operators therefore use versioned or otherwise
+immutable remote files.
 
 The ceremony build pins each platform/version circuit path, the shared
 notarization-client paths, Noir and bb.js dependencies, workers, WASM, CRS paths,
 and SRS size. Requests, fragments, messages, and application inputs cannot add
-or replace them. No runtime asset configuration or catalog response exists.
+or replace them. No browser-visible asset configuration or catalog response
+exists.
 
 No shared deployment system with the OAuth Bridge is required; its advertised
 platform/version pairs must simply be a subset of those implemented by the
