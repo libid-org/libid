@@ -51,32 +51,9 @@ CCDP does not define documents, messages, or policy outside the ceremony. A
 composition may use the same popup and connection before or after CCDP, but
 those steps remain outside this protocol.
 
-A composition which carries the live connection from Prover into another
-interactive document MUST serve both from the same exact origin and under the
-same active root-scoped popup-continuity Worker registration. Same-site
-placement is insufficient. The Worker response sets
-`Service-Worker-Allowed: /`, and Prefetch registers it with `scope: '/'`. The
-destination claims the preserved carrier as its first step, before waiting for
-user input, so the Worker bridges only the immediate document replacement and
-never an unbounded interaction.
-
-Independently built static applications may satisfy this rule through path
-mounting behind one public origin. Their deployment sources may differ behind
-the router; the browser-visible origin must not. All code mounted this way
-shares one browser authority and MUST therefore be mutually trusted. A
-composition which cannot accept that trust relationship cannot carry CCDP's
-`MessagePort` and must use a separate post-CCDP channel.
-
-For example, a composition may expose independently built resources as:
-
-```text
-https://example.com/ccdp/v1/prover
-https://example.com/continuation/...
-https://example.com/ccdp/v1/worker.js  (registered with scope /)
-```
-
-The root-scoped Worker remains compatible with every live CCDP version and
-passes requests outside its pinned resource graph to the network unchanged.
+Carrying the live connection beyond Prover requires the next document to use
+the exact CCDP origin; same-site placement is insufficient. All code on that
+origin shares one browser authority and must therefore be mutually trusted.
 
 ## Documents and Routes
 
