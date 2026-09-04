@@ -28,7 +28,7 @@ One deployment may serve any number of independently operated OAuth Bridges.
 It does not enumerate or register them: each Bridge selects the Host in its
 configuration, while the Host serves the same public resources to all of them.
 
-## Static distribution
+## Static Artifacts
 
 ### Build command
 
@@ -60,10 +60,11 @@ that table with emitted-body facts: strong ETags, inline script/style hashes,
 generated resource URLs, and the build-pinned Notary Service origin. It neither
 parses this Markdown nor asks the Host to reconstruct policy.
 
-The command writes a build-private `artifacts.json` beside the response bodies:
+The command writes a build-private `ccdp-artifacts.json` beside the response
+bodies:
 
 ```ts
-interface Artifacts {
+interface CCDPArtifacts {
   responses: Readonly<Record<string, {
     file: string
     headers: Readonly<Record<string, string>>
@@ -79,8 +80,8 @@ only after the complete graph succeeds. The index is deployment input, not a
 browser resource or protocol manifest.
 
 For local development, the same command accepts `--watch`. It rebuilds affected
-outputs and atomically replaces `artifacts.json` only after the new graph is
-complete. A local Host reloads that index; source, chunk, Worker, or emitted
+outputs and atomically replaces `ccdp-artifacts.json` only after the new graph
+is complete. A local Host reloads that index; source, chunk, Worker, or emitted
 WASM filename changes require no manual copying, route edits, or restart. An
 external release-member change is made once in its code-owned pin and propagates
 through the same generated graph. Pinned source releases are cached by immutable
@@ -94,7 +95,7 @@ serve the files from disk, embed them in a binary, or publish them through a
 static CDN. Serving the output needs no JavaScript runtime. A host deployment
 may run the ceremony build itself, but need not do so when it consumes a
 published distribution. The host does not compile, template, import, or execute
-ceremony code while handling a request. It treats `artifacts.json` as a
+ceremony code while handling a request. It treats `ccdp-artifacts.json` as a
 closed build artifact and does not merge it with request or runtime
 configuration.
 
