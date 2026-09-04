@@ -47,14 +47,15 @@ may load implementation-private immutable chunks and expose only an empty mount
 point to package-owned presentation. Callback remains a separate ES module
 because the OAuth Bridge shell loads the version selected from OAuth `state`.
 
-Each supported path has one representation and response policy. Conditional
-caching may return `304 Not Modified`; otherwise query values, request headers,
-`Origin`, `Referer`, cookies, and user agent cannot select different bytes,
-policy, embedded configuration, or implementation. A nonempty query may receive
-the same static resource, but its clearing bootstrap rejects before protocol
-execution. Only `GET` and `HEAD` are defined. Unknown paths and versions return
-an inert failure without fallback or redirect; other methods execute no CCDP
-code.
+Each supported path has one decoded representation and response policy.
+`Accept-Encoding` may select only the Brotli transfer representation defined
+below. Conditional caching may return `304 Not Modified`; otherwise query
+values, request headers, `Origin`, `Referer`, cookies, and user agent cannot
+select different bytes, policy, embedded configuration, or implementation. A
+nonempty query may receive the same static resource, but its clearing bootstrap
+rejects before protocol execution. Only `GET` and `HEAD` are defined. Unknown
+paths and versions return an inert failure without fallback or redirect; other
+methods execute no CCDP code.
 
 The not-found response is static HTML containing no script, style, link, form,
 redirect, or protocol data.
@@ -79,6 +80,13 @@ by that document; and uses neither JavaScript `'unsafe-inline'` nor
 | Airlock | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only the code and presentation needed to accept a connection and navigate to Prover. |
 | Prover | top-level isolated HTML | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Script, worker, and asset sources remain closed to the build-generated same-origin graph and toolchain-required `blob:` workers. `connect-src https:` permits a shared Prover to call any validated third-party OAuth Bridge; the build additionally pins the Notary Service's exact WebSocket origin. Proving begins only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
 | Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8` and `Service-Worker-Allowed: /`. Prefetch registers it with `scope: '/'`; it remains compatible with every live CCDP version, passes requests outside its pinned resource graph through unchanged, and admits only the same-origin implementation and proving resources needed for popup continuity and asset caching. |
+
+For any resource whose generated Brotli representation is smaller, the
+Distribution serves that representation when the request admits `br` and the
+original otherwise. A compressed response keeps the original media type and
+response profile, adds `Content-Encoding: br`, and includes
+`Vary: Accept-Encoding`. Decoding it produces the exact original bytes. No
+runtime compression or other negotiated representation exists.
 
 One request-invariant Prover response supports multiple platform profiles and
 arbitrary canonical HTTPS OAuth Bridges. CSP cannot express a runtime-selected
@@ -208,11 +216,14 @@ For each supported CCDP version, the pipeline:
 2. reads emitted filenames and dependency edges from its output API;
 3. materializes owner-declared external resources under immutable paths;
 4. renders protocol bodies using those paths and response profiles; and
-5. validates the closed graph before replacing the generated output.
+5. emits a Brotli sidecar for each unencoded public body only when it is
+   smaller; and
+6. validates the closed graph before replacing the generated output.
 
 The pipeline rejects a missing body, unindexed dependency, malformed external
-pin, mutable asset path, or partial graph. Pinned source releases are cached by
-immutable identity rather than fetched on every build.
+pin, mutable asset path, sidecar which does not decode to the original, or
+partial graph. Pinned source releases are cached by immutable identity rather
+than fetched on every build.
 
 ## Portable distribution
 
@@ -258,7 +269,8 @@ port = 80
 root = "/home/sws/public"
 page404 = "/home/sws/public/404.html"
 cache-control-headers = false
-compression = true
+compression = false
+compression-static = true
 security-headers = false
 directory-listing = false
 redirect-trailing-slash = false
@@ -266,9 +278,9 @@ health = false
 text-charset = ""
 ```
 
-No SPA fallback is configured. Only exact files implement protocol routes.
-SWS may negotiate transport compression, but the decoded resource bytes and
-their generated response profile remain fixed.
+No SPA fallback is configured. Only exact files implement protocol routes. SWS
+uses generated Brotli sidecars for `Accept-Encoding` negotiation and never
+compresses a response at request time.
 
 The generator emits one non-overlapping `advanced.headers` rule for every
 versioned protocol resource and one recursive rule for the `/ccdp/assets/`
