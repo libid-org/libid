@@ -54,12 +54,16 @@ output. Changing an internal source or generated filename therefore needs no
 manual mapping update. Adding or renaming an externally published release
 member still requires an intentional change to its single code-owned pin.
 
-The command writes a build-private `distribution.json` beside the response
-bodies:
+One code-owned response-profile table maps each logical entry to its public
+route, media type, fixed headers, cache class, and CSP template. The build fills
+that table with emitted-body facts: strong ETags, inline script/style hashes,
+generated resource URLs, and the build-pinned Notary Service origin. It neither
+parses this Markdown nor asks the Host to reconstruct policy.
+
+The command writes a build-private `artifacts.json` beside the response bodies:
 
 ```ts
-interface StaticDistribution {
-  format: 1
+interface Artifacts {
   responses: Readonly<Record<string, {
     file: string
     headers: Readonly<Record<string, string>>
@@ -68,14 +72,14 @@ interface StaticDistribution {
 ```
 
 Each key is an exact public path; `file` is a relative generated-body path; and
-`headers` is the complete response metadata required by this document. The
-build derives all three from logical entries and emitted outputs, rejects a
+`headers` contains the complete protocol-required response headers. The build
+derives all three from the response-profile table and emitted outputs, rejects a
 missing referenced body or unindexed static dependency, and writes the index
 only after the complete graph succeeds. The index is deployment input, not a
 browser resource or protocol manifest.
 
 For local development, the same command accepts `--watch`. It rebuilds affected
-outputs and atomically replaces `distribution.json` only after the new graph is
+outputs and atomically replaces `artifacts.json` only after the new graph is
 complete. A local Host reloads that index; source, chunk, Worker, or emitted
 WASM filename changes require no manual copying, route edits, or restart. An
 external release-member change is made once in its code-owned pin and propagates
@@ -90,7 +94,7 @@ serve the files from disk, embed them in a binary, or publish them through a
 static CDN. Serving the output needs no JavaScript runtime. A host deployment
 may run the ceremony build itself, but need not do so when it consumes a
 published distribution. The host does not compile, template, import, or execute
-ceremony code while handling a request. It treats `distribution.json` as a
+ceremony code while handling a request. It treats `artifacts.json` as a
 closed build artifact and does not merge it with request or runtime
 configuration.
 
