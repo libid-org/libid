@@ -24,6 +24,10 @@ The CCDP Host may be the canonical libID deployment or an operator-selected
 replacement. Replacing it changes the code-supply-chain authority for Callback
 and proof generation.
 
+One deployment may serve any number of independently operated OAuth Bridges.
+It does not enumerate or register them: each Bridge selects the Host in its
+configuration, while the Host serves the same public resources to all of them.
+
 ## Static distribution
 
 The ceremony build emits hostable static responses for each supported CCDP
@@ -74,9 +78,10 @@ All protocol resources send their exact media type and
 `Referrer-Policy: no-referrer` and are not frameable. Document CSP begins with
 `default-src 'none'`, `object-src 'none'`, `base-uri 'none'`,
 `form-action 'none'`, and `frame-ancestors 'none'`; admits only the exact
-build-generated entry code, stylesheet, resources, and network origins
-required by that document; and uses neither broad schemes nor JavaScript
-`'unsafe-inline'` or `'unsafe-eval'`.
+build-generated entry code, stylesheet, resources, and network sources
+required by that document; and uses neither JavaScript `'unsafe-inline'` nor
+`'unsafe-eval'`. The Prover's HTTPS connection allowance below is the only
+broad network scheme source.
 
 Resource-specific rules are:
 
@@ -85,13 +90,16 @@ Resource-specific rules are:
 | Callback | ES module loaded by the OAuth Bridge shell | `text/javascript; charset=utf-8`, noncredentialed `Access-Control-Allow-Origin: *`, and `Cross-Origin-Resource-Policy: cross-origin`. The OAuth Bridge owns the containing document and its CSP. |
 | Prefetch | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only its same-origin Worker and proving resources. |
 | Airlock | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only the code and presentation needed to accept a connection and navigate to Prover. |
-| Prover | top-level isolated HTML | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. CSP admits only same-origin proving resources, toolchain-required `blob:` workers, and the closed external network origins needed by supported platform pipelines. It begins proving only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
+| Prover | top-level isolated HTML | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Script, worker, and asset sources remain closed to the build-generated same-origin graph and toolchain-required `blob:` workers. `connect-src https:` permits a shared Prover to call any validated third-party OAuth Bridge; the build additionally pins the Notary Service's exact WebSocket origin. Proving begins only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
 | Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8`. Its default scope covers the version-matched Prefetch, Airlock, and Prover paths, and its policy admits only the same-origin implementation and proving resources needed for popup continuity and asset caching. |
 
-One Prover response may support multiple platform profiles and OAuth Bridges.
-Its CSP is therefore not browser-enforced compartmentalization between them:
-compromised Prover code can use every network class admitted by that response.
-Stronger confinement requires distinct responses.
+One request-invariant Prover response supports multiple platform profiles and
+arbitrary canonical HTTPS OAuth Bridges. CSP cannot express a runtime-selected
+exact Bridge origin, so its HTTPS connection class is not per-Bridge
+compartmentalization. Prover derives the fixed GitHub token route only from the
+validated `redirectUri` frozen by the Application; no message supplies another
+Bridge endpoint. Compromised Prover code can use every network class admitted
+by the response.
 
 ### Proving assets
 

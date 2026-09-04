@@ -65,7 +65,7 @@ This boundary is deliberate:
 - the package is a library, so the application owns sampling, consent,
   resource attributes, batching, and export policy;
 - Callback, Airlock, and Prover CSPs do not gain a telemetry `connect-src`;
-- the prover does not expose another public cross-origin network destination;
+- the prover exposes no telemetry destination;
 - credentials, URLs, headers, bodies, witnesses, and proofs cannot be captured
   accidentally by automatic instrumentation;
 - navigation or popup closure cannot strand multiple independent exporter

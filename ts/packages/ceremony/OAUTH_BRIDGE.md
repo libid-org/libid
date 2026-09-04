@@ -41,6 +41,8 @@ origin is a code-supply-chain boundary for the callback shell and public
 configuration; the CCDP origin is an independent code-supply-chain boundary
 for Callback behavior and proof generation. Supplying the bridge origin to the
 prover at runtime does not make the prover response deployment-specific.
+Any number of independently operated Bridges may select the same public CCDP
+Host; the Host does not register them or receive their application allowlists.
 
 ## Deployment configuration
 
@@ -68,7 +70,10 @@ artifact, circuit, or notary endpoint.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
-platform/version pairs supported by its selected CCDP Host.
+platform/version pairs supported by its selected CCDP Host. Selecting a shared
+Host requires no reciprocal Host configuration; when GitHub is enabled, this
+Bridge independently admits that Host's exact origin at its confidential token
+endpoint.
 
 ## Route surface
 

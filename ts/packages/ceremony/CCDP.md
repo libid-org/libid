@@ -25,7 +25,7 @@ the distinction is immaterial.
 |---|---|---|
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
 | OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback shell, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
-| CCDP Host | CCDP origin | owns and hosts the versioned Prefetch, Callback, Airlock, Prover, and Worker implementations and proving assets; it may be the canonical libID deployment or an operator-selected replacement |
+| CCDP Host | CCDP origin | owns and hosts the versioned Prefetch, Callback, Airlock, Prover, and Worker implementations and proving assets for any number of OAuth Bridges; it may be the canonical libID deployment or an operator-selected replacement |
 | OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
 | Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
 
@@ -40,6 +40,10 @@ The OAuth Bridge owns the registered callback shell because the OAuth redirect
 URI must terminate on the bridge origin. After clearing the OAuth return, that
 shell dynamically loads CCDP's versioned Callback module from the configured
 CCDP origin.
+
+Multiple independently operated OAuth Bridges may select the same CCDP Host.
+The Host keeps no Bridge registry or reciprocal allowlist and serves identical
+public CCDP resources across that relationship.
 
 ## Documents and Routes
 
@@ -163,14 +167,18 @@ direction and state before acting.
 
 #### Origin policy
 
-With `allowedApplicationOrigins: '*'`, Prefetch, Airlock, and Prover accept any
-valid browser-observed HTTPS Application origin and pin that exact origin and
-source for each carrier. The Application exact-authenticates the configured
-CCDP Host. Open admission there grants only public asset prefetch, carrier
-continuity, and processing of the connecting Application's own proof request;
-none receives an OAuth return directly from the platform. Callback
-exact-authenticates the Application against the OAuth Bridge's deployment
-allowlist before releasing that return. Asset caching and popup-connection
+Because one CCDP Host serves Applications admitted by any number of independent
+OAuth Bridges, Prefetch, Airlock, and Prover use
+`allowedApplicationOrigins: '*'`. They accept any valid browser-observed HTTPS
+Application origin and pin that exact origin and source for each carrier, while
+the Application exact-authenticates the configured CCDP Host. Open admission
+grants only public asset prefetch, carrier continuity, and processing of the
+connecting Application's own proof request; none receives an OAuth return
+directly from the platform. Callback instead exact-authenticates the
+Application against its containing OAuth Bridge's explicit deployment
+allowlist before releasing that return. The public Callback module is
+cross-origin-loadable from the Host, but that resource policy does not replace
+Callback's credential-release check. Asset caching and popup-connection
 construction are outside CCDP.
 
 ## Messages

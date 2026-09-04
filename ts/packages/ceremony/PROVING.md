@@ -442,11 +442,12 @@ state is never a ceremony checkpoint.
 
 [CCDP](CCDP.md#documents-and-routes) owns the Prover's isolated execution
 context; the [CCDP Host contract](CCDP_HOST.md#protocol-resources) owns its HTTP
-policy and same-origin resource graph. No request parameter selects a platform,
-role, asset, bridge, or CSP. The implementation exact-validates every
-OAuth-bridge endpoint derived from the proof request's frozen `redirectUri`
-before use; the response does not embed or enumerate bridge origins and remains
-byte-identical across them.
+policy and same-origin resource graph. No request parameter selects a document
+role, asset, or CSP. `AppRequestProof` carries the Application's frozen
+`redirectUri`; its origin selects the OAuth Bridge for GitHub's fixed token
+route. The implementation exact-validates that canonical HTTPS origin and
+derived route before use. The response does not embed or enumerate Bridge
+origins and remains byte-identical across them.
 
 The top-level document runs the multithreaded prover configuration only after
 confirming cross-origin isolation and shared memory. No unisolated or
