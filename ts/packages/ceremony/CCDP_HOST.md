@@ -30,21 +30,15 @@ configuration, while the Host serves the same public resources to all of them.
 
 ## Static Artifacts
 
-### Build command
+`@libid/ceremony` owns a target-neutral artifact pipeline. It builds each
+supported CCDP version's Prefetch, Callback, Airlock, Prover, and Worker, plus
+their immutable browser dependencies and proving assets. It fetches or reads
+pinned source releases, safely extracts archives, validates code-declared
+members, and produces one closed graph of public paths, response bodies, and
+response profiles. The graph is passed directly to a deployment target and has
+no serialized public or Host-facing format.
 
-`@libid/ceremony` owns one CCDP-artifact command:
-
-```sh
-pnpm --filter @libid/ceremony build:ccdp-artifacts -- --out-dir <directory>
-```
-
-It emits hostable static responses for each supported CCDP version: Prefetch,
-Callback, Airlock, Prover, Worker, and their immutable browser dependencies and
-proving assets. It fetches or reads the pinned source releases, safely extracts
-any archives, validates the code-declared members, and lays out the complete
-`/ccdp/assets/` tree.
-
-#### Source declarations
+### Source declarations
 
 The build owns one resource table. Each protocol resource appears once with its
 stable public route, source entrypoint, and response profile:
@@ -108,70 +102,103 @@ const responseProfiles = {
   prover: proverResponseProfile,
   worker: workerResponseProfile,
   asset: immutableAssetResponseProfile,
+  notFound: inertNotFoundResponseProfile,
 } as const
 ```
 
-Those profile values contain the fixed isolation, cache, framing, and CSP rules
-defined below. They do not contain generated filenames. The build, not the
-Host, fills body-dependent values: strong ETags, inline script/style hashes,
-generated resource URLs, and the build-pinned Notary Service origin. It neither
-parses this Markdown nor asks the Host to reconstruct policy.
+Those profile values contain the fixed isolation, cache, framing, media-type,
+and CSP rules defined below. They do not contain generated filenames. The build
+fills body-dependent values such as inline script/style hashes, generated
+resource URLs, and the build-pinned Notary Service origin. It neither parses
+this Markdown nor asks a deployment target to reconstruct policy.
 
-#### Generation
+### Generation
 
-For each supported CCDP version, the command:
+For each supported CCDP version, the pipeline:
 
 1. gives the declared entrypoints to the compiler/bundler;
 2. takes emitted filenames and dependency edges from its output API;
 3. materializes owner-declared external resources under immutable paths;
-4. renders protocol bodies using those emitted paths;
-5. renders each resource's final headers from its profile and final body; and
-6. verifies the closed static graph before publishing the bodies and index.
+4. renders protocol bodies using those emitted paths and profiles; and
+5. verifies the closed graph before passing it to the selected deployment
+   target.
 
-The command writes a build-private `ccdp-artifacts.json` beside the response
-bodies:
+The pipeline rejects a missing referenced body, unindexed static dependency,
+malformed external pin, mutable asset path, or partial graph. Source, chunk,
+Worker, or emitted WASM filename changes require no second filename list,
+generated-source scrape, or route edit. Pinned source releases are cached by
+immutable identity rather than fetched on each build.
 
-```ts
-interface CCDPArtifacts {
-  responses: Readonly<Record<string, {
-    file: string
-    headers: Readonly<Record<string, string>>
-  }>>
-}
-```
+## Deployment targets
 
-Each key is an exact public path; `file` is a relative generated-body path; and
-`headers` contains the complete protocol-required response headers. The build
-derives all three from the response-profile table and emitted outputs, rejects a
-missing referenced body or unindexed static dependency, and writes the index
-only after the complete graph succeeds. The index is deployment input, not a
-browser resource or protocol manifest.
-
-For local development, the same command accepts `--watch`. It rebuilds affected
-outputs and atomically replaces `ccdp-artifacts.json` only after the new graph
-is complete. A local Host reloads that index; source, chunk, Worker, or emitted
-WASM filename changes require no manual copying, route edits, or restart. An
-external release-member change is made once in its code-owned pin and propagates
-through the same generated graph. Pinned source releases are cached by immutable
-identity rather than fetched on each rebuild. Watch mode changes no browser
-protocol or response policy.
-
-### Host consumption and activation
-
-A CCDP Host consumes that output and maps it to the protocol routes. It may
-serve the files from disk, embed them in a binary, or publish them through a
-static CDN. Serving the output needs no JavaScript runtime. A host deployment
-may run the ceremony build itself, but need not do so when it consumes a
-published distribution. The host does not compile, template, import, or execute
-ceremony code while handling a request. It treats `ccdp-artifacts.json` as a
-closed build artifact and does not merge it with request or runtime
-configuration.
+A deployment target materializes the validated graph for one hosting platform.
+It cannot change its routes, bodies, or response profiles. CCDP defines no
+custom Host implementation or portable deployment-manifest format.
 
 Release activation is asset-complete. Every immutable resource referenced by
 an updated protocol resource or Worker is retrievable with its final bytes and
-response metadata before that update becomes reachable. A Host may satisfy this
-with an atomic deployment or assets-first, entrypoints-last publication; CCDP
-does not require transactional CDN support.
+response metadata before that update becomes reachable. A deployment retains
+every old immutable path required by live ceremonies and the configured
+compatibility window.
+
+### Cloudflare Pages
+
+The current target is built with:
+
+```sh
+pnpm --filter @libid/ceremony build:ccdp-artifacts:cf -- --out-dir <directory>
+```
+
+It emits this directly deployable directory:
+
+```text
+<directory>/
+├── ccdp/v{CCDPVersion}/callback.js
+├── ccdp/v{CCDPVersion}/prefetch
+├── ccdp/v{CCDPVersion}/airlock
+├── ccdp/v{CCDPVersion}/prover
+├── ccdp/v{CCDPVersion}/worker.js
+├── ccdp/assets/...
+├── 404.html
+└── _headers
+```
+
+There is no Pages Function, root `_worker.js`, `_redirects`, or CCDP-specific
+server. Exact extensionless files implement the document routes, `_headers`
+applies their response profiles, and the inert top-level `404.html` prevents
+Cloudflare Pages from treating the distribution as a single-page application.
+
+`_headers` contains one exact path block for each versioned protocol resource,
+one `/ccdp/assets/*` block for immutable assets, and one locked-down
+`/404.html` block. It has no catch-all policy which could accidentally make an
+unknown path executable. The target rejects overlapping rules, more than
+Cloudflare Pages' 100 header rules, or a header line longer than 2,000
+characters.
+
+The output can be served locally with `wrangler pages dev <directory>` or
+published as
+[Cloudflare Pages static assets](https://developers.cloudflare.com/pages/get-started/direct-upload/).
+Direct upload is:
+
+```sh
+npx wrangler pages deploy <directory> --project-name <project>
+```
+
+The deployment has no request-time JavaScript. Cloudflare Pages maps the files
+to their exact paths, applies its
+[`_headers` format](https://developers.cloudflare.com/pages/configuration/headers/),
+performs compression and conditional requests, and supplies ETags.
+
+Cloudflare-added operational headers are not part of CCDP and cannot relax the
+response contract. Pages adds `Access-Control-Allow-Origin: *` to static
+responses by default, so generated `_headers` explicitly removes it from every
+response profile except Callback, where cross-origin module loading requires
+it.
+
+The target atomically replaces its output directory only after the graph is
+complete. The Pages deployment contains that complete directory before it is
+promoted to the production `ccdpOrigin`. The same command accepts `--watch` for
+local development; watch mode changes no browser protocol or response policy.
 
 ## HTTP surface
 
@@ -193,13 +220,19 @@ Each supported path has one request-invariant representation and policy.
 Standard conditional caching may return `304 Not Modified`; otherwise query
 values, request headers, `Origin`, `Referer`, cookies, and user agent cannot
 select different bytes, policy, embedded configuration, or implementation.
-Unsupported methods, queries, paths, and CCDP versions fail without fallback or
-redirect. The host sets no cookies and serves no unrelated same-origin
-application API.
+Unknown paths and CCDP versions return the inert `404.html` without fallback or
+redirect. A nonempty query may receive the same static resource, but its
+clearing bootstrap rejects before protocol execution. The host sets no cookies
+and serves no unrelated same-origin application API.
 
-Versioned protocol resources use `Cache-Control: no-cache` and a strong `ETag`
-so a path may receive compatible implementation updates. A breaking protocol
-change publishes a new CCDP-version path. The host retains old resources for
+The not-found response contains no script, style, link, form, redirect, or
+protocol data. It uses `Cache-Control: no-store`, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff`, and a CSP which permits no resource or framing
+source.
+
+Versioned protocol resources use `Cache-Control: no-cache` and a strong ETag so
+a path may receive compatible implementation updates. A breaking protocol
+change publishes a new CCDP-version path. The Host retains old resources for
 live ceremonies and the configured compatibility window.
 
 All protocol resources send their exact media type and
