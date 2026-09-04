@@ -32,9 +32,8 @@ The Application and OAuth Bridge may be operated together or independently;
 the selected CCDP Distribution may be published by either party or another
 one. Their origins may be same-origin, same-site, or cross-site. CCDP assumes
 none of those relationships. Browser authority is always established against
-an exact origin. In particular, the CCDP Distribution is not a wallet: both
-external-wallet and native-wallet compositions consume the same independently
-hosted CCDP boundary.
+an exact origin. A composition which continues the live popup connection after
+CCDP has the additional requirements below.
 
 The OAuth Bridge owns the registered callback shell because the OAuth redirect
 URI must terminate on the bridge origin. After clearing the OAuth return, that
@@ -45,6 +44,26 @@ Multiple independently operated OAuth Bridges may select the same CCDP
 Distribution through its `ccdpOrigin`. The Distribution keeps no Bridge
 registry or reciprocal allowlist and exposes identical public CCDP resources
 across that relationship.
+
+## Composition boundary
+
+CCDP does not define documents, messages, or policy outside the ceremony. A
+composition may use the same popup and connection before or after CCDP, but
+those steps remain outside this protocol.
+
+A composition which carries the live connection from Prover into another
+interactive document MUST serve both from the same exact origin and under the
+same active popup-continuity Worker registration and scope. Same-site placement
+is insufficient. The destination claims the preserved carrier as its first
+step, before waiting for user input, so the Worker bridges only the immediate
+document replacement and never an unbounded interaction.
+
+Independently built static applications may satisfy this rule through path
+mounting behind one public origin. Their deployment sources may differ behind
+the router; the browser-visible origin must not. All code mounted this way
+shares one browser authority and MUST therefore be mutually trusted. A
+composition which cannot accept that trust relationship cannot carry CCDP's
+`MessagePort` and must use a separate post-CCDP channel.
 
 ## Documents and Routes
 
@@ -280,7 +299,7 @@ The Application origin is trusted for this transient input because it already
 supplies the operation being authorized. It retains the authorization nonce;
 only the derived code verifier crosses this boundary. The message contains no
 authorization digest, operation field, separate OAuth state, Job revision,
-composition kind, wallet state, connector, or carrier kind.
+composition state, connector, or carrier kind.
 
 For GitHub, Prover derives the fixed OAuth Bridge token route from the origin of
 `redirectUri`; no second bridge origin or endpoint field is carried. Prover
