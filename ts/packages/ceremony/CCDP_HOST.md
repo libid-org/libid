@@ -24,6 +24,21 @@ The CCDP Host may be the canonical libID deployment or an operator-selected
 replacement. Replacing it changes the code-supply-chain authority for Callback
 and proof generation.
 
+## Static distribution
+
+The ceremony build emits hostable static responses for each supported CCDP
+version: Prefetch, Callback, Airlock, Prover, Worker, and their immutable
+browser dependencies. It also emits the matching response metadata needed to
+apply this document's media types, cache rules, and security headers. On-disk
+layout and build tooling are not protocol surface.
+
+A CCDP Host consumes that output and maps it to the protocol routes. It may
+serve the files from disk, embed them in a binary, or publish them through a
+static CDN; it needs no JavaScript runtime. A host may run the ceremony build
+itself, but need not do so when it consumes a published distribution. It does
+not compile, template, import, or execute ceremony code while handling a
+request.
+
 ## Protocol resources
 
 The host implements the exact versioned paths defined by

@@ -30,14 +30,16 @@ its deterministic sibling `tlsn_wasm_bg.wasm`.
 The module pins the one shared browser Notary Service address:
 
 ```ts
-const NOTARY_ADDRESS = 'https://notary.testnet.lib.id'
+const NOTARY_ADDRESS = 'https://notary.lib.id'
 ```
 
-Applications, deployment configuration, ceremony inputs, OAuth responses, and
-CCDP messages cannot replace it or select an OAuth-platform request, disclosure
-layout, or Notary Service behavior. The address is only network routing; Ledger
-Verifier governance independently decides which notary signatures are
-authoritative.
+The build may replace this default only through `LIBID_NOTARY_ADDRESS`, which
+must be a canonical HTTPS origin. The resulting value is compiled into the
+static Prover distribution and its response policy. Applications, runtime
+deployment configuration, ceremony inputs, OAuth responses, and CCDP messages
+cannot replace it or select an OAuth-platform request, disclosure layout, or
+Notary Service behavior. The address is only network routing; Ledger Verifier
+governance independently decides which notary signatures are authoritative.
 
 ## Internal contract
 
@@ -194,8 +196,8 @@ The adapter changes `NOTARY_ADDRESS` only from `https` to `wss` and opens the
 exact `/notarize-proxy` path with no query:
 
 ```text
-https://notary.testnet.lib.id
-    -> wss://notary.testnet.lib.id/notarize-proxy
+https://notary.lib.id
+    -> wss://notary.lib.id/notarize-proxy
 ```
 
 The same WebSocket carries the complete TLSNotary Proxy byte stream and the
