@@ -45,6 +45,12 @@ may run the ceremony build itself, but need not do so when it consumes a
 published distribution. The host does not compile, template, import, or execute
 ceremony code while handling a request.
 
+Release activation is asset-complete. Every immutable resource referenced by
+an updated protocol resource or Worker is retrievable with its final bytes and
+response metadata before that update becomes reachable. A Host may satisfy this
+with an atomic deployment or assets-first, entrypoints-last publication; CCDP
+does not require transactional CDN support.
+
 ## HTTP surface
 
 ### Protocol resources
@@ -118,10 +124,11 @@ Each asset response:
 - uses `Cross-Origin-Resource-Policy: same-origin`; and
 - uses `Cache-Control: public, max-age=31536000, immutable`.
 
-An immutable URL is never reused for changed bytes or execution-relevant
-metadata. Runtime content hashing is not required. A release-qualified path,
-content-addressed path, or build-generated immutable path satisfies the same
-contract.
+An unchanged asset retains its URL across compatible releases. An immutable URL
+is never reused for changed bytes or execution-relevant metadata, so changed
+bytes produce a new URL. Runtime content hashing is not required. A
+release-qualified path, content-addressed path, or build-generated immutable
+path satisfies the same contract.
 
 The static distribution already contains every path referenced by its code.
 The host neither resolves upstream sources nor extracts archives, and browser
@@ -139,7 +146,8 @@ No shared deployment system with the OAuth Bridge is required; its advertised
 platform/version pairs must simply be a subset of those present in the
 configured CCDP Host distribution.
 
-The host retains an immutable asset while any supported CCDP implementation or
-platform profile references it. Asset revisions do not change `CCDPVersion` or
+The host retains both old and new immutable paths while any live ceremony or
+supported CCDP implementation, platform profile, or compatibility window may
+reference them. Asset revisions do not change `CCDPVersion` or
 `PlatformCeremonyVersion` unless their observable protocol or proof semantics
 change.

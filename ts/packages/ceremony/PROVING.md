@@ -367,19 +367,22 @@ registers the shared module Service Worker and asks it to start only the
 selected platform/version profile's artifact single flights. Prefetch, Prover,
 and Worker implementations come from one compatible package release.
 
-After registration, the Window branch selects the newest worker, waits for it
-to become active, posts the exact selected profile, and reports dispatch
-without waiting for downloads. The worker composes the popup package's bounded
-MessagePort keeper with the selected immutable-asset and CRS single flights; no
-second worker or registration exists. A worker which receives the prefetch
-request exact-validates it and attaches the fetch work to the message event with
-`event.waitUntil`.
+After registration, the Window branch selects the newest registration
+candidate, waits through installation and waiting until it becomes active,
+posts the exact selected profile to that Worker, and reports dispatch without
+waiting for downloads. It never dispatches to a stale active Worker while a
+newer candidate is installing or waiting. The Worker composes the popup
+package's bounded MessagePort keeper with the selected immutable-asset and CRS
+single flights; no second Worker or registration exists. A Worker which
+receives the prefetch request exact-validates it and attaches the fetch work to
+the message event with `event.waitUntil`.
 
 The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
-stale controller. Immutable URLs keep already loaded documents pinned; a live
-ceremony may still fail closed across deployment rotation as defined by the
-[CCDP Host contract](CCDP_HOST.md#protocol-resources).
+stale controller. Activation does not proactively delete reusable immutable
+Cache Storage entries or bb.js CRS data. Immutable URLs keep already loaded
+documents pinned; a live ceremony may still fail closed across deployment
+rotation as defined by the [CCDP Host contract](CCDP_HOST.md#protocol-resources).
 
 The Prefetch bootstrap accepts only the closed, cleared profile selected by its
 fragment. It uses that platform/version leaf's pinned prefetch set, which adds
