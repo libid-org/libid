@@ -8,9 +8,9 @@ browser documents, routes, isolation, presentation, messages, and navigation.
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). The browser boundary and its input/output
 messages are defined by [CCDP](CCDP.md#prover-get-prover). This document owns only the
-proof-generation implementation and its use of `ProverAssets`; the CCDP Host
-defines and serves the configuration and all browser-fetched proving resources
-from an origin independent of the [OAuth bridge](OAUTH_BRIDGE.md).
+proof-generation implementation and its pinned asset selection; the CCDP Host
+serves all browser-fetched proving resources from an origin independent of the
+[OAuth bridge](OAUTH_BRIDGE.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
@@ -149,11 +149,10 @@ X and GitHub additionally use the browser TLSNotary bundle built by the
 and published in [`libid-org/notary` releases](https://github.com/libid-org/notary/releases).
 The browser distribution exposes `tlsn_wasm.js` and its sibling
 `tlsn_wasm_bg.wasm`; the worker bootstrap is embedded in the module. The global
-`ProverAssets.notarizationClientPath` selects the immutable JavaScript module,
-and the prover derives the WASM URL by replacing only its final path component
-with `tlsn_wasm_bg.wasm`. Each remains a normal, independently cached response;
-the browser never downloads or unpacks a release archive. The
-[CCDP Host contract](CCDP_HOST.md#prover-configuration) owns their deployment.
+notarization module pins both immutable asset paths. Each remains a normal,
+independently cached response; the browser never downloads or unpacks a release
+archive. The [CCDP Host contract](CCDP_HOST.md#proving-assets) owns their
+serving.
 Neither an application nor `AppRequestProof` selects a notary, circuit, or
 bb.js version.
 
@@ -289,16 +288,16 @@ their causal lifecycle remains a platform-ceremony-version change.
 
 ## Shared toolchain and assets
 
-The CCDP Host embeds the exact [`ProverAssets`](CCDP_HOST.md#prover-configuration)
-record into Prefetch and Prover. A ceremony fetches only its selected
-platform/version profile. X and GitHub reuse the notarization client and
-`bearer-link` circuit; Google fetches neither when it does not need them.
+Each closed platform/version prover leaf pins its circuit path and complete
+prefetch set. A ceremony fetches only that set. X and GitHub reuse the
+notarization client and `bearer-link` circuit; Google fetches neither when it
+does not need them.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
 Their JavaScript is part of the prover build; internal companion chunks are not
 deployment configuration. The build likewise owns every toolchain worker, WASM,
 common reference string (CRS) path, and complete transitive execution graph.
-A deployer cannot replace those dependencies through `ProverAssets`.
+No runtime configuration can replace those dependencies.
 
 The [CCDP Host](CCDP_HOST.md#proving-assets) serves companion chunks, spawner
 and nested worker modules, WASM, circuits, and CRS bodies from immutable
@@ -382,13 +381,11 @@ stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
 [CCDP Host deployment contract](CCDP_HOST.md#protocol-resources).
 
-The Prefetch bootstrap exact-validates its deployment-embedded
-[`ProverAssets`](CCDP_HOST.md#prover-configuration)
-and accepts only the closed, cleared profile selected by its fragment. It adds
-the global notarization client only when the
-closed platform implementation requires it, and combines those entries with
-the toolchain assets pinned by the prover build. Neither fragment nor message
-can supply an asset path.
+The Prefetch bootstrap accepts only the closed, cleared profile selected by its
+fragment. It uses that platform/version leaf's pinned prefetch set, which adds
+the shared notarization client only when required and combines it with the
+toolchain assets pinned by the prover build. Neither fragment nor message can
+supply an asset path.
 
 The prefetch branch contains no OAuth or proof input. The separately imported
 popup handler owns only its bounded temporary continuity entries. The branch

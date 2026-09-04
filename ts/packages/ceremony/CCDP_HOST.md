@@ -99,48 +99,14 @@ matching Prefetch, Airlock, and Prover paths. Its response policy admits only
 the same-origin implementation and proving resources needed for popup
 continuity and asset caching.
 
-## Prover configuration
-
-The host embeds the same exact record into Prefetch and Prover:
-
-```ts
-interface ProverProfile {
-  platformId: PlatformId
-  platformCeremonyVersion: PlatformCeremonyVersion
-  circuitPath: string
-}
-
-interface ProverAssets {
-  notarizationClientPath: string
-  notaryAddress: string
-  profiles: readonly ProverProfile[]
-}
-```
-
-`circuitPath` and `notarizationClientPath` are canonical root-relative paths
-under `/ccdp/assets/`, with no query or fragment. Resolving either against the
-current document must retain the exact `ccdpOrigin`. The notarization WASM is a
-sibling of `notarizationClientPath`. `notaryAddress` is one canonical external
-HTTPS Notary Service origin and is not an asset path.
-
-`profiles` contains exactly one entry for every platform/version pair supported
-by that CCDP deployment. X and GitHub may share one circuit path and all
-notarized profiles share one notarization-client path. The Prefetch and Prover
-implementations exact-validate the record before use. Requests, fragments,
-messages, and application inputs cannot add or replace an entry, path, or
-Notary Service.
-
-The ceremony build pins Noir, bb.js, their workers and WASM, CRS resource paths,
-and SRS size. These are emitted and served by the host but do not appear in
-`ProverAssets`.
-
 ## Proving assets
 
 `GET /ccdp/assets/*` is the host's static proving-resource namespace,
 not a CCDP API or versioned protocol route. Every browser-fetched proving
-resource other than the versioned CCDP resources resolves there. The suffix is
-implementation-private; a useful layout is
-`/ccdp/assets/{artifact}/{release}/{file}`, but consumers never parse it. Assets
+resource other than the versioned CCDP resources resolves there. Its suffix has
+no protocol-defined structure: versioned CCDP code pins each exact path, and
+consumers neither enumerate nor parse the namespace. Asset filenames carry any
+artifact and release identity needed to keep those paths immutable. Assets
 shared by multiple CCDP versions reuse one URL.
 
 Each asset response:
@@ -155,12 +121,20 @@ metadata. Runtime content hashing is not required. A release-qualified path,
 content-addressed path, or build-generated immutable path satisfies the same
 contract.
 
-Deployment may obtain source bytes from an upstream release, local file, or CDN
-build input. It validates and publishes them at CCDP-origin paths before making
-a profile available. Upstream locations are never embedded into browser
-configuration or fetched by the browser. No shared deployment system with the
-OAuth Bridge is required; its advertised platform/version pairs must simply be
-a subset of those available from the configured CCDP Host.
+The host may resolve a pinned path from a local asset directory or a configured
+remote backing origin. That choice is private deployment policy: the host
+returns the asset itself without redirecting the browser or exposing the
+upstream location. A path has the same immutable bytes and metadata regardless
+of its backing source.
+
+The ceremony build pins each platform/version circuit path, the shared
+notarization-client paths, Noir and bb.js dependencies, workers, WASM, CRS paths,
+and SRS size. Requests, fragments, messages, and application inputs cannot add
+or replace them. No runtime asset configuration or catalog response exists.
+
+No shared deployment system with the OAuth Bridge is required; its advertised
+platform/version pairs must simply be a subset of those implemented by the
+configured CCDP Host and backed by available assets.
 
 The host retains an immutable asset while any supported CCDP implementation or
 platform profile references it. Asset revisions do not change `CCDPVersion` or
