@@ -44,6 +44,42 @@ proving assets. It fetches or reads the pinned source releases, safely extracts
 any archives, validates the code-declared members, and lays out the complete
 `/ccdp/assets/` tree.
 
+#### Source declarations
+
+The build owns one resource table. Each protocol resource appears once with its
+stable public route, source entrypoint, and response profile:
+
+```ts
+const resources = {
+  callback: {
+    route: `/ccdp/v${version}/callback.js`,
+    entry: callbackEntry,
+    profile: 'callback',
+  },
+  prefetch: {
+    route: `/ccdp/v${version}/prefetch`,
+    entry: prefetchEntry,
+    profile: 'prefetch',
+  },
+  airlock: {
+    route: `/ccdp/v${version}/airlock`,
+    entry: airlockEntry,
+    profile: 'airlock',
+  },
+  prover: {
+    route: `/ccdp/v${version}/prover`,
+    entry: proverEntry,
+    profile: 'prover',
+  },
+  worker: {
+    route: `/ccdp/v${version}/worker.js`,
+    entry: prefetchEntry,
+    profile: 'worker',
+  },
+} as const
+```
+
+The entrypoint values are build-tool module inputs, not output filenames.
 First-party modules declare dependencies through ordinary module/asset imports;
 the module which owns a non-imported proving resource declares it once by
 logical role. This includes platform-version circuits, notarization resources,
@@ -54,11 +90,43 @@ output. Changing an internal source or generated filename therefore needs no
 manual mapping update. Adding or renaming an externally published release
 member still requires an intentional change to its single code-owned pin.
 
-One code-owned response-profile table maps each logical entry to its public
-route, media type, fixed headers, cache class, and CSP template. The build fills
-that table with emitted-body facts: strong ETags, inline script/style hashes,
+One response-profile table is the executable source for the policies specified
+under [HTTP surface](#http-surface):
+
+```ts
+const responseProfiles = {
+  callback: {
+    contentType: 'text/javascript; charset=utf-8',
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  },
+  prefetch: prefetchResponseProfile,
+  airlock: airlockResponseProfile,
+  prover: proverResponseProfile,
+  worker: workerResponseProfile,
+  asset: immutableAssetResponseProfile,
+} as const
+```
+
+Those profile values contain the fixed isolation, cache, framing, and CSP rules
+defined below. They do not contain generated filenames. The build, not the
+Host, fills body-dependent values: strong ETags, inline script/style hashes,
 generated resource URLs, and the build-pinned Notary Service origin. It neither
 parses this Markdown nor asks the Host to reconstruct policy.
+
+#### Generation
+
+For each supported CCDP version, the command:
+
+1. gives the declared entrypoints to the compiler/bundler;
+2. takes emitted filenames and dependency edges from its output API;
+3. materializes owner-declared external resources under immutable paths;
+4. renders protocol bodies using those emitted paths;
+5. renders each resource's final headers from its profile and final body; and
+6. verifies the closed static graph before publishing the bodies and index.
 
 The command writes a build-private `ccdp-artifacts.json` beside the response
 bodies:
