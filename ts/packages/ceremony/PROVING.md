@@ -8,7 +8,7 @@ browser documents, routes, isolation, presentation, messages, and navigation.
 The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). The browser boundary and its input/output
 messages are defined by [CCDP](CCDP.md#prover-get-prover). This document owns only the
-proof-generation implementation and its pinned asset selection; the CCDP Host
+proof-generation implementation and its pinned asset selection; the CCDP Distribution
 serves all browser-fetched proving resources from an origin independent of the
 [OAuth bridge](OAUTH_BRIDGE.md).
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
@@ -151,7 +151,7 @@ The browser distribution exposes `tlsn_wasm.js` and its sibling
 `tlsn_wasm_bg.wasm`; the worker bootstrap is embedded in the module. The global
 notarization module pins both immutable asset paths. Each remains a normal,
 independently cached response; the browser never downloads or unpacks a release
-archive. The [CCDP Host contract](CCDP_HOST.md#proving-assets) owns their
+archive. The [CCDP Distribution contract](CCDP_DISTRIBUTION.md#proving-assets) owns their
 serving.
 Neither an application nor `AppRequestProof` selects a notary, circuit, or
 bb.js version.
@@ -299,7 +299,7 @@ deployment configuration. The build likewise owns every toolchain worker, WASM,
 common reference string (CRS) path, and complete transitive execution graph.
 No runtime configuration can replace those dependencies.
 
-The [CCDP Host](CCDP_HOST.md#proving-assets) serves companion chunks, spawner
+The [CCDP Distribution](CCDP_DISTRIBUTION.md#proving-assets) serves companion chunks, spawner
 and nested worker modules, WASM, circuits, and CRS bodies from immutable
 same-origin paths. Prefetch uses the exact path later used by Prover. The
 Prefetch bootstrap which installs the Worker cannot depend on it during its
@@ -357,7 +357,7 @@ The pinned bb.js 5.2.0 build owns the compressed CRS downloader and
 and includes
 [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290), which
 persists `Crs.new()` downloads. Its bytes also fix the CRS paths served
-by the [CCDP Host](CCDP_HOST.md#proving-assets).
+by the [CCDP Distribution](CCDP_DISTRIBUTION.md#proving-assets).
 
 ## Prefetch and cache lifecycle
 
@@ -382,7 +382,7 @@ activation so later prover documents use the selected release rather than a
 stale controller. Activation does not proactively delete reusable immutable
 Cache Storage entries or bb.js CRS data. Immutable URLs keep already loaded
 documents pinned; a live ceremony may still fail closed across deployment
-rotation as defined by the [CCDP Host contract](CCDP_HOST.md#protocol-resources).
+rotation as defined by the [CCDP Distribution contract](CCDP_DISTRIBUTION.md#protocol-resources).
 
 The Prefetch bootstrap accepts only the closed, cleared profile selected by its
 fragment. It uses that platform/version leaf's pinned prefetch set, which adds
@@ -444,7 +444,7 @@ state is never a ceremony checkpoint.
 ## Execution isolation
 
 [CCDP](CCDP.md#documents-and-routes) owns the Prover's isolated execution
-context; the [CCDP Host contract](CCDP_HOST.md#protocol-resources) owns its HTTP
+context; the [CCDP Distribution contract](CCDP_DISTRIBUTION.md#protocol-resources) owns its HTTP
 policy and same-origin resource graph. No request parameter selects a document
 role, asset, or CSP. `AppRequestProof` carries the Application's frozen
 `redirectUri`; its origin selects the OAuth Bridge for GitHub's fixed token

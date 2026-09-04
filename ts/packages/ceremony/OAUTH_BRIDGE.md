@@ -31,18 +31,19 @@ client, proving toolchain, or Worker. It owns no ceremony Job and keeps no
 ceremony progress, OAuth return, proof, retry, cancellation, or recovery state.
 Google and X require no confidential bridge route.
 
-Loading Callback from the CCDP Host adds no credential authority: the same
-host supplies Prover, which receives the accepted OAuth return in
+Loading Callback from the CCDP Distribution adds no credential authority: the
+same distribution supplies Prover, which receives the accepted OAuth return in
 `AppRequestProof`. Keeping Callback there avoids making the bridge republish
 CCDP implementation artifacts.
 
-The OAuth Bridge and CCDP Host may use different origins or sites. The bridge
+The OAuth Bridge and CCDP origin may be cross-origin or cross-site. The bridge
 origin is a code-supply-chain boundary for the callback shell and public
 configuration; the CCDP origin is an independent code-supply-chain boundary
 for Callback behavior and proof generation. Supplying the bridge origin to the
 prover at runtime does not make the prover response deployment-specific.
 Any number of independently operated Bridges may select the same public CCDP
-Host; the Host does not register them or receive their application allowlists.
+Distribution; it does not register them or receive their application
+allowlists.
 
 ## Deployment configuration
 
@@ -52,7 +53,7 @@ One bridge deployment has these inputs:
 |---|---|
 | Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted to fetch configuration and authenticate the callback popup connection |
-| CCDP origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID CCDP Host |
+| CCDP origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID CCDP Distribution |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback shell | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required to load [Callback](CCDP.md#callback-get-callbackjs) from the configured CCDP origin |
@@ -70,10 +71,10 @@ artifact, circuit, or notary endpoint.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
-platform/version pairs supported by its selected CCDP Host. Selecting a shared
-Host requires no reciprocal Host configuration; when GitHub is enabled, this
-Bridge independently admits that Host's exact origin at its confidential token
-endpoint.
+platform/version pairs supported by its selected CCDP Distribution. Selecting
+a shared Distribution requires no reciprocal configuration; when GitHub is
+enabled, this Bridge independently admits its exact CCDP origin at the
+confidential token endpoint.
 
 ## Route surface
 
@@ -302,8 +303,8 @@ The callback response uses:
   Callback implementation URLs on the configured CCDP origin; and
 - no broad scheme, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
 
-The CCDP Host's Callback module uses its
-[protocol-resource response profile](CCDP_HOST.md#protocol-resources).
+The CCDP Distribution's Callback module uses its
+[protocol-resource response profile](CCDP_DISTRIBUTION.md#protocol-resources).
 Markup, styles, and logo remain package-owned; the bridge exposes no separate
 template or theme contract.
 

@@ -1,14 +1,14 @@
-# CCDP Host
+# CCDP Distribution
 
-This document defines how a CCDP Host serves the browser resources and proving
-assets required by [CCDP](CCDP.md#documents-and-routes). CCDP owns the protocol
-routes, fragments, roles, navigations, and versions; this document owns their
-HTTP, build, and deployment contract.
+This document defines the static browser resources and proving assets required
+by [CCDP](CCDP.md#documents-and-routes). CCDP owns the protocol routes,
+fragments, roles, navigations, and versions; this document owns their HTTP,
+build, and deployment contract.
 
-## Host boundary
+## Distribution boundary
 
-One CCDP Host serves one canonical HTTPS `ccdpOrigin`. Explicit loopback
-development is the only HTTP exception. It serves:
+One CCDP Distribution is served from one canonical HTTPS `ccdpOrigin`. Explicit
+loopback development is the only HTTP exception. It contains:
 
 - every protocol resource for each supported CCDP version; and
 - every module, worker, WASM, circuit, CRS, and other browser dependency those
@@ -19,26 +19,26 @@ callback shell, and enabled confidential platform endpoints. Requests to the
 OAuth Platform, OAuth Bridge, Notary Service, and public platform APIs are
 protocol traffic rather than CCDP assets.
 
-The Host may be the canonical libID deployment or an operator-selected
+The Distribution may be the canonical libID release or an operator-selected
 replacement. Replacing it changes the code-supply-chain authority for Callback
 and proof generation.
 
-One Host may serve any number of independently operated OAuth Bridges. It does
-not enumerate or register them: each Bridge selects a Host, and the Host serves
-the same public resources to all of them. A Bridge advertises only
-platform/version pairs present in its selected Host distribution; no shared
+One Distribution may serve any number of independently operated OAuth Bridges.
+It does not enumerate or register them: each Bridge selects a `ccdpOrigin`,
+which serves the same public resources to all of them. A Bridge advertises only
+platform/version pairs present in its selected Distribution; no shared
 deployment system is required.
 
 ## HTTP contract
 
-The Host is static and request-invariant. It sets no cookies, serves no
+The Distribution is static and request-invariant. It sets no cookies, serves no
 unrelated same-origin application API, and performs no request-time compilation,
 templating, source resolution, archive extraction, or remote asset fetch.
 
 ### Protocol resources
 
-The Host implements the exact versioned Callback, Prefetch, Airlock, Prover,
-and Worker paths defined by [CCDP](CCDP.md#documents-and-routes). Their
+The Distribution exposes the exact versioned Callback, Prefetch, Airlock,
+Prover, and Worker paths defined by [CCDP](CCDP.md#documents-and-routes). Their
 fragments, roles, and execution contexts remain CCDP rules.
 
 Prefetch, Airlock, and Prover contain their clearing bootstrap and entry code
@@ -90,11 +90,11 @@ by the response.
 
 ### Proving assets
 
-`GET /ccdp/assets/*` is the Host's static proving-resource namespace, not a CCDP
-API or versioned protocol route. Every browser-fetched proving resource other
-than the versioned protocol resources resolves there. CCDP assigns no structure
-to the suffix: versioned code pins each exact path, while protocol code neither
-enumerates nor parses the namespace.
+`GET /ccdp/assets/*` is the Distribution's static proving-resource namespace,
+not a CCDP API or versioned protocol route. Every browser-fetched proving
+resource other than the versioned protocol resources resolves there. CCDP
+assigns no structure to the suffix: versioned code pins each exact path, while
+protocol code neither enumerates nor parses the namespace.
 
 Each asset response:
 
@@ -106,11 +106,12 @@ Each asset response:
 The ceremony build pins every platform/version circuit, shared notarization
 resource, Noir and bb.js dependency, worker, WASM, CRS path, and SRS size.
 Requests, fragments, messages, and application inputs cannot add or replace
-them. The Host receives no asset-source configuration and exposes no catalog.
+them. The Distribution receives no asset-source configuration and exposes no
+catalog.
 
 The distribution contains every path referenced by its code. Browsers never
 list the asset tree, reach an upstream source, or trigger archive extraction or
-remote fetch. A separate asset CDN is unnecessary: the Host is the stable
+remote fetch. A separate asset CDN is unnecessary: `ccdpOrigin` is the stable
 browser-facing origin and may itself run behind a CDN.
 
 ### Publication and compatibility
@@ -134,7 +135,7 @@ their observable protocol or proof semantics change.
 `@libid/ceremony` owns a target-neutral artifact pipeline. It produces one
 closed graph of public paths, response bodies, and response profiles, then
 passes that graph directly to a target-specific output step. The graph has no
-serialized public or Host-facing format.
+serialized public or deployment-facing format.
 
 ### Source declarations
 
@@ -175,9 +176,9 @@ The entrypoints are build-tool inputs, not output filenames. First-party modules
 declare dependencies through ordinary imports; the module owning a non-imported
 proving resource declares it once by logical role. The build consumes the
 compiler/bundler's emitted graph and filenames. It maintains no second filename
-list, generated-source scrape, or Host template. Renaming an internal output
-therefore requires no manual mapping change; renaming an external release member
-changes only its code-owned pin.
+list, generated-source scrape, or deployment template. Renaming an internal
+output therefore requires no manual mapping change; renaming an external
+release member changes only its code-owned pin.
 
 One response-profile table is the executable source for the policies under
 [HTTP contract](#http-contract):
@@ -218,8 +219,8 @@ immutable identity rather than fetched on every build.
 
 A target-specific command materializes the validated graph for one hosting
 platform without weakening its routes, bodies, or response policies. There is
-no public target interface, custom Host implementation, or portable deployment
-manifest. Additional targets may reuse the pipeline when needed.
+no public target interface, custom serving implementation, or portable
+deployment manifest. Additional targets may reuse the pipeline when needed.
 
 ### Cloudflare Pages
 

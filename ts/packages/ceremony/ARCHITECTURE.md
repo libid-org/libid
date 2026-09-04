@@ -7,8 +7,9 @@ the proof-bearing `OAuthProof` for the downstream Ledger Verifier.
 
 This document defines the package boundary, public application API and
 configuration, and result lifecycle. The package's browser protocol is defined
-in [CCDP.md](CCDP.md), and its HTTP deployment contract in
-[CCDP_HOST.md](CCDP_HOST.md); popup lifecycle and communication are supplied by
+in [CCDP.md](CCDP.md), and its static distribution contract in
+[CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md); popup lifecycle and communication
+are supplied by
 [`@libid/popup`](../popup/README.md). Proof-generation internals are defined in
 [PROVING.md](PROVING.md). Browser TLSNotary sessions and
 signed-attestation handoff are defined in [NOTARIZATION.md](NOTARIZATION.md).
@@ -45,11 +46,11 @@ sequenceDiagram
     actor U as User
     participant A as Application composition
     participant C as Application-side client
-    participant F as Prefetch document / CCDP Host
+    participant F as Prefetch / CCDP origin
     participant O as Authorization document / OAuth Platform
     participant P as Callback / OAuth Bridge
-    participant L as Airlock / CCDP Host
-    participant R as Prover document / CCDP Host
+    participant L as Airlock / CCDP origin
+    participant R as Prover / CCDP origin
 
     U->>A: Activate identity action
     A->>A: Create popup window and connection
@@ -208,10 +209,10 @@ client API. Prover leaves are internal imports of the prover entrypoint and
 never enter the client catalog.
 Individual platform leaves never import the aggregator. `callback`, `airlock`,
 `prefetch`, and `prover` are build entrypoints, not separately versioned
-packages. The CCDP Host serves Callback as a cross-origin-loadable module,
-embeds Prefetch, Airlock, and Prover entry code directly into their versioned
-documents, and serves the Prefetch Service Worker at CCDP's versioned worker
-path; internal bundle filenames are deployment details. The Prefetch entrypoint
+packages. The CCDP Distribution serves Callback as a cross-origin-loadable
+module, embeds Prefetch, Airlock, and Prover entry code directly into their
+versioned documents, and serves the Prefetch Service Worker at CCDP's versioned
+worker path; internal bundle filenames are deployment details. The Prefetch entrypoint
 runs in Window and Service Worker contexts: its
 Window branch dispatches the selected asset profile, while its Service Worker
 branch composes popup continuity with ceremony-owned asset single flights and
@@ -260,7 +261,7 @@ The package-facing API surface is:
 | `@libid/ceremony` | `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult`, derived from the closed platform/version catalog |
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
-| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-callbackjs) served by the CCDP Host as the versioned Callback implementation |
+| `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-callbackjs) served from the CCDP origin as the versioned Callback implementation |
 | `@libid/ceremony/airlock` | [browser entrypoint](CCDP.md#airlock-get-airlock) embedded by the non-isolated Airlock document |
 | `@libid/ceremony/prefetch` | dual-context browser entrypoint embedded by the versioned Prefetch document and served at the versioned Worker path |
 | `@libid/ceremony/prover` | [browser entrypoint](CCDP.md#prover-get-prover) embedded by the versioned isolated Prover document |
@@ -656,7 +657,7 @@ noncanonical encodings fail before use.
 ## Proof-generation subsystem
 
 [PROVING.md](PROVING.md) defines pipelines, asset use, workers, caching, and
-proof delivery; [CCDP_HOST.md](CCDP_HOST.md) defines asset deployment. After
+proof delivery; [CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md) defines asset deployment. After
 `ProverReady`, the client sends one `AppRequestProof`, validates the returned
 platform proof, and assembles `OAuthProof` and `Identity`.
 
@@ -735,14 +736,15 @@ output-shape versions. A proof change normally changes the assembled
 public compatibility axis. One package release may retain older platform-version
 validators during its compatibility window.
 
-[`CCDPVersion`](CCDP.md#paths-and-versioning) independently versions the Callback implementation,
-CCDP Host documents and Worker, navigation, fragments, and browser messages.
-CCDP Host paths and OAuth `state` select it before protocol code runs;
+[`CCDPVersion`](CCDP.md#paths-and-versioning) independently versions the
+Callback implementation, CCDP Distribution documents and Worker, navigation,
+fragments, and browser messages.
+CCDP paths and OAuth `state` select it before protocol code runs;
 messages do not repeat it. The OAuth bridge API
 namespace remains independent. The popup package's
 [`ConnectionVersion`](../popup/CONNECTION.md) independently versions private
 connection controls. Local Job schema versioning
 remains owned by the client store, while immutable asset revisioning remains a
-[CCDP Host](CCDP_HOST.md#proving-assets) release concern. A Job which has
+[CCDP Distribution](CCDP_DISTRIBUTION.md#proving-assets) release concern. A Job which has
 already committed Identity has left the ceremony and remains usable under its
 composition's own compatibility rules.

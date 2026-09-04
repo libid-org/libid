@@ -9,8 +9,8 @@ platform-proof, and final-proof semantics are defined by the normative
 
 An authenticated, ordered, bidirectional popup connection carries CCDP
 messages unchanged. CCDP requires that connection but does not prescribe its
-implementation. [CCDP_HOST.md](CCDP_HOST.md) defines the HTTP response and
-asset-serving contract for a conforming CCDP Host.
+implementation. [CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md) defines the static
+distribution and HTTP contract for the CCDP origin.
 
 ## Actors and origins
 
@@ -25,14 +25,14 @@ the distinction is immaterial.
 |---|---|---|
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
 | OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback shell, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
-| CCDP Host | CCDP origin | owns and hosts the versioned Prefetch, Callback, Airlock, Prover, and Worker implementations and proving assets for any number of OAuth Bridges; it may be the canonical libID deployment or an operator-selected replacement |
+| CCDP Distribution | CCDP origin | contains the versioned Prefetch, Callback, Airlock, Prover, and Worker implementations and proving assets used by any number of OAuth Bridges; it may be the canonical libID distribution or an operator-selected replacement |
 | OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
-| Notary Service | configured notary network origin | participates in TLS notarization and hosts no ceremony browser document |
 
-The Application, OAuth Bridge, and CCDP Host may be operated together or
-independently and may be same-origin, same-site, or cross-site. CCDP assumes
+The Application and OAuth Bridge may be operated together or independently;
+the selected CCDP Distribution may be published by either party or another
+one. Their origins may be same-origin, same-site, or cross-site. CCDP assumes
 none of those relationships. Browser authority is always established against
-an exact origin. In particular, the CCDP Host is not a wallet: both
+an exact origin. In particular, the CCDP Distribution is not a wallet: both
 external-wallet and native-wallet compositions consume the same independently
 hosted CCDP boundary.
 
@@ -41,9 +41,10 @@ URI must terminate on the bridge origin. After clearing the OAuth return, that
 shell dynamically loads CCDP's versioned Callback module from the configured
 CCDP origin.
 
-Multiple independently operated OAuth Bridges may select the same CCDP Host.
-The Host keeps no Bridge registry or reciprocal allowlist and serves identical
-public CCDP resources across that relationship.
+Multiple independently operated OAuth Bridges may select the same CCDP
+Distribution through its `ccdpOrigin`. The Distribution keeps no Bridge
+registry or reciprocal allowlist and exposes identical public CCDP resources
+across that relationship.
 
 ## Documents and Routes
 
@@ -52,7 +53,7 @@ public CCDP resources across that relationship.
 | Property | Contract |
 |---|---|
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#platformId</code></td><td><code>#ceremonyVersion</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>exact identifier from the selected platform profile</td><td>unsigned 16-bit platform ceremony version</td></tr></table> |
-| Host and context | CCDP Host; versioned, top-level, and non-isolated ceremony-popup document |
+| Location and context | CCDP origin; versioned, top-level, and non-isolated ceremony-popup document |
 | Role | Starts the selected profile's fetches before the Application continues through [Prefetch to Authorization](#1-prefetch-to-authorization). It receives no authorization URL, OAuth return, or proof input. |
 
 ### Authorization `GET platformAuthorizationUrl`
@@ -60,7 +61,7 @@ public CCDP resources across that relationship.
 | Property | Contract |
 |---|---|
 | Parameters | The complete frozen URL is opaque to CCDP. The selected platform ceremony version owns its parameters. |
-| Host and context | Selected OAuth Platform; top-level ceremony-popup document |
+| Location and context | Selected OAuth Platform; top-level ceremony-popup document |
 | Role | Owns login and consent during [Authorization to Callback](#2-authorization-to-callback). No CCDP participant runs and no CCDP message or popup connection is exposed to this document. |
 | External policy | Controlled entirely by the OAuth Platform. CCDP assumes nothing about its markup, scripts, headers, or origin transitions; it may sever the opener or browsing-context group. Callback reconnects without assuming direct window continuity. The selected platform ceremony version owns authorization request and return semantics. |
 
@@ -68,7 +69,7 @@ public CCDP resources across that relationship.
 
 | Property | Contract |
 |---|---|
-| Host and context | CCDP Host; versioned, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
+| Location and context | CCDP origin; versioned, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
 | Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
@@ -77,7 +78,7 @@ public CCDP resources across that relationship.
 | Property | Contract |
 |---|---|
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
-| Host and context | CCDP Host; versioned, top-level, and non-isolated ceremony-popup document |
+| Location and context | CCDP origin; versioned, top-level, and non-isolated ceremony-popup document |
 | Role | Accepts a fresh carrier for the same logical Application connection after Callback, then initiates same-origin connected navigation to Prover. It exists solely to establish the carrier on the CCDP origin before Prover isolation and receives no OAuth return, proof request, or platform configuration. |
 | Presentation and cleanup | Renders a fixed transition or failure view with an inline libID logo and accepts no Application markup or renderer. It retains no ceremony data and releases listeners and connection references when replaced or terminal. |
 
@@ -95,7 +96,7 @@ Prover iframe without that top-level navigation.
 | Property | Contract |
 |---|---|
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
-| Host and context | CCDP Host; versioned, top-level, cross-origin-isolated ceremony-popup document |
+| Location and context | CCDP origin; versioned, top-level, cross-origin-isolated ceremony-popup document |
 | Role | Claims the carrier preserved by Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
 | Presentation and cleanup | Renders a persistent inline libID logo and one accessible milestone progress bar. It begins at **Preparing proof**, advances only from valid platform events, and reaches 100% only on proof delivery. After `SLOW_PROVING_HINT_MS = 15_000`, it adds a nonblocking **Still proving** notice which may suggest enabling JavaScript JIT in Vanadium site controls. It accepts no Application markup or renderer, presents no ETA, and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
 
@@ -103,7 +104,7 @@ Prover iframe without that top-level navigation.
 
 | Property | Contract |
 |---|---|
-| Host and context | CCDP Host; same-origin module Service Worker registered by Prefetch |
+| Location and context | CCDP origin; same-origin module Service Worker registered by Prefetch |
 | Role | Composes Airlock-to-Prover MessagePort continuity with asset and CRS single flights and caches for Prefetch and Prover. |
 
 ### Common
@@ -124,15 +125,15 @@ state; fragments and messages do not repeat the version.
 
 Compatible implementation changes keep the version. A breaking fragment
 grammar, navigation order, message shape, direction, ordering, or validation
-rule increments it, publishes new CCDP Host paths and Worker, and adds the
+rule increments it, publishes new CCDP paths and Worker, and adds the
 Callback version to the OAuth Bridge shell's closed supported-version map. Old
 resources remain available for live ceremonies and a compatibility window.
 
 A later CCDP version substitutes its decimal version in the common path. The
-OAuth Bridge dynamically loads the matching Callback module from the CCDP Host;
-the CCDP Host documents execute their implementations directly. Internal bundle
-names are not protocol surface. Callback, Prefetch, Airlock, Prover, and Worker
-share the CCDP origin.
+OAuth Bridge dynamically loads the matching Callback module from the CCDP
+origin; Prefetch, Airlock, and Prover execute their implementations directly.
+Internal bundle names are not protocol surface. Callback, Prefetch, Airlock,
+Prover, and Worker share the CCDP origin.
 
 The Prefetch, Airlock, and Prover paths select both CCDP version and document
 role.
@@ -155,7 +156,7 @@ exact field set, reject duplicates, and otherwise do not depend on parameter
 order.
 
 The Prefetch, Airlock, and Prover routes have no query. Their fragments never
-reach the CCDP Host and are copied and cleared before rendering, storage, or
+reach the CCDP origin and are copied and cleared before rendering, storage, or
 network use. No OAuth return, credential, proof input, or proof is placed in an
 internal fragment. The OAuth-platform-mandated query on `redirectUri` is the
 only protocol exception.
@@ -167,18 +168,18 @@ direction and state before acting.
 
 #### Origin policy
 
-Because one CCDP Host serves Applications admitted by any number of independent
-OAuth Bridges, Prefetch, Airlock, and Prover use
+Because one CCDP Distribution serves Applications admitted by any number of
+independent OAuth Bridges, Prefetch, Airlock, and Prover use
 `allowedApplicationOrigins: '*'`. They accept any valid browser-observed HTTPS
 Application origin and pin that exact origin and source for each carrier, while
-the Application exact-authenticates the configured CCDP Host. Open admission
+the Application exact-authenticates the configured CCDP origin. Open admission
 grants only public asset prefetch, carrier continuity, and processing of the
 connecting Application's own proof request; none receives an OAuth return
 directly from the platform. Callback instead exact-authenticates the
 Application against its containing OAuth Bridge's explicit deployment
 allowlist before releasing that return. The public Callback module is
-cross-origin-loadable from the Host, but that resource policy does not replace
-Callback's credential-release check. Asset caching and popup-connection
+cross-origin-loadable from the CCDP origin, but that resource policy does not
+replace Callback's credential-release check. Asset caching and popup-connection
 construction are outside CCDP.
 
 ## Messages
