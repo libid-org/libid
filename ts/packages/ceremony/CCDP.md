@@ -53,10 +53,12 @@ those steps remain outside this protocol.
 
 A composition which carries the live connection from Prover into another
 interactive document MUST serve both from the same exact origin and under the
-same active popup-continuity Worker registration and scope. Same-site placement
-is insufficient. The destination claims the preserved carrier as its first
-step, before waiting for user input, so the Worker bridges only the immediate
-document replacement and never an unbounded interaction.
+same active root-scoped popup-continuity Worker registration. Same-site
+placement is insufficient. The Worker response sets
+`Service-Worker-Allowed: /`, and Prefetch registers it with `scope: '/'`. The
+destination claims the preserved carrier as its first step, before waiting for
+user input, so the Worker bridges only the immediate document replacement and
+never an unbounded interaction.
 
 Independently built static applications may satisfy this rule through path
 mounting behind one public origin. Their deployment sources may differ behind
@@ -64,6 +66,17 @@ the router; the browser-visible origin must not. All code mounted this way
 shares one browser authority and MUST therefore be mutually trusted. A
 composition which cannot accept that trust relationship cannot carry CCDP's
 `MessagePort` and must use a separate post-CCDP channel.
+
+For example, a composition may expose independently built resources as:
+
+```text
+https://example.com/ccdp/v1/prover
+https://example.com/continuation/...
+https://example.com/ccdp/v1/worker.js  (registered with scope /)
+```
+
+The root-scoped Worker remains compatible with every live CCDP version and
+passes requests outside its pinned resource graph to the network unchanged.
 
 ## Documents and Routes
 
@@ -126,8 +139,8 @@ Prover iframe without that top-level navigation.
 
 | Property | Contract |
 |---|---|
-| Location and context | CCDP origin; same-origin module Service Worker registered by Prefetch |
-| Role | Composes Airlock-to-Prover MessagePort continuity with asset and CRS single flights and caches for Prefetch and Prover. |
+| Location and context | CCDP origin; same-origin module Service Worker whose response sets `Service-Worker-Allowed: /` and which Prefetch registers with `scope: '/'` |
+| Role | Composes MessagePort continuity across same-origin participating documents with asset and CRS single flights and caches for Prefetch and Prover. It remains compatible with every live CCDP version and passes requests outside its pinned resource graph to the network unchanged. |
 
 ### Common
 
