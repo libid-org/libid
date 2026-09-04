@@ -132,10 +132,10 @@ their observable protocol or proof semantics change.
 
 ## Static artifact build
 
-`@libid/ceremony` owns a target-neutral artifact pipeline. It produces one
+`@libid/ceremony` owns a platform-neutral artifact pipeline. It produces one
 closed graph of public paths, response bodies, and response profiles, then
-passes that graph directly to a target-specific output step. The graph has no
-serialized public or deployment-facing format.
+materializes it as static files and a Static Web Server configuration. The
+graph has no separate serialized format or browser-visible manifest.
 
 ### Source declarations
 
@@ -197,8 +197,8 @@ const responseProfiles = {
 Profiles contain fixed isolation, cache, framing, media-type, and CSP rules but
 no generated filenames. The build fills body-dependent values such as inline
 script/style hashes, generated resource URLs, and the build-pinned Notary
-Service origin. It does not parse this Markdown or ask a deployment target to
-reconstruct policy.
+Service origin. It does not parse this Markdown or ask SWS to reconstruct
+policy.
 
 ### Generation
 
@@ -208,77 +208,103 @@ For each supported CCDP version, the pipeline:
 2. reads emitted filenames and dependency edges from its output API;
 3. materializes owner-declared external resources under immutable paths;
 4. renders protocol bodies using those paths and response profiles; and
-5. validates the closed graph before passing it to the selected deployment
-   target.
+5. validates the closed graph before replacing the generated output.
 
 The pipeline rejects a missing body, unindexed dependency, malformed external
 pin, mutable asset path, or partial graph. Pinned source releases are cached by
 immutable identity rather than fetched on every build.
 
-## Deployment targets
+## Portable distribution
 
-A target-specific command materializes the validated graph for one hosting
-platform without weakening its routes, bodies, or response policies. There is
-no public target interface, custom serving implementation, or portable
-deployment manifest. Additional targets may reuse the pipeline when needed.
+[Static Web Server v2](https://static-web-server.net/v2/) (SWS) is the sole
+serving dependency. It is an open-source static file server with a
+[TOML configuration](https://static-web-server.net/v2/configuration/config-file),
+[path-matched response
+headers](https://static-web-server.net/v2/features/custom-http-headers), ETags,
+range requests, and [rootless multi-architecture container
+images](https://static-web-server.net/v2/features/docker). No CCDP-specific
+server or SWS plugin exists.
 
-### Cloudflare Pages
-
-Cloudflare Pages is the current target:
+Build the portable distribution with:
 
 ```sh
-pnpm --filter @libid/ceremony build:ccdp-artifacts:cf -- --out-dir <directory>
+pnpm --filter @libid/ceremony build:ccdp-artifacts -- --out-dir <directory>
 ```
 
-It emits a directly deployable directory:
+It replaces the output directory only after validating the complete graph and
+emits:
 
 ```text
 <directory>/
-├── ccdp/v{CCDPVersion}/callback.js
-├── ccdp/v{CCDPVersion}/prefetch
-├── ccdp/v{CCDPVersion}/airlock
-├── ccdp/v{CCDPVersion}/prover
-├── ccdp/v{CCDPVersion}/worker.js
-├── ccdp/assets/...
-├── 404.html
-└── _headers
+├── public/
+│   ├── ccdp/v{CCDPVersion}/callback.js
+│   ├── ccdp/v{CCDPVersion}/prefetch
+│   ├── ccdp/v{CCDPVersion}/airlock
+│   ├── ccdp/v{CCDPVersion}/prover
+│   ├── ccdp/v{CCDPVersion}/worker.js
+│   ├── ccdp/assets/...
+│   └── 404.html
+└── sws.toml
 ```
 
-There is no Pages Function, root `_worker.js`, `_redirects`, or CCDP-specific
-server. Exact files implement the routes, generated `_headers` applies their
-response profiles, and the inert top-level `404.html` prevents Cloudflare Pages
-from enabling its single-page-application fallback.
+`public/` contains only the validated public graph. `sws.toml` remains outside
+that root and is the only deployment manifest. It is generated rather than
+operator-edited and starts from this fixed baseline:
 
-`_headers` contains one exact block per versioned protocol resource and one
-`/ccdp/assets/*` block. It contains no catch-all executable policy. The target
-rejects overlapping rules, more than Cloudflare Pages' 100 header rules, or a
-header line longer than 2,000 characters. It also rejects a file over 25 MiB or
-a distribution over the 20,000-file Wrangler upload limit.
+```toml
+[general]
+host = "::"
+port = 80
+root = "/home/sws/public"
+page404 = "/home/sws/public/404.html"
+cache-control-headers = false
+compression = true
+security-headers = false
+directory-listing = false
+redirect-trailing-slash = false
+health = false
+text-charset = ""
+```
 
-Cloudflare adds `Access-Control-Allow-Origin: *` to static responses by default,
-so `_headers` removes it from every profile except Callback, where cross-origin
-module loading requires it. Other Cloudflare operational headers cannot weaken
-the HTTP contract. Pages supplies ETags and handles compression and conditional
-requests.
+No SPA fallback is configured. Only exact files implement protocol routes.
+SWS may negotiate transport compression, but the decoded resource bytes and
+their generated response profile remain fixed.
 
-The target replaces its output directory only after the graph is complete. The
-complete directory is deployed before promotion to the production
-`ccdpOrigin`. The command accepts `--watch` for local development; watch mode
-changes no browser protocol or response policy.
+The generator emits one non-overlapping `advanced.headers` rule for every
+versioned protocol resource and one recursive rule for the `/ccdp/assets/`
+namespace. Those rules are compiled from the response-profile table; SWS does
+not reconstruct policy. They set exact media, cache, isolation, framing, CORS,
+CSP, and `Service-Worker-Allowed` headers. The generator rejects overlapping
+patterns, an omitted profile, an unrepresented file, or any SWS option that
+could weaken the [HTTP contract](#http-contract).
 
-Serve the output locally with:
+The checked-in container recipe is fixed apart from the SWS image digest:
+
+```dockerfile
+FROM ghcr.io/static-web-server/static-web-server:2-alpine@sha256:<pinned-digest>
+COPY --chown=sws:sws public/ /home/sws/public/
+COPY --chown=sws:sws sws.toml /etc/sws.toml
+ENV SERVER_CONFIG_FILE=/etc/sws.toml
+```
+
+Release automation pins the SWS v2 image by digest, builds this image from the
+generated directory, and verifies the served route, header, cache, method, and
+404 contracts before publication. The container serves HTTP internally; its
+deployment terminates public HTTPS at an ordinary container ingress, load
+balancer, or CDN without rewriting paths, bodies, or security headers.
+
+The resulting OCI image is the portable release artifact. A deployment may run
+it on any container platform and may place a transparent CDN in front of it.
+Promotion switches to the complete image atomically; the image already contains
+every old protocol resource and immutable asset required by the supported
+compatibility window. No startup download, mounted source directory,
+request-time templating, or platform-specific manifest is required.
+
+The same image runs locally:
 
 ```sh
-npx wrangler pages dev <directory>
+docker build --file <ccdp.Dockerfile> --tag libid-ccdp <directory>
+docker run --rm --publish 8787:80 libid-ccdp
 ```
 
-Publish it with [Cloudflare Pages Direct
-Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/):
-
-```sh
-npx wrangler pages deploy <directory> --project-name <project>
-```
-
-Cloudflare Pages' [`_headers`
-format](https://developers.cloudflare.com/pages/configuration/headers/) is the
-only target-specific manifest.
+Rebuilding it for development changes no browser protocol or response policy.
