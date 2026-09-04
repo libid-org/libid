@@ -1,0 +1,278 @@
+# @libid/popup
+
+`@libid/popup` owns one popup browsing context from creation or adoption through
+navigation and closure. It connects that popup to an application page across a
+caller-approved set of origins, external navigation, isolation boundaries,
+mobile suspension, and popup-document replacement, carrying caller-defined
+messages without owning or naming the caller protocol.
+
+The detailed design is split into the [popup connection](docs/connection.md),
+its [MessagePort](docs/message-port.md) and [WebRTC](docs/webrtc.md) carriers,
+and [popup control](docs/control.md).
+Acceptance is indexed by the [test plan](TEST_PLAN.md), while
+[metrics and diagnostics](METRICS.md) defines local observability.
+
+## API
+
+### Open the popup
+
+The application creates a lifecycle object during the user activation. It then
+constructs the connection before deciding whether to suppress the action's
+native navigation:
+
+```ts
+const popupWindow = PopupWindow.open(anchor.target)
+const connection = PopupConnection.connect<Messages>(popupWindow, {
+  connectionId,
+  allowedPopupOrigins,
+  fallback,
+  onDiagnostic,
+})
+
+void connection.navigate(anchor.href)
+if (popupWindow.opened) event.preventDefault()
+```
+
+`PopupWindow.open(target, features?)` synchronously attempts
+`window.open('about:blank', target, 'popup,…')` and returns a wrapper even when
+the browser returns no handle. The popup is always requested as a separate
+window; `features` may add size or position (`width=480,height=720`) and must
+not contain `noopener` or `noreferrer`. The native-anchor fallback and mobile
+browsers present a tab instead, which changes no rule. It throws `TypeError` before opening for an empty target or
+one beginning with `_`. When no handle is returned, the connection binds the
+popup created by the same action's real anchor. See [popup creation and
+native-anchor fallback](docs/connection.md#popup-creation-and-native-anchor-fallback).
+
+```ts
+declare class PopupWindow {
+  readonly opened: boolean
+
+  static open(target: string, features?: string): PopupWindow
+  static current(): PopupWindow
+}
+```
+
+`PopupWindow` exposes no direct navigation or closure; both go through
+`PopupConnection` so continuity and control rules always apply.
+`PopupWindow.current()` wraps the current popup document, its opener, and the
+active Service Worker registration whose scope matches that document. It
+adopts the existing popup and cannot create another one.
+
+### Connect from the popup
+
+Each participating popup document accepts its side of the same logical
+connection:
+
+```ts
+const popupWindow = PopupWindow.current()
+const connection = PopupConnection.accept<Messages>(popupWindow, {
+  connectionId,
+  allowedApplicationOrigins, // readonly string[] | '*'
+  fallback,
+  onDiagnostic,
+})
+connection.on(Start, start => { /* ... */ })
+await connection.ready
+```
+
+`accept` returns synchronously and selects its carrier afterwards, so
+handlers registered before the caller yields precede every delivery; `ready`
+settles once a carrier is selected and rejects with a `PopupError` if the
+endpoint failed first.
+
+`allowedApplicationOrigins` is an explicit list of canonical HTTPS origins or
+`'*'`, which accepts any canonical HTTPS origin the browser observed on the
+opener's handshake while still binding that exact origin and source. An
+empty list remains invalid. The application's `allowedPopupOrigins` is always
+explicit.
+
+The caller supplies a fresh `crypto.randomUUID()` value for each logical
+connection; the exact accepted grammar and non-reuse rule are defined by the
+[connection ID contract](docs/connection.md#connection-id).
+
+`PopupConnection` retains a usable carrier for as long as possible and may
+preserve, transfer, or replace it transparently across document changes. If no
+carrier can continue or be established, the logical connection fails closed.
+Same-origin replacement may preserve a `MessagePort` through the continuity
+worker. Cross-origin replacement, including navigation to another site, never
+transfers a port between Service Workers: the next participating document
+authenticates a fresh carrier through its opener or the configured fallback.
+A cross-origin destination whose isolation policy severs its opener therefore
+requires a fallback constructor; without one, the connection fails closed.
+
+```ts
+interface PopupConnection<Out extends Message, In extends Message = Out> {
+  readonly ready: Promise<void>
+  readonly closed: Promise<ConnectionEnd>
+  send(message: Out): void
+  on<N extends In>(
+    message: MessageType<N>,
+    handler: (message: N) => void,
+  ): () => void
+  navigate(url: string): Promise<void>
+  navigateAway(url: string): Promise<void>
+  close(): Promise<void>
+}
+
+type ConnectionEnd =
+  | { outcome: 'closed' }
+  | { outcome: 'failed'; code: PopupErrorCode }
+
+class PopupError extends Error {
+  readonly code: PopupErrorCode
+}
+```
+
+`Out` is what this endpoint sends and `In` what it receives; a single union
+serves both when the protocol is symmetric. `closed` settles exactly once,
+with the stable code when the connection failed closed, so a protocol can wait
+on it instead of polling `send`. Every rejection or throw the package raises
+for a transport failure is a `PopupError` whose `code` is one of the same
+codes; invalid caller input throws `TypeError`.
+
+Before carrier selection, `navigate` uses the retained popup handle when
+available. Once a carrier is active, the application endpoint sends navigation
+control over it; popup-endpoint navigation acts locally. `navigateAway` is for
+non-participating destinations such as an identity platform's consent page:
+the application endpoint navigates its retained handle directly and retires
+the current carrier without preserving it, staying ready for the next
+participating document; the popup endpoint replaces its own document without
+keeping its port. The destination of `navigateAway` never crosses a carrier:
+it stays private to the endpoint that performs it, which is why no control
+exists for it and why an isolated popup, whose application has lost direct
+control, must initiate its own departure. `close` uses an
+available retained handle and otherwise uses popup control, then releases both
+the connection and popup.
+
+### Transitions that carry a reply
+
+Delivery on one carrier is ordered, and a `navigate` control is delivered in
+that same order. So a transition that must not lose the application's reply
+is driven by the side that has finished talking:
+
+```ts
+// application
+connection.on(OAuthReturn, (result) => {
+  connection.send(new Decision(result))       // ordered before the control
+  void connection.navigate(walletUrl)         // the popup acts on this after Decision
+})
+```
+
+The popup's handler runs on `Decision` before the popup leaves, whether the
+destination is same-origin or cross-origin. When the popup must choose the
+destination itself, it navigates only after it has received the reply. Do not
+`send` and then `navigateAway` from the application: direct navigation does
+not wait for the port, and the reply may be lost. Likewise, anything the
+application sends after its `navigate` control cannot reach the departing
+document; send what the destination needs once it announces itself.
+
+### Define and exchange messages
+
+Each caller-owned message class supplies its discriminator and decoder:
+
+```ts
+interface Message {
+  readonly type: string
+}
+
+interface MessageType<M extends Message> {
+  readonly type: M['type']
+  decode(value: unknown): M
+}
+
+class PopupReady implements Message {
+  static readonly type = 'popup-ready'
+  readonly type = PopupReady.type
+
+  constructor(readonly version: number) {}
+
+  static decode(value: unknown): PopupReady {
+    assertPopupReady(value)
+    return value
+  }
+}
+
+type Messages = PopupReady
+
+connection.on(PopupReady, ready => {
+  // ready is PopupReady
+})
+
+connection.send(new PopupReady(1))
+```
+
+Higher-level popup logic combines these classes into its own union and supplies
+that union to `PopupConnection`. Lifecycle controls remain internal and never
+reach caller handlers. Register handlers before yielding to the event loop
+after `connect` or `accept` returns: inbound values dispatch as later tasks,
+and a value with no registered handler closes the connection. An exception a
+handler throws is the caller's own and propagates untouched; it neither
+closes the connection nor reaches diagnostics. `send` throws synchronously
+without an active carrier or after closure; nothing is queued.
+
+### Diagnostics
+
+Both connection constructors accept an optional local diagnostic sink:
+
+```ts
+interface PopupDiagnostic {
+  readonly code: string
+  readonly timestamp: number
+  readonly durationMs?: number
+  readonly count?: number
+}
+```
+
+`code` is one of the stable identifiers catalogued in
+[metrics and diagnostics](METRICS.md); the set grows with new carriers.
+
+### Continuity worker
+
+Connected same-origin navigation between participating popup documents
+preserves the MessagePort through a Service Worker on that origin. The host,
+the deployment serving the popup documents, registers that worker and calls
+the handler from the `@libid/popup/worker` subpath in its worker script; the
+package registers nothing and the main entry exports no worker-global types:
+
+```ts
+// popup-origin worker script
+import { installPortKeeper } from '@libid/popup/worker'
+
+installPortKeeper()
+```
+
+`accept` claims a preserved port from the active registration matching the
+current document as its first step, so the host calls it before any other
+network work. See [continuity across navigations](docs/message-port.md#continuity-across-navigations).
+
+### Fallback carrier
+
+The optional fallback is a carrier constructor supplied independently in every
+participating document:
+
+```ts
+type CarrierConstructor = (signal: AbortSignal) => Promise<Carrier>
+
+interface Carrier {
+  send(value: Message): void
+  on(handler: (value: unknown) => void): () => void
+  close(): void
+}
+```
+
+Omitting it starts no fallback work. If opener-based connection fails, the
+connection terminates with the stable `fallback-unavailable` diagnostic. The
+WebRTC application constructor closes over its own signaling and ICE
+configuration. Its popup-side factory eagerly consumes package-owned navigation
+metadata and returns the later constructor without starting RTC. Callers do not
+manage carrier selection, replacement, or lifetime.
+
+## Testing
+
+`pnpm test` runs the unit suite in Node over real `MessageChannel` ports.
+`pnpm test:e2e` builds the package and its worker entry, serves three
+cross-site HTTPS origins, and drives the Playwright matrix (Chromium, Firefox,
+WebKit, mobile Chrome, mobile WebKit) through both creation paths, isolation
+round trips over one preserved port, port expiry, and every fail-closed path.
+[TEST_PLAN.md](TEST_PLAN.md) records which rows each layer covers and which
+remain deferred or manual.
