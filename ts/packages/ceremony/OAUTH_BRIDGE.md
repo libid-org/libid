@@ -297,8 +297,8 @@ The callback response uses:
   Callback implementation URLs on the configured CCDP origin; and
 - no broad scheme, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
 
-The CCDP Host's Callback module uses the
-[CCDP Host response profile](CCDP_HOST.md#callback-module).
+The CCDP Host's Callback module uses its
+[protocol-resource response profile](CCDP_HOST.md#protocol-resources).
 Markup, styles, and logo remain package-owned; the bridge exposes no separate
 template or theme contract.
 
