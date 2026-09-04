@@ -142,9 +142,13 @@ remote file. Its startup configuration is an `assetSources` list:
 ```text
 ./assets/*
 /opt/libid/circuits/*
-https://cdn.lib.id/notary/tlsn_wasm.js
-https://cdn.lib.id/notary/tlsn_wasm_bg.wasm
+https://github.com/libid-org/libid-circuits/releases/download/v0.3.0/manifest.json
 ```
+
+The remote entry illustrates a concrete asset from the
+[`libid-circuits` v0.3.0 release](https://github.com/libid-org/libid-circuits/releases/tag/v0.3.0).
+A separate asset CDN is unnecessary: the CCDP Host is the stable
+browser-facing origin and may itself be deployed through a CDN.
 
 A local source is an absolute path or a path resolved relative to the host
 configuration file. It may end in the sole supported wildcard, `/*`, to include
