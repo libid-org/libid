@@ -32,10 +32,10 @@ configuration, while the Host serves the same public resources to all of them.
 
 ### Build command
 
-`@libid/ceremony` owns one static-distribution command:
+`@libid/ceremony` owns one CCDP-artifact command:
 
 ```sh
-pnpm --filter @libid/ceremony build:static -- --out-dir <directory>
+pnpm --filter @libid/ceremony build:ccdp-artifacts -- --out-dir <directory>
 ```
 
 It emits hostable static responses for each supported CCDP version: Prefetch,
