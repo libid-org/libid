@@ -379,7 +379,7 @@ The worker calls `skipWaiting()` during install and `clients.claim()` during
 activation so later prover documents use the selected release rather than a
 stale controller. Immutable URLs keep already loaded documents pinned; a live
 ceremony may still fail closed across deployment rotation as defined by the
-[CCDP Host deployment contract](CCDP_HOST.md#protocol-resources).
+[CCDP Host deployment contract](CCDP_HOST.md#hosted-resources).
 
 The Prefetch bootstrap accepts only the closed, cleared profile selected by its
 fragment. It uses that platform/version leaf's pinned prefetch set, which adds
@@ -441,7 +441,7 @@ state is never a ceremony checkpoint.
 ## Execution isolation
 
 [CCDP](CCDP.md#documents-and-routes) owns the Prover's isolated execution
-context; the [CCDP Host contract](CCDP_HOST.md#response-profiles) owns its HTTP
+context; the [CCDP Host contract](CCDP_HOST.md#resource-profiles) owns its HTTP
 policy and same-origin resource graph. No request parameter selects a platform,
 role, asset, bridge, or CSP. The implementation exact-validates every
 OAuth-bridge endpoint derived from the proof request's frozen `redirectUri`

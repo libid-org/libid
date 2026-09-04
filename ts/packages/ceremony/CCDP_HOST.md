@@ -41,7 +41,7 @@ itself, but need not do so when it consumes a published distribution. It does
 not compile, template, import, or execute ceremony code while handling a
 request.
 
-## Protocol resources
+## Hosted resources
 
 The host implements the exact versioned paths defined by
 [CCDP](CCDP.md#documents-and-routes): Callback, Prefetch, Airlock, Prover, and
@@ -65,9 +65,9 @@ so a path may receive compatible implementation updates. A breaking protocol
 change publishes a new CCDP-version path. The host retains old resources for
 live ceremonies and the configured compatibility window.
 
-## Response profiles
+### Common response rules
 
-All resources send their exact media type and
+All protocol resources send their exact media type and
 `X-Content-Type-Options: nosniff`. Top-level documents additionally send
 `Referrer-Policy: no-referrer` and are not frameable. Document CSP begins with
 `default-src 'none'`, `object-src 'none'`, `base-uri 'none'`,
@@ -76,45 +76,20 @@ deployment-generated entry code, stylesheet, resources, and network origins
 required by that document; and uses neither broad schemes nor JavaScript
 `'unsafe-inline'` or `'unsafe-eval'`.
 
-### Callback module
+### Resource profiles
 
-Callback is an ES module loaded by an OAuth Bridge callback shell. It uses the
-`text/javascript; charset=utf-8` media type, noncredentialed
-`Access-Control-Allow-Origin: *`,
-and `Cross-Origin-Resource-Policy: cross-origin`. Its path fixes `CCDPVersion`;
-request data cannot select module bytes. The OAuth Bridge contract independently
-owns the callback document and its CSP.
+| Resource | Form | Additional response contract |
+|---|---|---|
+| Callback | ES module loaded by the OAuth Bridge shell | `text/javascript; charset=utf-8`, noncredentialed `Access-Control-Allow-Origin: *`, and `Cross-Origin-Resource-Policy: cross-origin`. The OAuth Bridge owns the containing document and its CSP. |
+| Prefetch | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only its same-origin Worker and selected proving resources. |
+| Airlock | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only the code and presentation needed to accept a connection and navigate to Prover. |
+| Prover | top-level isolated HTML | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. CSP admits only same-origin proving resources, toolchain-required `blob:` workers, and the closed external network origins needed by supported platform pipelines. It begins proving only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
+| Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8`. Its default scope covers the version-matched Prefetch, Airlock, and Prover paths, and its policy admits only the same-origin implementation and proving resources needed for popup continuity and asset caching. |
 
-### Prefetch and Airlock documents
-
-Both are top-level, non-isolated HTML documents with
-`Cross-Origin-Opener-Policy: unsafe-none` and no COEP. Prefetch admits only its
-same-origin Worker and selected proving resources. Airlock admits only the code
-and presentation needed to accept a connection and navigate to Prover.
-
-### Prover document
-
-Prover is a top-level HTML document with
-`Cross-Origin-Opener-Policy: same-origin` and
-`Cross-Origin-Embedder-Policy: require-corp`. Its CSP admits only same-origin
-proving resources, toolchain-required `blob:` workers, and the closed external
-network origins needed by supported platform pipelines. It begins proving only
-after confirming cross-origin isolation, shared memory, and worker support;
-there is no weaker fallback.
-
-One response may support multiple platform profiles and OAuth Bridges. CSP is
-therefore not browser-enforced compartmentalization between them: compromised
-Prover code can use every network class admitted by that response. Stronger
-confinement requires distinct responses.
-
-### Worker
-
-Worker is `text/javascript; charset=utf-8` module Service Worker JavaScript.
-Prefetch registers the
-version-matched `/ccdp/v{CCDPVersion}/worker.js`; its default scope covers the
-matching Prefetch, Airlock, and Prover paths. Its response policy admits only
-the same-origin implementation and proving resources needed for popup
-continuity and asset caching.
+One Prover response may support multiple platform profiles and OAuth Bridges.
+Its CSP is therefore not browser-enforced compartmentalization between them:
+compromised Prover code can use every network class admitted by that response.
+Stronger confinement requires distinct responses.
 
 ## Proving assets
 
