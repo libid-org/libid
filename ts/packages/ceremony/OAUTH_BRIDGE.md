@@ -53,7 +53,7 @@ One bridge deployment has these inputs:
 |---|---|
 | Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted to fetch configuration and authenticate the callback popup connection |
-| CCDP origin | One canonical HTTPS origin selected by the operator; defaults may point to the canonical libID CCDP Distribution |
+| CCDP origin | One canonical HTTPS origin selected by the operator; defaults to `https://lib.id` when omitted |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback shell | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required to load [Callback](CCDP.md#callback-get-callbackjs) from the configured CCDP origin |
@@ -67,7 +67,8 @@ inferred from a request's `Origin`, `Referer`, query, fragment, or body.
 The CCDP origin is likewise deployment data. It is returned to the
 application in public configuration and embedded into the callback document so
 Callback can navigate the popup to Airlock. It does not identify an
-artifact, circuit, or notary endpoint.
+artifact, circuit, or notary endpoint. Omitting it selects the canonical
+`https://lib.id` Distribution.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
@@ -200,7 +201,7 @@ is derived only after the version is found in that list. Version 1 is equivalent
 to:
 
 ```ts
-const ccdpOrigin = 'https://ccdp.lib.id'
+const ccdpOrigin = 'https://lib.id'
 const defaultInputs = deepFreeze([
   ['https://app.example'],
   ccdpOrigin,
