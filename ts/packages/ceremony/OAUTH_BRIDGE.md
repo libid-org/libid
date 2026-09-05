@@ -66,7 +66,7 @@ inferred from a request's `Origin`, `Referer`, query, fragment, or body.
 
 The CCDP origin is likewise deployment data. It is returned to the
 application in public configuration and embedded into the callback document so
-Callback can navigate the popup to Airlock. It does not identify an
+Callback can navigate the popup to Prover. It does not identify an
 artifact, circuit, or notary endpoint. Omitting it selects the canonical
 `https://lib.id` Distribution.
 

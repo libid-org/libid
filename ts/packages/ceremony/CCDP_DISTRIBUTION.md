@@ -41,7 +41,7 @@ The Distribution exposes the exact versioned
 [resources](CCDP.md#documents-and-routes) defined by CCDP. Their fragments,
 roles, and execution contexts remain CCDP rules.
 
-Prefetch, Airlock, and Prover contain their clearing bootstrap and entry code
+Prefetch and Prover contain their clearing bootstrap and entry code
 directly, with no browser-visible manifest or second entry-script request. They
 may load implementation-private immutable chunks and expose only an empty mount
 point to package-owned presentation. Callback remains a separate ES module
@@ -77,8 +77,8 @@ by that document; and uses neither JavaScript `'unsafe-inline'` nor
 |---|---|---|
 | Callback | ES module loaded by the OAuth Bridge shell | `text/javascript; charset=utf-8`, noncredentialed `Access-Control-Allow-Origin: *`, and `Cross-Origin-Resource-Policy: cross-origin`. The OAuth Bridge owns the containing document and its CSP. |
 | Prefetch | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only its same-origin Worker and proving resources. |
-| Airlock | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only the code and presentation needed to accept a connection and navigate to Prover. |
-| Prover | top-level isolated HTML | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Script, worker, and asset sources remain closed to the build-generated same-origin graph and toolchain-required `blob:` workers. `connect-src https:` permits a shared Prover to call any validated third-party OAuth Bridge; the build additionally pins the Notary Service's exact WebSocket origin. Proving begins only after confirming cross-origin isolation, shared memory, and worker support; there is no weaker fallback. |
+| Prover | top-level HTML | `Document-Isolation-Policy: isolate-and-require-corp`, `Cross-Origin-Opener-Policy: unsafe-none`, and no COEP. |
+| Prover isolation fallback | top-level HTML at `/ccdp/v{CCDPVersion}/prover/fallback` | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Same Prover entrypoint, fragment contract, and non-isolation response rules. |
 | Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8` and `Service-Worker-Allowed: /`. Prefetch registers it with `scope: '/'`; it remains compatible with every live CCDP version, passes requests outside its pinned resource graph through unchanged, and admits only the same-origin implementation and proving resources needed for popup continuity and asset caching. |
 
 For any resource whose generated Brotli representation is smaller, the
@@ -88,13 +88,63 @@ response profile, adds `Content-Encoding: br`, and includes
 `Vary: Accept-Encoding`. Decoding it produces the exact original bytes. No
 runtime compression or other negotiated representation exists.
 
-One request-invariant Prover response supports multiple platform profiles and
+Both Prover responses close script, worker, and asset sources to the
+build-generated same-origin graph and toolchain-required `blob:` workers.
+Their `connect-src https:` permits any validated third-party OAuth Bridge; the
+build additionally pins the Notary Service's exact WebSocket origin.
+
+Each request-invariant Prover response supports multiple platform profiles and
 arbitrary canonical HTTPS OAuth Bridges. CSP cannot express a runtime-selected
 exact Bridge origin, so its HTTPS connection class is not per-Bridge
 compartmentalization. Prover derives GitHub's fixed token route only from the
 validated `redirectUri` frozen by the Application; no message supplies another
 Bridge endpoint. Compromised Prover code can use every network class admitted
 by the response.
+
+### Prover isolation
+
+CCDP has one logical [Prover](CCDP.md#prover-get-prover), reached by ordinary
+`connection.navigate(proverUrl)`. The Distribution supplies two static responses
+for that participant, not another protocol step or application-level choice.
+
+The primary response requests
+[Document-Isolation-Policy](https://wicg.github.io/document-isolation-policy/)
+without severing the opener. Its entrypoint calls `PopupConnection.accept`
+with `isolationFallbackUrl` set to the same-origin
+`/ccdp/v{CCDPVersion}/prover/fallback`. The fallback embeds that same entrypoint
+and supplies the same option. The popup package establishes the carrier,
+checks isolation before exposing connection readiness or dispatching
+application messages, and performs any necessary same-origin replacement.
+If the fallback is still unisolated, acceptance fails rather than navigating
+again. Ceremony code neither detects browsers nor implements the transition.
+
+Both responses use the Prover fragment grammar. Their clearing bootstrap
+captures and validates `ceremonyId` before clearing the URL, and constructs the
+fallback URL with that captured fragment explicitly; it cannot rely on
+fragment inheritance from an already-cleared URL. Neither response receives
+OAuth return or proof input through its URL.
+
+Both paths resolve the root-scope Worker registration installed by Prefetch.
+This lets the popup package preserve a MessagePort internally while the same
+Worker's asset flights and caches remain available to the final Prover.
+Before connection readiness the entrypoint performs no proving or CCDP
+delivery. It registers its handlers and awaits readiness before emitting
+`ProverReady`. Isolation, shared memory, and worker support are required;
+there is no single-threaded or unisolated proving mode.
+
+Successful DIP isolation avoids an extra navigation. Otherwise the package
+uses the COOP/COEP response without another user action, second window, or
+concurrent Prover. Neither path repairs an opener already severed by an OAuth
+Platform; that remains the popup connection's independent fallback-carrier
+case.
+
+DIP adoption can eventually remove the replacement: track the
+[Chromium documentation](https://developer.chrome.com/blog/document-isolation-policy),
+[Mozilla position](https://github.com/mozilla/standards-positions/issues/1074),
+[Firefox implementation](https://bugzilla.mozilla.org/show_bug.cgi?id=2063367),
+and [WebKit position](https://github.com/WebKit/standards-positions/issues/399).
+Embedded proving is a separate possible evolution, not part of this top-level
+Prover contract.
 
 ### Proving assets
 
@@ -162,15 +212,15 @@ const resources = {
     entry: prefetchEntry,
     profile: 'prefetch',
   },
-  airlock: {
-    route: `/ccdp/v${version}/airlock`,
-    entry: airlockEntry,
-    profile: 'airlock',
-  },
   prover: {
     route: `/ccdp/v${version}/prover`,
     entry: proverEntry,
     profile: 'prover',
+  },
+  proverFallback: {
+    route: `/ccdp/v${version}/prover/fallback`,
+    entry: proverEntry,
+    profile: 'proverFallback',
   },
   worker: {
     route: `/ccdp/v${version}/worker.js`,
@@ -195,8 +245,8 @@ One response-profile table is the executable source for the policies under
 const responseProfiles = {
   callback: callbackResponseProfile,
   prefetch: prefetchResponseProfile,
-  airlock: airlockResponseProfile,
   prover: proverResponseProfile,
+  proverFallback: proverFallbackResponseProfile,
   worker: workerResponseProfile,
   asset: immutableAssetResponseProfile,
 } as const
@@ -250,8 +300,8 @@ emits:
 ├── public/
 │   ├── ccdp/v{CCDPVersion}/callback.js
 │   ├── ccdp/v{CCDPVersion}/prefetch
-│   ├── ccdp/v{CCDPVersion}/airlock
-│   ├── ccdp/v{CCDPVersion}/prover
+│   ├── ccdp/v{CCDPVersion}/prover/index.html
+│   ├── ccdp/v{CCDPVersion}/prover/fallback
 │   ├── ccdp/v{CCDPVersion}/worker.js
 │   ├── ccdp/assets/...
 │   └── 404.html
@@ -278,9 +328,13 @@ health = false
 text-charset = ""
 ```
 
-No SPA fallback is configured. Only exact files implement protocol routes. SWS
-uses generated Brotli sidecars for `Accept-Encoding` negotiation and never
-compresses a response at request time.
+No SPA fallback is configured. The `/prover` route resolves its generated
+directory-index body without a trailing-slash redirect, allowing
+`/prover/fallback` to coexist as a separate file. Headers match the public
+request paths, not the physical index filename; the Prover bootstrap rejects
+undeclared entry paths such as `/prover/index.html`. Other protocol routes map
+directly to exact files. SWS uses generated Brotli sidecars for
+`Accept-Encoding` negotiation and never compresses a response at request time.
 
 The generator emits one non-overlapping `advanced.headers` rule for every
 versioned protocol resource and one recursive rule for the `/ccdp/assets/`

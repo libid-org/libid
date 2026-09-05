@@ -57,7 +57,7 @@ origin shares one browser authority and must therefore be mutually trusted.
 
 ## Documents and Routes
 
-**Resources** collectively means Prefetch, Callback, Airlock, Prover, and
+**Resources** collectively means Prefetch, Callback, Prover, and
 Worker. Authorization is an external document, not a CCDP resource.
 
 ### Prefetch `GET /prefetch`
@@ -82,34 +82,16 @@ Worker. Authorization is an external document, not a CCDP resource.
 | Property | Contract |
 |---|---|
 | Location and context | CCDP origin; versioned, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
-| Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
+| Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
-
-### Airlock `GET /airlock`
-
-| Property | Contract |
-|---|---|
-| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
-| Location and context | CCDP origin; versioned, top-level, and non-isolated ceremony-popup document |
-| Role | Accepts a fresh carrier for the same logical Application connection after Callback, then initiates same-origin connected navigation to Prover. It exists solely to establish the carrier on the CCDP origin before Prover isolation and receives no OAuth return, proof request, or platform configuration. |
-| Presentation and cleanup | Renders a fixed transition or failure view with an inline libID logo and accepts no Application markup or renderer. It retains no ceremony data and releases listeners and connection references when replaced or terminal. |
-
-Airlock is a browser-compatibility shim, not a ceremony or proving stage. A
-cross-origin Callback cannot transfer its MessagePort to the CCDP origin, while
-loading the COOP-isolated Prover directly may sever its opener before it can
-establish a replacement. Airlock first establishes the carrier in a
-non-isolated CCDP-origin document, allowing the Worker to preserve it across
-the following same-origin navigation into Prover isolation. A future CCDP
-version may remove Airlock once interoperable DIP support permits an isolated
-Prover iframe without that top-level navigation.
 
 ### Prover `GET /prover`
 
 | Property | Contract |
 |---|---|
 | Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
-| Location and context | CCDP origin; versioned, top-level, cross-origin-isolated ceremony-popup document |
-| Role | Claims the carrier preserved by Airlock during [Callback through Airlock to Prover](#3-callback-through-airlock-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
+| Location and context | CCDP origin; versioned, top-level ceremony-popup participant; cross-origin isolated before protocol readiness |
+| Role | Accepts the logical Application connection during [Callback to Prover](#3-callback-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
 | Presentation and cleanup | Renders a persistent inline libID logo and one accessible milestone progress bar. It begins at **Preparing proof**, advances only from valid platform events, and reaches 100% only on proof delivery. After `SLOW_PROVING_HINT_MS = 15_000`, it adds a nonblocking **Still proving** notice which may suggest enabling JavaScript JIT in Vanadium site controls. It accepts no Application markup or renderer, presents no ETA, and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
 
 ### Worker `GET /worker.js`
@@ -132,7 +114,7 @@ Before launch, the Application freezes the CCDP origin, redirect URI, platform
 authorization URL, ceremony ID, platform ID, and platform ceremony version.
 This document defines `CCDPVersion = 1`. The Application selects it in the
 Prefetch path, carries the same version through OAuth `state`, and uses the
-matching Airlock and Prover paths. Callback selects its implementation from that
+matching Prover path. Callback selects its implementation from that
 state; fragments and messages do not repeat the version.
 
 Compatible implementation changes keep the version. A breaking fragment
@@ -147,7 +129,7 @@ origin; the top-level [resources](#documents-and-routes) execute their
 implementations directly. Internal bundle names are not protocol surface. All
 [resources](#documents-and-routes) share the CCDP origin.
 
-The Prefetch, Airlock, and Prover paths select both CCDP version and document
+The Prefetch and Prover paths select both CCDP version and document
 role.
 
 Platform Ceremony Version independently versions one platform's authorization,
@@ -158,7 +140,7 @@ Bridge API are independently versioned as well.
 
 The **ceremony popup** is a reusable browsing context, not an actor or
 document. It sequentially contains Prefetch → Authorization → Callback →
-Airlock → Prover. Navigation creates a new JavaScript heap each time; no
+Prover. Navigation creates a new JavaScript heap each time; no
 participant relies on document-local state surviving it. These origins may all
 be cross-site, and same-site placement grants no protocol authority.
 
@@ -167,7 +149,7 @@ each named field exactly once in the displayed order. Receivers require the
 exact field set, reject duplicates, and otherwise do not depend on parameter
 order.
 
-The Prefetch, Airlock, and Prover routes have no query. Their fragments never
+The Prefetch and Prover routes have no query. Their fragments never
 reach the CCDP origin and are copied and cleared before rendering, storage, or
 network use. No OAuth return, credential, proof input, or proof is placed in an
 internal fragment. The OAuth-platform-mandated query on `redirectUri` is the
@@ -181,7 +163,7 @@ direction and state before acting.
 #### Origin policy
 
 Because one CCDP Distribution serves Applications admitted by any number of
-independent OAuth Bridges, Prefetch, Airlock, and Prover use
+independent OAuth Bridges, Prefetch and Prover use
 `allowedApplicationOrigins: '*'`. They accept any valid browser-observed HTTPS
 Application origin and pin that exact origin and source for each carrier, while
 the Application exact-authenticates the configured CCDP origin. Open admission
@@ -202,12 +184,12 @@ The following table is the complete CCDP version-1 message set.
 |---|---|---|---|
 | [`PrefetchStarted`](#prefetchstarted) | Prefetch → Application | connection acceptance and selected-profile dispatch | exactly once; permits navigation to Authorization |
 | [`CallbackDeliverParams`](#callbackdeliverparams) | Callback → Application | OAuth return and connection acceptance | exactly once; starts Application validation |
-| [`ProverReady`](#proverready) | Prover → Application | Prover connection acceptance | exactly once; permits `AppRequestProof` |
+| [`ProverReady`](#proverready) | Prover → Application | Prover connection acceptance and cross-origin isolation | exactly once; permits `AppRequestProof` |
 | [`AppRequestProof`](#apprequestproof) | Application → Prover | validated OAuth acceptance and `ProverReady` | exactly once; starts proof execution |
 | [`ProverNotifyEvent`](#provernotifyevent) | Prover → Application | `AppRequestProof` | zero or more; advisory only |
 | [`ProverDeliverProof`](#proverdeliverproof) | Prover → Application | `AppRequestProof` | at most once; ends the Prover run |
-| [`AppCancelCeremony`](#appcancelceremony) | Application → Callback, Airlock, or Prover | active participating connection | at most once; requests downstream cleanup and ends the run |
-| [`AbortCeremony`](#abortceremony) | Callback, Airlock, or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
+| [`AppCancelCeremony`](#appcancelceremony) | Application → Callback or Prover | active participating connection | at most once; requests downstream cleanup and ends the run |
+| [`AbortCeremony`](#abortceremony) | Callback or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
 
 Every recipient requires a plain record with the exact fields, types, and bounds
 defined below. Unknown fields, coercion, normalization, defaults, and
@@ -258,9 +240,10 @@ interface ProverReady {
 }
 ```
 
-`ProverReady` states only that Prover accepted the Application connection and
-installed its CCDP handlers. It carries no correlation or profile field and
-does not imply that proving started. The Application sends no proof input until
+`ProverReady` states only that Prover accepted the Application connection,
+established cross-origin isolation, and installed its CCDP handlers. It carries
+no correlation or profile field and does not imply that proving started.
+The Application sends no proof input until
 it has both validated the OAuth return and accepted this message.
 
 ### AppRequestProof
@@ -343,7 +326,7 @@ interface AppCancelCeremony {
 `AppCancelCeremony` is the parameterless command for explicit user
 cancellation, valid OAuth-platform denial, invalid callback classification, or
 retired Application authority. Reachable work clears queued input; no
-acknowledgement or platform-specific cancel path exists. Callback, Airlock, and
+acknowledgement or platform-specific cancel path exists. Callback and
 Prover do not close or navigate the popup in response.
 
 ### AbortCeremony
@@ -356,7 +339,7 @@ interface AbortCeremony {
 ```
 
 `AbortCeremony` reports an observable technical failure after connection
-acceptance from whichever of Callback, Airlock, or Prover is active. `reason` is
+acceptance from whichever of Callback or Prover is active. `reason` is
 a bounded sanitized diagnostic string, not a stable code or raw exception.
 Exact reason enums may emerge from implementation experience. The Application
 rejects the live ceremony. Failure before connection acceptance has no CCDP
@@ -367,7 +350,7 @@ path and remains local.
 The protocol advances one named ceremony popup through
 [Prefetch](#prefetch-get-prefetch),
 [Authorization](#authorization-get-platformauthorizationurl),
-[Callback](#callback-get-callbackjs), [Airlock](#airlock-get-airlock), and
+[Callback](#callback-get-callbackjs), and
 [Prover](#prover-get-prover). Those route sections own each participant's
 inputs, context, and role; [Messages](#messages) owns the records crossing the
 popup connection. The phases below own their sequencing, entry conditions, and
@@ -434,35 +417,28 @@ ingress.
 Callback accepts the Application connection and sends
 [`CallbackDeliverParams`](#callbackdeliverparams). No return reaches the
 Application before authentication. Sending the message ends this phase and
-lets Callback begin the Airlock transition; its receipt begins Application
+lets Callback begin the Prover transition; its receipt begins Application
 validation.
 
-#### 3. Callback through Airlock to Prover
+#### 3. Callback to Prover
 
 After delivery, the popup-side [Callback](#callback-get-callbackjs) endpoint
-asks its connection to navigate to [Airlock](#airlock-get-airlock). Callback owns
+asks its connection to navigate to [Prover](#prover-get-prover). Callback owns
 this transition because the OAuth Platform may have severed the Application's
-direct popup handle. The cross-origin Callback carrier is retired rather than
-transferred to the CCDP origin.
+direct popup handle.
 
-Airlock accepts a fresh carrier for the same logical Application connection,
-then asks that connection to navigate to the same-origin
-[Prover](#prover-get-prover). The popup connection keeps a transferable carrier
-in the version-matched [Worker](#worker-get-workerjs) before replacement, and
-the isolated Prover claims it as its first step. Airlock and Prover therefore
-must be controlled by the same Worker registration and scope. Carrier choice,
-continuity records, and fallback signaling remain popup-connection internals;
-CCDP always follows the same document sequence.
-
-After installing its CCDP handlers, Prover sends
-[`ProverReady`](#proverready). No callback value enters the Airlock or Prover URL,
-Worker state, or fallback-signaling record.
+Prover accepts the same logical Application connection. It sends
+[`ProverReady`](#proverready) only after cross-origin isolation is established
+and its CCDP handlers are installed. Connection establishment and any internal
+isolation transition are below CCDP: neither introduces another participant,
+message, or phase. No callback value enters the Prover URL, Worker state, or
+fallback-signaling record.
 
 The Application validates the delivered return under the selected
 platform/version. A malformed result rejects the ceremony and sends
 [`AppCancelCeremony`](#appcancelceremony). A valid denial resolves
 `{ status: 'denied' }` and sends the same cancellation. These checks may overlap
-the Airlock-to-Prover transition. A valid acceptance waits for `ProverReady`,
+Prover activation. A valid acceptance waits for `ProverReady`,
 then sends one [`AppRequestProof`](#apprequestproof). Acceptance of that request
 enters Prover execution; cancellation ends the protocol instead.
 
@@ -479,8 +455,8 @@ delivery, abort, or cancellation—ends the phase; later messages have no effect
 
 ### Terminal outcomes
 
-Terminal processing begins when the Application cancels an active Callback,
-Airlock, or Prover; an active document reports an abort; or Prover delivers a
+Terminal processing begins when the Application cancels an active Callback
+or Prover; an active document reports an abort; or Prover delivers a
 proof. These outcomes are mutually terminal even when they race in transit.
 Cancellation has no acknowledgement. An observable abort rejects the live
 ceremony; a failure before connection acceptance is rendered locally. CCDP
@@ -515,14 +491,12 @@ sequenceDiagram
     end
     P-->>A: CallbackDeliverParams
 
-    Note over A,P: Phase 3 - Callback through Airlock to Prover
+    Note over A,P: Phase 3 - Callback to Prover
     par Application validates the accepted OAuth return
         A->>A: Validate return
     and Popup activates Prover
-        P->>P: Callback navigates to Airlock
-        P->>P: Airlock accepts fresh carrier
-        P->>P: Airlock preserves carrier and navigates to Prover
-        P->>P: Prover claims carrier and accepts connection
+        P->>P: Callback navigates to Prover
+        P->>P: Prover accepts connection with isolation established
         P-->>A: ProverReady
     end
     break Prover activation fails
