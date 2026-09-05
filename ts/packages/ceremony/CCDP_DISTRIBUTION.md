@@ -126,7 +126,7 @@ package's fragment-capture API, so URL clearing cannot erase fallback input.
 `isolationFallbackUrl` contains no fragment; automatic replacement preserves
 the snapshot without an override. The final response captures and clears it
 again. Neither response parses platform-specific return fields before
-`AppRequestProof`, sends the captured return to Application, or puts it into
+`AppStartProver`, sends the captured return to Application, or puts it into
 Worker state, signaling, logs, or telemetry.
 
 Both paths resolve the root-scope Worker registration installed by Prefetch.

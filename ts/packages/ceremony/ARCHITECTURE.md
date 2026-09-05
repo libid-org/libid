@@ -65,7 +65,7 @@ sequenceDiagram
     P->>P: Authenticate Application
     P->>R: Navigate with private OAuth-return fragment
     R-->>C: Report Prover ready
-    C->>R: Request validation and proof
+    C->>R: AppStartProver
     R->>R: Validate retained OAuth return
     alt User denied
         R-->>C: CancelCeremony
@@ -437,7 +437,7 @@ function activate(event: MouseEvent) {
 Callback authenticates the Application, then navigates directly to Prover
 with the captured OAuth query/fragment in a private structured fragment.
 `proveUserIdentity()` receives no OAuth return. It accepts one fieldless
-`ProverReady` and sends one `AppRequestProof` containing the frozen platform,
+`ProverReady` and sends one `AppStartProver` containing the frozen platform,
 version, client ID, redirect URI, and nullable code verifier.
 
 The selected Prover leaf validates the retained return against that request,
@@ -643,7 +643,7 @@ noncanonical encodings fail before use.
 
 [PROVING.md](PROVING.md) defines pipelines, asset use, workers, caching, and
 proof delivery; [CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md) defines asset deployment. After
-`ProverReady`, the client sends one `AppRequestProof`, validates the returned
+`ProverReady`, the client sends one `AppStartProver`, validates the returned
 platform proof, and assembles `OAuthProof` and `Identity`.
 
 ## Progress, cancellation, and recovery
@@ -669,7 +669,7 @@ interface CeremonyEvent {
 
 The application-side `Ceremony` client owns the common stage. It enters
 `authorization` when `proveUserIdentity()` starts and `proof-generation`
-immediately before it sends `AppRequestProof` after `ProverReady`.
+immediately before it sends `AppStartProver` after `ProverReady`.
 The latter includes Prover-side OAuth validation, platform steps, proof
 delivery, and immediate `Identity` construction. There is no separate
 `oauth-validation` stage: the client does not observe that internal boundary.

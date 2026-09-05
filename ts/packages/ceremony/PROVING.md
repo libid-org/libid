@@ -19,7 +19,7 @@ Normative proof relations and authorization semantics remain in the
 
 ## Execution boundary
 
-After CCDP accepts one `AppRequestProof`, the selected platform/version prover
+After CCDP accepts one `AppStartProver`, the selected platform/version prover
 leaf parses the retained OAuth query/fragment from the private navigation
 handoff. It enforces that profile's exact return transport and field grammar,
 client checks, and state matching against the authenticated ceremony ID and
@@ -161,7 +161,7 @@ notarization module pins both immutable asset paths. Each remains a normal,
 independently cached response; the browser never downloads or unpacks a release
 archive. The [CCDP Distribution contract](CCDP_DISTRIBUTION.md#proving-assets) owns their
 serving.
-Neither an application nor `AppRequestProof` selects a notary, circuit, or
+Neither an application nor `AppStartProver` selects a notary, circuit, or
 bb.js version.
 
 ### Google
@@ -239,7 +239,7 @@ exists.
 ## Platform progress
 
 Each profile owns a closed catalog of advisory diagnostic spans after
-`AppRequestProof`. The Ceremony Client owns the common `proof-generation`
+`AppStartProver`. The Ceremony Client owns the common `proof-generation`
 stage; platform-version prover leaves emit only their version-owned spans. Each
 catalog entry also owns one bounded user-facing label. Labels describe current
 work, such as **Loading proving assets**, **Connecting to notary**, **Preparing
@@ -425,7 +425,7 @@ waiting for download completion, the Prefetch emits CCDP's `PrefetchStarted`.
 Registration or activation failure is terminal under the package's fixed
 prefetch/cache contract; artifact fetch failure records no weaker mode and
 leaves proving on the identical cold path. The active prover resolves
-the same profile using the exact `AppRequestProof` platform/version. Ordinary asset
+the same profile using the exact `AppStartProver` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
 asks the service worker to finish or restart the fixed CRS single flights;
 `Barretenberg.new({ srsSize: SRS_SIZE })` then reads the resulting bb.js
@@ -454,7 +454,7 @@ state is never a ceremony checkpoint.
 [CCDP](CCDP.md#documents-and-routes) owns the Prover's isolated execution
 context; the [CCDP Distribution contract](CCDP_DISTRIBUTION.md#protocol-resources) owns its HTTP
 policy and same-origin resource graph. No request parameter selects a document
-role, asset, or CSP. `AppRequestProof` carries the Application's frozen
+role, asset, or CSP. `AppStartProver` carries the Application's frozen
 `redirectUri`; its origin selects the OAuth Bridge for GitHub's fixed token
 route. The implementation exact-validates that canonical HTTPS origin and
 derived route before use. The response does not embed or enumerate Bridge

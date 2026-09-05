@@ -315,7 +315,7 @@ template or theme contract.
 When GitHub is enabled, `POST /api/v1/ceremony/github-token` performs the
 confidential OAuth token exchange and token TLSNotary session synchronously. It
 retains no state. The prover derives this fixed route from the origin of the
-Ceremony Client's frozen `redirectUri` in `AppRequestProof`; the prover document
+Ceremony Client's frozen `redirectUri` in `AppStartProver`; the prover document
 does not embed it.
 
 The bridge API version implements GitHub ceremony version `1` only. The request

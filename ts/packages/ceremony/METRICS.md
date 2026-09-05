@@ -127,7 +127,7 @@ machine codes should remain closed package constants.
 | user-perceived attempt | application activation to accepted, denied, canceled, or failed result |
 | OAuth authorization interval | OAuth-platform navigation to cleared callback bootstrap; includes platform and human time |
 | post-OAuth machinery | cleared callback bootstrap to accepted proof result or terminal failure |
-| proof request | `AppRequestProof` to locally validated proof delivery |
+| prover run | `AppStartProver` to locally validated proof delivery |
 | result assembly | proof receipt, exact shape validation, preview derivation, and public result resolution |
 | configuration | config fetch, decode, validation, selected platform/version, and failure code |
 | ceremony construction | input validation, authorization digest/PKCE work, and frozen configuration |
@@ -184,7 +184,7 @@ platform step, and the proof-engine phases from worker bootstrap through
 backend destruction.
 
 OAuth-return validation is measured locally by Prover from receipt of
-`AppRequestProof` through accepted return, denial, or malformed-return failure.
+`AppStartProver` through accepted return, denial, or malformed-return failure.
 It is not a client-side parsing span or a new CCDP lifecycle message.
 
 The prover also reports these bounded facts:

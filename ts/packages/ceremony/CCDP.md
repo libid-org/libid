@@ -196,11 +196,11 @@ The following table is the complete CCDP version-1 message set.
 | Message | Direction | Accepted after | Cardinality and effect |
 |---|---|---|---|
 | [`PrefetchStarted`](#prefetchstarted) | Prefetch → Application | connection acceptance and selected-profile dispatch | exactly once; permits navigation to Authorization |
-| [`ProverReady`](#proverready) | Prover → Application | Prover connection acceptance and cross-origin isolation | exactly once; permits `AppRequestProof` |
-| [`AppRequestProof`](#apprequestproof) | Application → Prover | `ProverReady` | exactly once; selects the profile for OAuth validation and proof execution |
-| [`ProverNotifyEvent`](#provernotifyevent) | Prover → Application | `AppRequestProof` | zero or more; advisory only |
-| [`ProverDeliverProof`](#proverdeliverproof) | Prover → Application | `AppRequestProof` | at most once; ends the Prover run |
-| [`CancelCeremony`](#cancelceremony) | Application → Callback or Prover; Prover → Application | active connection for Application cancellation; `AppRequestProof` and valid OAuth denial for Prover cancellation | at most once; ends the run without a technical error |
+| [`ProverReady`](#proverready) | Prover → Application | Prover connection acceptance and cross-origin isolation | exactly once; permits `AppStartProver` |
+| [`AppStartProver`](#appstartprover) | Application → Prover | `ProverReady` | exactly once; selects the profile for OAuth validation and proof execution |
+| [`ProverNotifyEvent`](#provernotifyevent) | Prover → Application | `AppStartProver` and valid OAuth acceptance | zero or more; advisory only |
+| [`ProverDeliverProof`](#proverdeliverproof) | Prover → Application | `AppStartProver` and valid OAuth acceptance | at most once; ends the Prover run |
+| [`CancelCeremony`](#cancelceremony) | Application → Callback or Prover; Prover → Application | active connection for Application cancellation; `AppStartProver` and valid OAuth denial for Prover cancellation | at most once; ends the run without a technical error |
 | [`AbortCeremony`](#abortceremony) | Callback or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
 
 Every recipient requires a plain record with the exact fields, types, and bounds
@@ -233,14 +233,14 @@ interface ProverReady {
 `ProverReady` states only that Prover accepted the Application connection,
 established cross-origin isolation, and installed its CCDP handlers. It carries
 no correlation or profile field and does not imply that proving started.
-The Application sends `AppRequestProof` only after accepting this message.
+The Application sends `AppStartProver` only after accepting this message.
 Readiness does not classify the retained OAuth return as approval or denial.
 
-### AppRequestProof
+### AppStartProver
 
 ```ts
-interface AppRequestProof {
-  type: 'app-request-proof'
+interface AppStartProver {
+  type: 'app-start-prover'
   platformId: string
   platformCeremonyVersion: number
   clientId: string
@@ -253,7 +253,9 @@ interface AppRequestProof {
 selected at launch and must match the active Prover. The message is valid only
 after `ProverReady`. The remaining fields are the frozen client identifier and
 redirect and derived code verifier. The OAuth return is already retained by
-Prover and is not repeated in the message.
+Prover and is not repeated in the message. Starting Prover initiates OAuth
+validation; it does not assert acceptance or mean that proof generation has
+already begun.
 
 The Application origin is trusted for this transient input because it already
 supplies the operation being authorized. It retains the authorization nonce;
@@ -321,7 +323,7 @@ interface CancelCeremony {
 - Application → Callback or Prover stops reachable work after explicit
   cancellation or retirement of Application authority.
 - Prover → Application reports only a valid, ceremony-bound OAuth-platform
-  denial discovered while validating `AppRequestProof`. The Application
+  denial discovered while validating `AppStartProver`. The Application
   resolves `{ status: 'denied' }`. Prover sends it before token exchange,
   proof execution, or platform progress, never as a substitute for a failure.
 
@@ -441,19 +443,19 @@ neither introduces another participant, message, or phase. The captured
 parameters survive that transition without passing through Application.
 
 Application accepts one `ProverReady` and sends one
-[`AppRequestProof`](#apprequestproof) using its frozen configuration and code
-verifier. It does not receive or parse the OAuth return. Acceptance of the
-request enters Prover execution; an Application cancellation ends the run.
+[`AppStartProver`](#appstartprover) using its frozen configuration and code
+verifier. It does not receive or parse the OAuth return. On receiving
+`AppStartProver`, the selected platform/version validates the retained return
+before credential use. A valid denial sends
+[`CancelCeremony`](#cancelceremony); malformed or mismatched input sends
+[`AbortCeremony`](#abortceremony). Both end the run in this phase, as does
+Application cancellation. Only valid OAuth acceptance enters Phase 4.
 
 #### 4. Prover execution
 
-This phase begins only when [Prover](#prover-get-prover) accepts
-[`AppRequestProof`](#apprequestproof). The selected platform/version validates
-the retained OAuth return before credential use. A valid denial sends
-[`CancelCeremony`](#cancelceremony); malformed or mismatched input sends
-[`AbortCeremony`](#abortceremony). Only an accepted return begins proof work.
-
-Prover then sends zero or more
+This phase begins only after [Prover](#prover-get-prover) has validated and
+accepted the OAuth return in Phase 3. It performs the selected profile's token
+exchange, notarization, and proof-generation steps as applicable. It sends zero or more
 [`ProverNotifyEvent`](#provernotifyevent) messages followed by one
 [`ProverDeliverProof`](#proverdeliverproof), unless it sends
 [`AbortCeremony`](#abortceremony) or receives
@@ -507,9 +509,8 @@ sequenceDiagram
     break Application cancels
         A-->>P: CancelCeremony
     end
-    A-->>P: AppRequestProof
+    A-->>P: AppStartProver
 
-    Note over A,P: Phase 4 - Prover execution
     P->>P: Validate retained OAuth return
     break Valid OAuth denial
         P-->>A: CancelCeremony
@@ -517,6 +518,7 @@ sequenceDiagram
     break Invalid OAuth return
         P-->>A: AbortCeremony
     end
+    Note over A,P: Phase 4 - Prover execution after OAuth acceptance
     loop Zero or more progress events
         P-->>A: ProverNotifyEvent
     end
