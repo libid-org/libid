@@ -385,6 +385,19 @@ unmodified implementation and user agent (ASM-POPUP-01).
   from a Non-participating one before it loads: a same-origin document that
   arrives within the bound MAY find the preserved Carrier whatever showed in
   between. A Carried Protocol that requires retirement uses navigation away.
+- REQ-POPUP-CONT-07:
+  A Popup Endpoint MAY require cross-origin isolation of its document by
+  naming a same-origin isolated replacement. After selecting its Carrier
+  and before delivering anything or becoming ready, an endpoint whose
+  document is not isolated MUST preserve that Carrier through Continuity
+  and replace its document with the named replacement, which restores the
+  Carrier and becomes ready; the departing endpoint never delivers and
+  settles closed. A replacement that is itself not isolated MUST fail
+  rather than navigate again. The Carried Protocol observes one connection
+  and one accepting document; which engines isolate the first document
+  directly and which reach isolation through the replacement is invisible
+  to it. Only a preservable Carrier supports this; another Carrier fails
+  closed.
 
 ## 11. Failure semantics
 
@@ -462,6 +475,12 @@ this specification.
   attempting Continuity; a cross-site destination under Isolation without a
   Fallback Carrier fails closed; a replacement whose Continuity cannot be
   prepared rejects before navigating.
+- TEST-POPUP-11 (exercises REQ-POPUP-CONT-07):
+  An isolation-requiring document that the engine isolates directly
+  installs without navigating; one it does not isolate preserves its
+  Carrier before readiness or delivery and reaches isolation through the
+  named replacement, which delivers every value sent meanwhile exactly
+  once; a replacement that stays non-isolated fails without looping.
 
 ## 13. Security considerations
 
@@ -484,6 +503,10 @@ this specification.
   bounded time. Any same-origin document that knows the Connection ID could
   claim it within that bound; same-origin documents are already inside the
   trust boundary of the Participating Document.
+- Isolation through a replacement depends on the host serving the isolated
+  replacement on the same origin and registering the continuity worker
+  early in the document that requires isolation; without either, the
+  endpoint fails closed rather than running unisolated.
 - Nothing in this transport authenticates the user, the Carried Protocol, or
   the outcome of anything the Popup did; it authenticates only which
   documents are talking.
@@ -504,7 +527,7 @@ from; those documents keep the mechanics.
 | REQ-POPUP-LIFE-01, LIFE-02 | connection.md, Selection |
 | REQ-POPUP-CONTROL-01 to CONTROL-07 | control.md, Records; Execution; Security boundary |
 | REQ-POPUP-LIFE-03 to LIFE-06 | connection.md, navigate rules; Continuity across navigations |
-| REQ-POPUP-CONT-01 to CONT-06 | connection.md, Continuity across navigations; message-port.md, Continuity across navigations |
+| REQ-POPUP-CONT-01 to CONT-07 | connection.md, Continuity across navigations; message-port.md, Continuity across navigations |
 | REQ-POPUP-FAIL-01 to FAIL-03 | connection.md, Failure and security rules; METRICS.md, Privacy and failure handling |
 
 ## 15. References
