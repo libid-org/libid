@@ -20,7 +20,15 @@ Normative proof relations and authorization semantics remain in the
 ## Execution boundary
 
 After CCDP accepts one `AppRequestProof`, the selected platform/version prover
-leaf exact-validates its input, joins the selected asset fetches, constructs its
+leaf parses the retained OAuth query/fragment from the private navigation
+handoff. It enforces that profile's exact return transport and field grammar,
+client checks, and state matching against the authenticated ceremony ID and
+CCDP version before any token exchange or proof work. A valid denial produces
+cancellation; a malformed or mismatched return produces technical failure.
+The Prover entrypoint maps those outcomes to `CancelCeremony` or
+`AbortCeremony` without adding message logic to the platform leaf.
+
+For accepted OAuth, the leaf joins the selected asset fetches, constructs its
 witness, generates its proof, and returns bounded platform steps followed by
 one platform proof or a sanitized technical failure. Platform and proving logic
 see no popup connection, navigation, carrier, or continuity mechanism.
@@ -40,7 +48,7 @@ The prover does not assemble or verify `OAuthProof`, construct `Identity`, call
 a Ledger Verifier, or persist credential-bearing state. The Ceremony Client combines
 the selected delivery variant with its retained ceremony fields and derives the
 locally checked, non-authoritative preview. Prover inputs, workers, witnesses,
-and outputs are cleared after delivery, `AbortCeremony`, failure, or context
+and outputs are cleared after delivery, `CancelCeremony`, `AbortCeremony`, failure, or context
 destruction.
 
 ## Proof delivery

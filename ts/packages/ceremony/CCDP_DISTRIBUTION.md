@@ -104,7 +104,7 @@ by the response.
 ### Prover isolation
 
 CCDP has one logical [Prover](CCDP.md#prover-get-prover), reached by ordinary
-`connection.navigate(proverUrl)`. The Distribution supplies two static responses
+`connection.navigate(proverUrl, fragment)`. The Distribution supplies two static responses
 for that participant, not another protocol step or application-level choice.
 
 The primary response requests
@@ -118,11 +118,16 @@ application messages, and performs any necessary same-origin replacement.
 If the fallback is still unisolated, acceptance fails rather than navigating
 again. Ceremony code neither detects browsers nor implements the transition.
 
-Both responses use the Prover fragment grammar. Their clearing bootstrap
-captures and validates `ceremonyId` before clearing the URL, and constructs the
-fallback URL with that captured fragment explicitly; it cannot rely on
-fragment inheritance from an already-cleared URL. Neither response receives
-OAuth return or proof input through its URL.
+Both responses use the Prover fragment grammar, including its private
+OAuth-return fields. Their first bootstrap captures and clears the fragment
+before rendering, imports, storage access, or reporting errors. It supplies
+the retained `URLSearchParams` snapshot to popup construction through the
+package's fragment-capture API, so URL clearing cannot erase fallback input.
+`isolationFallbackUrl` contains no fragment; automatic replacement preserves
+the snapshot without an override. The final response captures and clears it
+again. Neither response parses platform-specific return fields before
+`AppRequestProof`, sends the captured return to Application, or puts it into
+Worker state, signaling, logs, or telemetry.
 
 Both paths resolve the root-scope Worker registration installed by Prefetch.
 This lets the popup package preserve a MessagePort internally while the same

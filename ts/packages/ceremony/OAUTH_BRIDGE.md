@@ -32,8 +32,8 @@ ceremony progress, OAuth return, proof, retry, cancellation, or recovery state.
 Google and X require no confidential bridge route.
 
 Loading Callback from the CCDP Distribution adds no credential authority: the
-same distribution supplies Prover, which receives the accepted OAuth return in
-`AppRequestProof`. Keeping Callback there avoids making the bridge republish
+same distribution supplies Prover, which receives the captured OAuth return
+through Callback's private fragment handoff. Keeping Callback there avoids making the bridge republish
 CCDP implementation artifacts.
 
 The OAuth Bridge and CCDP origin may be cross-origin or cross-site. The bridge
@@ -286,7 +286,9 @@ Google returns its credential in the fragment, which is never sent to the
 bridge. X and GitHub return OAuth-platform-mandated callback parameters in the query.
 The bridge and every upstream proxy suppress or redact callback query strings
 from access logs, traces, analytics, metrics labels, and error reports. No
-later URL carries the captured return.
+later request URL carries the captured return. Callback may forward it only
+through the private Prover fragment defined by CCDP, after authenticating the
+Application; every receiving document captures and clears it before use.
 
 The callback response uses:
 

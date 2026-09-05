@@ -82,16 +82,16 @@ Worker. Authorization is an external document, not a CCDP resource.
 | Property | Contract |
 |---|---|
 | Location and context | CCDP origin; versioned, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
-| Role | Delivers the OAuth return during [Authorization to Callback](#2-authorization-to-callback), then initiates popup navigation to Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
+| Role | Authenticates the Application during [Authorization to Callback](#2-authorization-to-callback), then privately carries the captured OAuth return in popup navigation to Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
 ### Prover `GET /prover`
 
 | Property | Contract |
 |---|---|
-| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td></tr></table> |
+| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#oauthQuery</code></td><td><code>#oauthFragment</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>captured OAuth query, including leading <code>?</code> when nonempty</td><td>captured OAuth fragment, including leading <code>#</code> when nonempty</td></tr></table> |
 | Location and context | CCDP origin; versioned, top-level ceremony-popup participant; cross-origin isolated before protocol readiness |
-| Role | Accepts the logical Application connection during [Callback to Prover](#3-callback-to-prover), then runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
+| Role | Accepts the logical Application connection during [Callback to Prover](#3-callback-to-prover), then validates the retained OAuth return under the Application-selected profile and runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
 | Presentation and cleanup | Renders a persistent inline libID logo and one accessible milestone progress bar. It begins at **Preparing proof**, advances only from valid platform events, and reaches 100% only on proof delivery. After `SLOW_PROVING_HINT_MS = 15_000`, it adds a nonblocking **Still proving** notice which may suggest enabling JavaScript JIT in Vanadium site controls. It accepts no Application markup or renderer, presents no ETA, and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
 
 ### Worker `GET /worker.js`
@@ -149,11 +149,23 @@ each named field exactly once in the displayed order. Receivers require the
 exact field set, reject duplicates, and otherwise do not depend on parameter
 order.
 
-The Prefetch and Prover routes have no query. Their fragments never
-reach the CCDP origin and are copied and cleared before rendering, storage, or
-network use. No OAuth return, credential, proof input, or proof is placed in an
-internal fragment. The OAuth-platform-mandated query on `redirectUri` is the
-only protocol exception.
+The Prefetch and Prover routes have no query. Their fragments are never sent
+in HTTP requests and are copied and cleared before rendering, storage, or
+network use. Prover's `oauthQuery` and `oauthFragment` are the sole internal
+credential-bearing navigation fields. They preserve the original two URL
+components separately, including empty values, with one outer
+URL-search-parameter encoding layer; decoding that layer reproduces the
+captured components without normalization or merging. The selected profile's
+OAuth parser handles their contents later.
+
+Callback constructs this fragment locally for the frozen CCDP-origin Prover;
+the Application receives neither the return nor the navigation target.
+The Prover captures and clears it before use. Any internal isolation
+replacement preserves the captured fragment and clears it again on arrival.
+No return enters a request query, connection notification, signaling record,
+Worker record, telemetry, or error. Proofs and other proving inputs never enter
+navigation fragments. The OAuth-platform-mandated query on `redirectUri`
+remains the sole credential-bearing HTTP-request URL.
 
 CCDP is connection-neutral. It defines which document runs at each location,
 which participant initiates each navigation, what each message means, and their
@@ -168,10 +180,11 @@ independent OAuth Bridges, Prefetch and Prover use
 Application origin and pin that exact origin and source for each carrier, while
 the Application exact-authenticates the configured CCDP origin. Open admission
 grants only public asset prefetch, carrier continuity, and processing of the
-connecting Application's own proof request; none receives an OAuth return
-directly from the platform. Callback instead exact-authenticates the
+connecting Application's own proof request. Prover receives the captured return
+from Callback, not directly from the platform. Callback exact-authenticates the
 Application against its containing OAuth Bridge's explicit deployment
-allowlist before releasing that return. The public Callback module is
+allowlist before navigating with that return to the configured CCDP origin.
+The public Callback module is
 cross-origin-loadable from the CCDP origin, but that resource policy does not
 replace Callback's credential-release check. Asset caching and popup-connection
 construction are outside CCDP.
@@ -183,12 +196,11 @@ The following table is the complete CCDP version-1 message set.
 | Message | Direction | Accepted after | Cardinality and effect |
 |---|---|---|---|
 | [`PrefetchStarted`](#prefetchstarted) | Prefetch → Application | connection acceptance and selected-profile dispatch | exactly once; permits navigation to Authorization |
-| [`CallbackDeliverParams`](#callbackdeliverparams) | Callback → Application | OAuth return and connection acceptance | exactly once; starts Application validation |
 | [`ProverReady`](#proverready) | Prover → Application | Prover connection acceptance and cross-origin isolation | exactly once; permits `AppRequestProof` |
-| [`AppRequestProof`](#apprequestproof) | Application → Prover | validated OAuth acceptance and `ProverReady` | exactly once; starts proof execution |
+| [`AppRequestProof`](#apprequestproof) | Application → Prover | `ProverReady` | exactly once; selects the profile for OAuth validation and proof execution |
 | [`ProverNotifyEvent`](#provernotifyevent) | Prover → Application | `AppRequestProof` | zero or more; advisory only |
 | [`ProverDeliverProof`](#proverdeliverproof) | Prover → Application | `AppRequestProof` | at most once; ends the Prover run |
-| [`AppCancelCeremony`](#appcancelceremony) | Application → Callback or Prover | active participating connection | at most once; requests downstream cleanup and ends the run |
+| [`CancelCeremony`](#cancelceremony) | Application → Callback or Prover; Prover → Application | active connection for Application cancellation; `AppRequestProof` and valid OAuth denial for Prover cancellation | at most once; ends the run without a technical error |
 | [`AbortCeremony`](#abortceremony) | Callback or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
 
 Every recipient requires a plain record with the exact fields, types, and bounds
@@ -210,28 +222,6 @@ was dispatched. It does not promise completion or grant authority. Prefetch
 already received the profile through its cleared fragment, so the message
 repeats no selection field.
 
-### CallbackDeliverParams
-
-```ts
-interface CallbackDeliverParams {
-  type: 'callback-deliver-params'
-  oauthReturn: {
-    query: string
-    fragment: string
-  }
-}
-```
-
-Callback constructs this message from the bounded query and fragment supplied
-by the OAuth Bridge shell. It extracts the ceremony ID suffix from `state` but
-does not classify approval, denial, transport, or platform fields. The
-`Callback` prefix records its creator even when connection continuity delivers
-the message after Callback replacement.
-
-The Application uses the live ceremony already bound to the connection and its
-platform/version rules to exact-validate response location, fields, state,
-OAuth client, redirect, success, and denial.
-
 ### ProverReady
 
 ```ts
@@ -243,8 +233,8 @@ interface ProverReady {
 `ProverReady` states only that Prover accepted the Application connection,
 established cross-origin isolation, and installed its CCDP handlers. It carries
 no correlation or profile field and does not imply that proving started.
-The Application sends no proof input until
-it has both validated the OAuth return and accepted this message.
+The Application sends `AppRequestProof` only after accepting this message.
+Readiness does not classify the retained OAuth return as approval or denial.
 
 ### AppRequestProof
 
@@ -255,10 +245,6 @@ interface AppRequestProof {
   platformCeremonyVersion: number
   clientId: string
   redirectUri: string
-  oauthReturn: {
-    query: string
-    fragment: string
-  }
   codeVerifier: string | null
 }
 ```
@@ -266,7 +252,8 @@ interface AppRequestProof {
 `platformId` and `platformCeremonyVersion` are the exact supported profile
 selected at launch and must match the active Prover. The message is valid only
 after `ProverReady`. The remaining fields are the frozen client identifier and
-redirect, unchanged OAuth return, and derived code verifier.
+redirect and derived code verifier. The OAuth return is already retained by
+Prover and is not repeated in the message.
 
 The Application origin is trusted for this transient input because it already
 supplies the operation being authorized. It retains the authorization nonce;
@@ -277,7 +264,13 @@ composition state, connector, or carrier kind.
 For GitHub, Prover derives the fixed OAuth Bridge token route from the origin of
 `redirectUri`; no second bridge origin or endpoint field is carried. Prover
 exact-validates the CCDP record and selected platform/version before credential
-use.
+use. That profile parses the retained query/fragment pair, enforcing exact
+transport, fields, client/redirect checks applicable to the response, and
+success/denial grammar. It matches OAuth `state` to
+`v<CCDPVersion>.<ceremonyId>` using the versioned resource and the ID of the
+authenticated logical connection, not a second caller-selected expected state.
+The return is consumed once; no second request or replacement response can
+restart the run.
 
 ### ProverNotifyEvent
 
@@ -315,19 +308,27 @@ interface ProverDeliverProof {
 CCDP treats it as opaque and the selected platform validator checks it; adding a
 platform does not change this message.
 
-### AppCancelCeremony
+### CancelCeremony
 
 ```ts
-interface AppCancelCeremony {
-  type: 'app-cancel-ceremony'
+interface CancelCeremony {
+  type: 'cancel-ceremony'
 }
 ```
 
-`AppCancelCeremony` is the parameterless command for explicit user
-cancellation, valid OAuth-platform denial, invalid callback classification, or
-retired Application authority. Reachable work clears queued input; no
-acknowledgement or platform-specific cancel path exists. Callback and
-Prover do not close or navigate the popup in response.
+`CancelCeremony` is a parameterless, bidirectional terminal message:
+
+- Application → Callback or Prover stops reachable work after explicit
+  cancellation or retirement of Application authority.
+- Prover → Application reports only a valid, ceremony-bound OAuth-platform
+  denial discovered while validating `AppRequestProof`. The Application
+  resolves `{ status: 'denied' }`. Prover sends it before token exchange,
+  proof execution, or platform progress, never as a substitute for a failure.
+
+Malformed, mismatched, or otherwise invalid OAuth returns use
+`AbortCeremony`, not cancellation. An Application which has already canceled
+ignores a racing denial or proof. Cancellation has no acknowledgement;
+recipients clear reachable input but do not close or navigate the popup.
 
 ### AbortCeremony
 
@@ -370,11 +371,16 @@ can reactivate an earlier phase.
   connection authentication.
 - Documents use only the frozen locations and fragments defined here. A CCDP
   message never selects an origin, implementation, or navigation destination.
-- No internal route carries an OAuth return, credential, proof input, or proof.
-  The platform-mandated callback URL is the sole ingress exception and is
-  cleared before Callback code runs.
-- Callback releases an OAuth return only after authenticating the Application.
-  Authorization receives no CCDP message or popup connection.
+- Raw OAuth returns pass only from the cleared Callback capture to Prover's
+  private fragment, including any isolation replacement. Every arrival clears
+  its URL before use; no intermediate store, notification, or diagnostic
+  receives those values. The platform-mandated callback query is the sole
+  HTTP-request ingress exception.
+- Callback carries the return onward only after authenticating the Application.
+  Prover validates it against the authenticated ceremony and selected profile
+  before any credential-bearing request. Application receives only protocol
+  outcomes and the final proof, whose evidence may contain profile-required
+  disclosed fields. Authorization receives no CCDP message or connection.
 - Progress, carrier state, navigation, popup closure, and unvalidated proof
   delivery grant no authority and never constitute ceremony success.
 - The Application owns terminal popup lifetime. No CCDP document closes the
@@ -414,52 +420,56 @@ matching [Callback](#callback-get-callbackjs) module in the same document. The
 [OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively defines
 ingress.
 
-Callback accepts the Application connection and sends
-[`CallbackDeliverParams`](#callbackdeliverparams). No return reaches the
-Application before authentication. Sending the message ends this phase and
-lets Callback begin the Prover transition; its receipt begins Application
-validation.
+Callback accepts the Application connection using the ceremony ID extracted
+from the captured `state`. This authenticates the Application against the
+Bridge's deployment allowlist before the return can leave Callback. It sends
+no OAuth-return message. Connection acceptance permits the Prover transition.
 
 #### 3. Callback to Prover
 
-After delivery, the popup-side [Callback](#callback-get-callbackjs) endpoint
-asks its connection to navigate to [Prover](#prover-get-prover). Callback owns
-this transition because the OAuth Platform may have severed the Application's
-direct popup handle.
+The popup-side [Callback](#callback-get-callbackjs) endpoint asks its connection
+to navigate to the frozen [Prover](#prover-get-prover) location, supplying the
+ceremony ID and captured query/fragment as that route's structured fragment.
+Callback owns this transition to keep the return private from Application and
+because the OAuth Platform may have severed Application's direct popup handle.
 
-Prover accepts the same logical Application connection. It sends
-[`ProverReady`](#proverready) only after cross-origin isolation is established
-and its CCDP handlers are installed. Connection establishment and any internal
-isolation transition are below CCDP: neither introduces another participant,
-message, or phase. No callback value enters the Prover URL, Worker state, or
-fallback-signaling record.
+Prover captures and clears the fragment, then accepts the same logical
+Application connection. It sends [`ProverReady`](#proverready) only after
+cross-origin isolation is established and its CCDP handlers are installed.
+Connection establishment and any internal isolation transition are below CCDP:
+neither introduces another participant, message, or phase. The captured
+parameters survive that transition without passing through Application.
 
-The Application validates the delivered return under the selected
-platform/version. A malformed result rejects the ceremony and sends
-[`AppCancelCeremony`](#appcancelceremony). A valid denial resolves
-`{ status: 'denied' }` and sends the same cancellation. These checks may overlap
-Prover activation. A valid acceptance waits for `ProverReady`,
-then sends one [`AppRequestProof`](#apprequestproof). Acceptance of that request
-enters Prover execution; cancellation ends the protocol instead.
+Application accepts one `ProverReady` and sends one
+[`AppRequestProof`](#apprequestproof) using its frozen configuration and code
+verifier. It does not receive or parse the OAuth return. Acceptance of the
+request enters Prover execution; an Application cancellation ends the run.
 
 #### 4. Prover execution
 
 This phase begins only when [Prover](#prover-get-prover) accepts
-[`AppRequestProof`](#apprequestproof). Prover applies the selected
-platform/version rules before credential use. It sends zero or more
+[`AppRequestProof`](#apprequestproof). The selected platform/version validates
+the retained OAuth return before credential use. A valid denial sends
+[`CancelCeremony`](#cancelceremony); malformed or mismatched input sends
+[`AbortCeremony`](#abortceremony). Only an accepted return begins proof work.
+
+Prover then sends zero or more
 [`ProverNotifyEvent`](#provernotifyevent) messages followed by one
 [`ProverDeliverProof`](#proverdeliverproof), unless it sends
 [`AbortCeremony`](#abortceremony) or receives
-[`AppCancelCeremony`](#appcancelceremony). The first terminal outcome—proof
+[`CancelCeremony`](#cancelceremony). The first terminal outcome—proof
 delivery, abort, or cancellation—ends the phase; later messages have no effect.
 
 ### Terminal outcomes
 
 Terminal processing begins when the Application cancels an active Callback
-or Prover; an active document reports an abort; or Prover delivers a
-proof. These outcomes are mutually terminal even when they race in transit.
-Cancellation has no acknowledgement. An observable abort rejects the live
-ceremony; a failure before connection acceptance is rendered locally. CCDP
+or Prover; Prover reports valid OAuth denial; an active document reports an
+abort; or Prover delivers a proof. These outcomes are mutually terminal even
+when they race in transit.
+Cancellation has no acknowledgement. Prover's valid denial resolves denied;
+Application cancellation retains its local canceled outcome. An observable
+abort rejects the live ceremony; a failure before connection acceptance is
+rendered locally. CCDP
 initiates no further navigation: the Application composition alone decides
 whether to retain, navigate, or close the popup because any subsequent flow is
 outside CCDP. Terminal cleanup follows the [invariants](#invariants).
@@ -489,25 +499,24 @@ sequenceDiagram
     break Callback fails after connection acceptance
         P-->>A: AbortCeremony
     end
-    P-->>A: CallbackDeliverParams
 
     Note over A,P: Phase 3 - Callback to Prover
-    par Application validates the accepted OAuth return
-        A->>A: Validate return
-    and Popup activates Prover
-        P->>P: Callback navigates to Prover
-        P->>P: Prover accepts connection with isolation established
-        P-->>A: ProverReady
-    end
-    break Prover activation fails
-        P-->>A: AbortCeremony
-    end
-    break Application cancels, receives denial, or rejects return
-        A-->>P: AppCancelCeremony
+    P->>P: Callback navigates to Prover with private return fragment
+    P->>P: Prover accepts connection with isolation established
+    P-->>A: ProverReady
+    break Application cancels
+        A-->>P: CancelCeremony
     end
     A-->>P: AppRequestProof
 
     Note over A,P: Phase 4 - Prover execution
+    P->>P: Validate retained OAuth return
+    break Valid OAuth denial
+        P-->>A: CancelCeremony
+    end
+    break Invalid OAuth return
+        P-->>A: AbortCeremony
+    end
     loop Zero or more progress events
         P-->>A: ProverNotifyEvent
     end

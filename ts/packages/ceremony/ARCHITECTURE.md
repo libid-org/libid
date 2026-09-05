@@ -62,19 +62,15 @@ sequenceDiagram
     C->>O: Navigate away with frozen platform authorization URL
     U->>O: Approve or deny
     O-->>P: Return to callback URL
-    P-->>C: Deliver OAuth return through popup connection
-    par Validate OAuth return
-        C->>C: Validate platform return
-    and Activate isolated Prover
-        P->>R: Navigate same popup
-        Note over R: Accept connection with isolation established
-        R-->>C: Report Prover ready
-    end
+    P->>P: Authenticate Application
+    P->>R: Navigate with private OAuth-return fragment
+    R-->>C: Report Prover ready
+    C->>R: Request validation and proof
+    R->>R: Validate retained OAuth return
     alt User denied
-        C-->>R: Cancel through connection
+        R-->>C: CancelCeremony
         C-->>A: IdentityResult denied
     else User approved
-        C->>R: Request proof through connection
         R-->>C: Progress and generated proof through connection
         C->>C: Validate evidence and assemble OAuthProof
         C-->>A: IdentityResult accepted with Identity
@@ -97,13 +93,16 @@ those sessions do not extend the browser message protocol.
 The application origin owns the durable operation record, called the Job. One
 application-scoped `CeremonyClient` creates independent `Ceremony` instances.
 Each instance owns its in-memory state and handlers on the popup connection
-supplied by the composition. The client, callback, and prover
-keep credentials, witnesses, and the generated proof only in memory. The
+supplied by the composition. Apart from the transient private OAuth-return
+fragment handoff, credentials, witnesses, and the generated proof remain in
+memory; the package creates no credential store. The
 application origin is an authority boundary: it supplies the operation domain
 and transaction data, so compromising it already permits authorizing a
-different operation. The ceremony does not attempt to hide its transient OAuth
-result from other scripts executing in that origin. If the application does
-not assemble and commit the delivered result before the live connection is lost,
+different operation. Raw OAuth returns stay in the popup documents and are not
+sent to the Application. This narrows transient credential exposure, not
+operation authority; the delivered proof still contains the evidence required
+by its platform profile. If the application does not assemble and commit the
+delivered result before the live connection is lost,
 the ceremony restarts with fresh OAuth. Downstream application work may remain
 resumable independently.
 
@@ -178,9 +177,11 @@ connection typing.
 `platforms/authorization`
 provides the shared Authorization Digest and PKCE helpers, but each
 platform/version slice owns whether and how those helpers participate in its
-ceremony. Its `client` leaf owns OAuth and final assembly and re-exports its
+ceremony. Its `client` leaf owns authorization-request construction and final
+assembly and re-exports its
 `types` leaf; `types` owns the proof type and side-effect-free runtime validator;
-and `prover` owns progress, witness construction, and proof generation.
+and `prover` owns OAuth-return parsing, progress, witness construction, and
+proof generation.
 `platforms/index` imports only the client-safe `client` leaves, derives the
 catalog and public result types, and is re-exported by the package root and
 client API. Prover leaves are internal imports of the prover entrypoint and
@@ -397,11 +398,14 @@ did not reject it. The real anchor is a hedge against an unqualified browser or
 embedding policy returning `null`, not a claim that a launch target is known to
 require it.
 
-`proveUserIdentity()` navigates the retained connection to `launchUrl`, waits
-for `PrefetchStarted`, then calls
-`connection.navigateAway(platformAuthorizationUrl)` without disclosing that URL
-to the Prefetch peer. With native-anchor fallback, `@libid/popup` binds the
-anchor-created window while the Application's anchor performs the initial
+`proveUserIdentity()` navigates the retained connection to Prefetch using its
+bare URL and a separate `URLSearchParams` fragment argument. `launchUrl` is
+the equivalent browser URL for the native anchor, not a string passed into
+`connection.navigate`. It waits for `PrefetchStarted`, then calls
+`connection.navigateAway` with the frozen platform authorization destination
+(and a separate fragment argument if that platform uses one), without
+disclosing that URL to the Prefetch peer. With native-anchor fallback,
+`@libid/popup` binds the anchor-created window while the Application's anchor performs the initial
 navigation; ceremony observes only its typed messages. There is no popup
 argument to proving and no mutable connection setter.
 
@@ -430,18 +434,20 @@ function activate(event: MouseEvent) {
 }
 ```
 
-When `CallbackDeliverParams` arrives on the retained connection,
-`proveUserIdentity()` parses its OAuth `state`, exact-matches the CCDP version
-and ceremony ID against this instance's frozen values, and consumes that return
-once. In parallel, Callback navigates to Prover, which accepts the logical
-connection with isolation established. The client
-waits for `ProverReady` as well as a valid accepted OAuth return before sending
-the minimal proving inputs. It then validates the delivered platform proof,
-constructs the non-authoritative identity preview and OAuth proof, and resolves
-with an accepted `IdentityResult`. A valid ceremony-bound OAuth-platform denial
-resolves with a denied `IdentityResult`; popup closure, malformed return,
-invalid proving input, isolation failure, and proving failure are ordinary
-ceremony failures, not denial.
+Callback authenticates the Application, then navigates directly to Prover
+with the captured OAuth query/fragment in a private structured fragment.
+`proveUserIdentity()` receives no OAuth return. It accepts one fieldless
+`ProverReady` and sends one `AppRequestProof` containing the frozen platform,
+version, client ID, redirect URI, and nullable code verifier.
+
+The selected Prover leaf validates the retained return against that request,
+the CCDP version, and the authenticated connection's ceremony ID. A valid
+OAuth denial sends `CancelCeremony`, making the client resolve a denied
+`IdentityResult`. Malformed returns and technical failures use
+`AbortCeremony` and reject. Only accepted OAuth proceeds to proof execution.
+On proof delivery the client validates the platform proof, constructs the
+non-authoritative identity preview and OAuth proof, and resolves an accepted
+`IdentityResult`. A locally canceled ceremony ignores any later remote result.
 
 The ceremony never closes its popup. The application composition owns whether
 to retain, navigate, or close the window after any result, cancellation, or
@@ -457,7 +463,7 @@ cannot commit.
 
 `cancel()` is best-effort ceremony-work and connection cleanup and is called
 only after the composition retires its Job. It does not close or navigate the
-popup. Losing the application document loses the in-memory ceremony map and
+popup. Losing the application document loses the in-memory Ceremony and
 therefore requires fresh OAuth, as already required by the
 no-ceremony-recovery launch scope.
 
@@ -645,7 +651,6 @@ platform proof, and assembles `OAuthProof` and `Identity`.
 ```ts
 type CeremonyStage =
   | 'authorization'
-  | 'oauth-validation'
   | 'proof-generation'
 
 interface PlatformStep {
@@ -663,14 +668,13 @@ interface CeremonyEvent {
 ```
 
 The application-side `Ceremony` client owns the common stage. It enters
-`authorization` when `proveUserIdentity()` starts, `oauth-validation` when an
-authenticated `CallbackDeliverParams` selects the live Ceremony, and
-`proof-generation` immediately before it sends `AppRequestProof` after
-`ProverReady`.
-`proof-generation` includes platform steps, proof delivery, and immediate
-`Identity` construction. The client publishes these transitions from its own
-control flow; no callback lifecycle message or platform-step inference changes the
-common stage.
+`authorization` when `proveUserIdentity()` starts and `proof-generation`
+immediately before it sends `AppRequestProof` after `ProverReady`.
+The latter includes Prover-side OAuth validation, platform steps, proof
+delivery, and immediate `Identity` construction. There is no separate
+`oauth-validation` stage: the client does not observe that internal boundary.
+The client publishes these transitions from its own control flow; no callback
+lifecycle message or platform-step inference changes the common stage.
 
 Each platform-ceremony-version prover leaf owns its closed diagnostic-span
 catalog and partial-order rules beside the code which performs it; it cannot

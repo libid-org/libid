@@ -143,9 +143,8 @@ performance qualification compares the post-OAuth and proof-request spans.
 | Measurement | Boundaries or facts |
 |---|---|
 | callback bootstrap | document start through bounded copy and immediate URL clearing |
-| OAuth parse | cleared copy through the selected platform return decoder |
 | package load | callback entrypoint import and initialization |
-| proof handoff | authenticated OAuth delivery through Prover activation and `ProverReady` |
+| proof handoff | authenticated Callback departure through Prover activation and `ProverReady`; measure locally without exporting navigation data |
 
 OAuth query/fragment lengths may be reported only as coarse, code-defined
 size buckets. Values, field names supplied by an OAuth platform, and URLs are never
@@ -183,6 +182,10 @@ The exact platform/version span catalogs and causal rules are owned by
 than create a second list. They include readiness, every Google/X/GitHub
 platform step, and the proof-engine phases from worker bootstrap through
 backend destruction.
+
+OAuth-return validation is measured locally by Prover from receipt of
+`AppRequestProof` through accepted return, denial, or malformed-return failure.
+It is not a client-side parsing span or a new CCDP lifecycle message.
 
 The prover also reports these bounded facts:
 
