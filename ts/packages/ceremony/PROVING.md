@@ -190,7 +190,7 @@ chain-specific Ledger Verifier accepts the resulting `OAuthProof` is independent
 All pipelines use one proving engine. The platform module builds the closed
 Noir input map, the Noir ACIR virtual machine (ACVM) runtime solves the witness,
 and the circuit-compatible
-[Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.2.0/barretenberg/ts/bb.js)
+[Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.2.0/barretenberg/ts)
 release generates an UltraHonk proof with
 `backend.generateProof(witness, { verifierTarget: 'evm' })`. This explicitly
 selects ZK-Honk with the Keccak transcript, not the library's default or
@@ -382,14 +382,18 @@ notarization client and `bearer-link` circuit; Google fetches neither when it
 does not need them.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
-Their JavaScript is part of the prover build; internal companion chunks are not
-deployment configuration. The build likewise owns every toolchain worker, WASM,
-common reference string (CRS) path, and complete transitive execution graph.
-No runtime configuration can replace those dependencies.
+Their JavaScript is bundled into the static prover distribution, not imported
+from a CDN on demand. Internal companion chunks are not deployment
+configuration. The build owns local toolchain worker/WASM locations and pins
+bb.js's native external common reference string (CRS) requests. No runtime
+configuration can replace those dependencies.
 
 The [CCDP Distribution](CCDP_DISTRIBUTION.md#proving-assets) serves companion chunks, spawner
-and nested worker modules, WASM, circuits, and CRS bodies from immutable
-same-origin paths. Prefetch uses the exact path later used by Prover. The
+and nested worker modules, WASM, and circuits from immutable same-origin paths.
+The resource table currently marks CRS as `external`: those bodies are
+prefetched and fetched directly from Aztec's CDNs using bb.js's native URLs and
+ranges. Resource resolution, not platform code, distinguishes local and
+external locations. Prefetch uses the same resolved request as execution. The
 Prefetch bootstrap which installs the Worker cannot depend on it during its
 first evaluation; it is contained in the versioned document or uses an
 implementation-private immutable chunk.
@@ -434,9 +438,10 @@ platform reuses it and fetches only missing profile assets. X/GitHub after
 Google fetches 17,903,618 bytes of notary WASM and the bearer circuit; Google
 after X/GitHub fetches only its 1,312,738-byte circuit.
 
-The counts are before HTTP content encoding and exclude CCDP HTML, entry code, and
-worker JavaScript graph, headers, OAuth/notary traffic, and attestations. They
-are reproducible heavy-resource subtotals, not a promise about total
+The counts are before HTTP content encoding and exclude CCDP HTML, entry code,
+worker JavaScript graph, headers, OAuth/notary traffic, and attestations. The
+CRS subtotal is fetched from Aztec rather than included in the static build.
+These are reproducible heavy-resource subtotals, not a promise about total
 transferred bytes. The JavaScript graph does not exist yet and must publish its
 own measured size when built.
 
@@ -444,51 +449,112 @@ The pinned bb.js 5.2.0 build owns the compressed CRS downloader and
 [`srsSize` option](https://github.com/AztecProtocol/aztec-packages/pull/23419),
 and includes
 [Aztec #25290](https://github.com/AztecProtocol/aztec-packages/pull/25290), which
-persists `Crs.new()` downloads. Its bytes also fix the CRS paths served
-by the [CCDP Distribution](CCDP_DISTRIBUTION.md#proving-assets).
+persists `Crs.new()` downloads. The dependency pins the CDN request paths below;
+bundling its JavaScript does not bundle or relocate those CRS bodies.
 
 ### Dependency asset resolution
 
-Every dependency's actual runtime loader consumes the build-emitted immutable
-CCDP-origin asset locations used by preparation and prefetch. This includes
-companion JavaScript, nested workers, WASM, circuits, and CRS, not just static
-imports. Pass explicit locations where the dependency supports them, including
-ACVM/ABI initialization above; resolve bb.js's upstream CRS requests to the
-pinned local bodies below. Fetch interception or dependency-source rewriting
-is an implementation workaround, not a standardized part of this contract.
+Dependency loaders use their supported integration points. ACVM/ABI receives
+explicit absolute WASM URLs as above. bb.js JavaScript and worker modules are
+bundled; its browser package's default WASM is
+[embedded gzip data](https://github.com/AztecProtocol/aztec-packages/blob/v5.2.0/barretenberg/ts/scripts/browser_postprocess.sh),
+not another remote JavaScript dependency. This build emits that WASM as a
+standalone immutable asset and supplies the supported
+[`wasmPath`](https://github.com/AztecProtocol/aztec-packages/blob/v5.2.0/barretenberg/ts/src/barretenberg_wasm/fetch_code/browser/index.ts)
+option, accounting for the loader's `-threads` suffix. Prefetch downloads only
+the selected WASM, not an additional embedded/default copy.
 
-For pinned bb.js 5.2.0 and `SRS_SIZE = 2 ** 18`, the CRS mapping is:
+The integration always supplies both path options, even while CRS must remain
+external:
 
-| Upstream request path | Required `Range` | Complete emitted body |
+```ts
+await Barretenberg.new({
+  threads: proofThreads,
+  srsSize: SRS_SIZE,
+  wasmPath: resolvedAssets.wasmPath,
+  crsPath: resolvedAssets.crsPath,
+})
+```
+
+These locations come from the build-owned resource table. The option is named
+`crsPath`, not `srsPath`; `srsSize` selects the point count. Neither proving code
+nor the Application selects an asset mode or duplicates its URL configuration.
+
+The pinned unpatched
+[browser CRS loader](https://github.com/AztecProtocol/aztec-packages/blob/v5.2.0/barretenberg/ts/src/crs/net_crs.ts)
+uses fixed Aztec URLs; the browser implementation does not consume `crsPath`
+as a URL override. Until the browser-path patch is integrated,
+`resolvedAssets.crsPath` must therefore equal the native primary CDN base and
+CRS entries remain external. Passing the option is not evidence it worked:
+qualification observes actual fetches and rejects a declaration the loader
+ignores. No global-fetch patch, URL substitution, or stripped Range disguises
+this limitation.
+
+With browser path support, the same call may resolve to an immutable
+Distribution directory instead. An explicit base selects all BN254 G1, G2,
+and Grumpkin requests and must not silently fall back to a different source.
+Both raw and bb.js processed-CRS caches must distinguish the selected source;
+old native-CDN cache entries cannot bypass a custom selection. Changing the
+resource mode then changes build resolution and generated policy, not platform
+or proving control flow.
+
+For bb.js 5.2.0 and `SRS_SIZE = 2 ** 18`, prefetch and execution use these GET
+requests with `cache: 'force-cache'`:
+
+| CDN request path | Required `Range` | Expected body bytes |
 |---|---|---:|
 | `/g1_compressed.dat` | `bytes=0-8388607` | 8,388,608 bytes: compressed BN254 G1 prefix |
 | `/g2.dat` | absent | 128 bytes: BN254 G2 |
 | `/grumpkin_g1_v2.dat` | `bytes=0-4194303` | 4,194,304 bytes: Grumpkin G1 prefix |
 
-Only bb.js's pinned `https://crs.aztec-cdn.foundation` and
-`https://crs.aztec-labs.com` request origins select these mappings. Both resolve
-to the same local resource, not separate cache keys. CRS resolution accepts only
-the listed GET request shapes with no query or fragment, replaces the URL,
-removes `Range`, and fetches the complete local body with same-origin credentials
-and redirects disabled. Cancellation remains attached to the fetch. Unexpected
-dependency requests fail rather than falling through to an upstream network
-request; a library bump must qualify the updated request graph.
+On the current unpatched loader, each path uses
+`https://crs.aztec-cdn.foundation` first and `https://crs.aztec-labs.com` on
+failure, matching bb.js's fallback. Do not fetch
+both mirrors speculatively. The patched explicit-base path uses only the
+selected source; its request declaration and prefetch follow that behavior.
+Prefetch uses CORS mode and the native default
+`credentials: 'same-origin'`, which sends no credentials to either CDN.
+The exact URL, method, and range select a cached flight; a full-file fetch or
+different prefix cannot masquerade as the requested prefix. These URLs carry
+no ceremony input, query, or fragment.
 
-The build obtains and validates the exact CRS prefixes once; the browser receives
-ordinary complete `200` responses, not `206` responses needing range-cache
-handling. Prefetch requests those exact local URLs without `Range`. Validate
-status, media type, final URL, and expected decoded length before caching; a
-truncated or failed response is not a cache hit. Single-flight joiners receive
-their own readable response bodies, not an already-consumed shared stream.
-Failed flights are removed so a subsequent cold fetch can proceed. A canceled
-ceremony stops awaiting shared prefetch without canceling another ceremony's
-fetch; its own proof-worker requests and private work remain cancelable.
+For ranged CRS responses, require `206`, the exact expected byte count, and
+matching start/end when `Content-Range` is exposed. Reject an ignored range
+instead of downloading a multi-gigabyte full file. G2 requires `200` and its
+exact byte count. Both hosts must support readable CORS under isolation, but
+neither an exposed `Content-Range` nor a particular MIME/cache header is a
+browser acceptance requirement: the current fallback hides that header, and
+some primary resources omit MIME. Validate the response URL against the pinned
+hosts/paths and reject opaque, failed, truncated, or mismatched responses.
 
-Qualification runs actual pinned dependency initialization against the generated
-distribution with empty caches and external asset hosts blocked, then repeats
-after prefetch. Cached selected assets, including CRS, need no second download.
-Repeat with partial cache, concurrent profiles, worker restart, and the real
-nested-worker graph. This exercises loaders, not just an expected-URL list.
+The raw-CRS cache is range-aware. Native
+[`Cache.put`](https://w3c.github.io/ServiceWorker/#cache-put) rejects `206`
+responses, so retain validated prefix bytes and response metadata as an
+internal cache entry keyed by the exact URL and range, then reconstruct the
+ranged response for the dependency. Do not directly `cache.put` a `206` or
+serve a prefix as a cached whole file. This storage detail adds no public route
+and does not relocate the CDN request. Each single-flight joiner receives a
+readable response body. Failed flights leave no cache hit; a canceled joiner
+does not cancel another ceremony's shared fetch.
+
+The integration keeps one reviewed request set beside the bb.js pin; CSP and
+prefetch derive from it. A dependency-bump test runs the installed browser
+loaders with an observing fetch stub and compares their actual URLs, methods,
+ranges, and fallback behavior against that set. The test also supplies a custom
+base and verifies it is honored before allowing distributed CRS; an unpatched
+loader's ignored option must not pass that qualification. An added, removed,
+or changed request fails until the declaration, prefetch, response policies, and size
+accounting are reviewed together. It must exercise the loaders, not merely
+compare two copies of constants or automatically accept newly discovered URLs.
+
+Release qualification also runs actual initialization against the generated
+distribution and live CDNs, first with empty caches, then after prefetch. Block
+unlisted external asset hosts, not the declared Aztec hosts. Force primary
+failure to exercise the real fallback, and check availability, body sizes,
+CORS under both isolation responses, and cached reuse without another network
+download of the same URL/range. Repeat with partial caches, concurrent
+profiles, worker restart, and the nested-worker graph. This catches broken
+upstream links and headers that an offline loader test cannot detect.
 
 ## Prefetch and cache lifecycle
 
@@ -524,22 +590,25 @@ supply an asset path.
 
 The prefetch branch contains no OAuth or proof input. The separately imported
 popup handler owns only its bounded temporary continuity entries. The branch
-owns each selected immutable asset fetch from the first byte and keys single
-flights by canonical URL. It fetches missing runtime assets, selected circuits,
+owns each selected asset fetch from the first byte and keys single flights by
+canonical URL plus range where applicable. It fetches missing runtime assets, selected circuits,
 WASM, and the pinned raw BN254/Grumpkin CRS bodies concurrently, sharing pending
-asset and raw-CRS fetches between requests. It extends the initiating worker
-event through completion. Prefetch warms bytes, not computation: it does not
+asset and range-keyed CDN raw-CRS fetches between requests. It extends the
+initiating worker event through completion. Prefetch warms bytes, not computation: it does not
 initialize proof backends, preprocess CRS, or retain WASM instances or
 TLSNotary sessions across OAuth. Merely importing bb.js is not CRS prefetch.
 
-Ordinary asset prefetches use `credentials: 'same-origin'`, matching native module
-and worker requests. Fetch-event handling preserves the admitted request's URL
-and response semantics so Firefox can reuse a prefetched worker response rather
-than refetching or synthesizing a different module.
+Ordinary local-asset prefetches use `credentials: 'same-origin'`, matching
+native module and worker requests. Fetch-event handling preserves the admitted
+request's URL and response semantics so Firefox can reuse a prefetched worker
+response rather than refetching or synthesizing a different module. CDN CRS
+requests follow the range-aware cache contract above; they are CORS fetches,
+not cross-origin worker-script imports.
 
 Its package-private prefetch call is an implementation detail, not a CCDP
-message or exported ceremony API. The worker intercepts only exact immutable
-asset requests in the selected platform/version leaf's pinned prefetch set. It
+message or exported ceremony API. The worker intercepts only exact local-asset
+and external CRS requests in the selected platform/version leaf's pinned
+prefetch set. It
 leaves every other request to the browser unchanged: ceremony routes, the
 GitHub token exchange, platform APIs, OAuth navigation, HTML, and configuration
 are never cached, rewritten, or synthesized by this worker.
@@ -551,10 +620,10 @@ prefetch/cache contract; artifact fetch failure records no weaker mode and
 leaves proving on the identical cold path. The active prover resolves
 the same profile using the exact `AppStartProver` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
-joins raw-CRS fetches in the same way. Backend initialization through
-`Barretenberg.new({ srsSize: SRS_SIZE })` keeps bb.js's native processed-CRS
-IndexedDB cache enabled; on a miss its normal CRS loading consumes the prefetched
-raw responses. The worker does not reproduce that processing or maintain a
+joins raw-CRS fetches in the same way. Backend initialization uses the explicit
+options above and keeps bb.js's native processed-CRS IndexedDB cache enabled;
+on a miss its normal CRS loading consumes the prefetched raw responses.
+The worker does not reproduce that processing or maintain a
 second processed-CRS cache.
 
 A later ceremony reuses every repeated artifact URL and the same CRS entries;
@@ -602,7 +671,7 @@ acceptance remains authoritative.
 
 [CCDP](CCDP.md#documents-and-routes) owns the Prover's isolated execution
 context; the [CCDP Distribution contract](CCDP_DISTRIBUTION.md#protocol-resources) owns its HTTP
-policy and same-origin resource graph. No request parameter selects a document
+policy and declared local/external resource graph. No request parameter selects a document
 role, asset, or CSP. `AppStartProver` carries the Application's frozen
 `redirectUri`; its origin selects the OAuth Bridge for GitHub's fixed token
 route. The implementation exact-validates that canonical HTTPS origin and

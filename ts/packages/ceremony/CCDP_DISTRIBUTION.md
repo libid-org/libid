@@ -11,8 +11,14 @@ One CCDP Distribution is served from one canonical HTTPS `ccdpOrigin`. Explicit
 loopback development is the only HTTP exception. It contains:
 
 - every protocol resource for each supported CCDP version; and
-- every module, worker, WASM, circuit, CRS, and other browser dependency those
-  resources fetch.
+- their bundled JavaScript, workers, WASM, circuits, and libID-owned assets.
+
+The resource graph distinguishes distributed assets from external assets.
+Browsers prefetch and fetch external resources at their declared absolute
+URLs; the static build does not download or mirror them. The current bb.js CRS
+resources use that mode with the native Aztec URLs. The exact dependency
+requests and cache behavior are defined in
+[PROVING.md](PROVING.md#dependency-asset-resolution).
 
 The OAuth Bridge separately serves ceremony configuration, the registered
 callback shell, and enabled confidential platform endpoints. Requests to the
@@ -77,10 +83,10 @@ source or styling customization input.
 | Resource | Form | Additional response contract |
 |---|---|---|
 | Callback | ES module loaded by the OAuth Bridge shell | `text/javascript; charset=utf-8`, noncredentialed `Access-Control-Allow-Origin: *`, and `Cross-Origin-Resource-Policy: cross-origin`. The OAuth Bridge owns the containing document and its CSP. |
-| Prefetch | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. CSP admits only its same-origin Worker and proving resources. |
+| Prefetch | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. Script/worker sources remain same-origin; `connect-src` admits local assets and the pinned Aztec CRS origins. |
 | Prover | top-level HTML | `Document-Isolation-Policy: isolate-and-require-corp`, `Cross-Origin-Opener-Policy: unsafe-none`, and no COEP. |
 | Prover isolation fallback | top-level HTML at `/ccdp/v{CCDPVersion}/prover/fallback` | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Same Prover entrypoint, fragment contract, and non-isolation response rules. |
-| Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8` and `Service-Worker-Allowed: /`. Prefetch registers it with `scope: '/'`; it remains compatible with every live CCDP version, passes requests outside its pinned resource graph through unchanged, and admits only the same-origin implementation and proving resources needed for popup continuity and asset caching. |
+| Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8` and `Service-Worker-Allowed: /`. Prefetch registers it with `scope: '/'`; it remains compatible with every live CCDP version and passes unrelated requests through unchanged. Code is same-origin; `connect-src` also admits the pinned Aztec CRS origins for asset caching. |
 
 For any resource whose generated Brotli representation is smaller, the
 Distribution serves that representation when the request admits `br` and the
@@ -89,10 +95,22 @@ response profile, adds `Content-Encoding: br`, and includes
 `Vary: Accept-Encoding`. Decoding it produces the exact original bytes. No
 runtime compression or other negotiated representation exists.
 
-Both Prover responses close script, worker, and asset sources to the
-build-generated same-origin graph and toolchain-required `blob:` workers.
-Their `connect-src https:` permits any validated third-party OAuth Bridge; the
-build additionally pins the Notary Service's exact WebSocket origin.
+Both Prover responses close script and worker sources to the build-generated
+same-origin graph and toolchain-required `blob:` workers. Asset fetches are
+not restricted to the CCDP origin: their `connect-src https:` admits bb.js's
+Aztec CRS downloads as well as validated third-party OAuth Bridges. The build
+additionally pins the Notary Service's exact WebSocket origin.
+
+Every context which fetches or prefetches CRS, including the Service Worker
+and dedicated proof workers, admits both `https://crs.aztec-cdn.foundation`
+and `https://crs.aztec-labs.com` in `connect-src` for the current native loader,
+unless already covered by its HTTPS source. These sources are generated from
+the external request declarations, not a second manually maintained list.
+They are fetch permissions, not remote JavaScript/worker
+permissions. The requests use noncredentialed CORS and must remain readable
+under both Prover isolation responses. No `no-cors` or opaque-response bypass
+is allowed. The CDN's availability and CORS policy are external dependencies,
+covered by release qualification rather than headers set by this Distribution.
 
 Every context that compiles WASM, including dedicated proof and TLSNotary
 workers, includes `script-src 'wasm-unsafe-eval'` alongside its code sources.
@@ -167,8 +185,9 @@ Prover contract.
 ### Proving assets
 
 `GET /ccdp/assets/*` is the Distribution's static proving-resource namespace,
-not a CCDP API or versioned protocol route. Every browser-fetched proving
-resource other than the versioned protocol resources resolves there. CCDP
+not a CCDP API or versioned protocol route. Locally served proving resources
+other than the versioned protocol resources resolve there; Aztec CRS requests
+retain their upstream URLs. CCDP
 assigns no structure to the suffix: versioned code pins each exact path, while
 protocol code neither enumerates nor parses the namespace.
 
@@ -180,26 +199,30 @@ Each asset response:
 - uses `Cache-Control: public, max-age=31536000, immutable`.
 
 The ceremony build pins every platform/version circuit, shared notarization
-resource, Noir and bb.js dependency, worker, WASM, CRS path, and SRS size.
+resource, Noir and bb.js dependency, worker, WASM, external CRS request, and SRS size.
 Requests, fragments, messages, and application inputs cannot add or replace
 them. The Distribution receives no asset-source configuration and exposes no
 catalog.
 
-The distribution contains every path referenced by its code. Browsers never
-list the asset tree, reach an upstream source, or trigger archive extraction or
-remote fetch. A separate asset CDN is unnecessary: `ccdpOrigin` is the stable
-browser-facing origin and may itself run behind a CDN.
-
-Dependency-internal fetches use the same emitted URLs as Prefetch, including
-bb.js's raw CRS requests. The build materializes their complete bounded bodies;
-[dependency asset resolution](PROVING.md#dependency-asset-resolution) defines
-the request mapping and cache contract.
+The Distribution contains every local path referenced by its code. Browsers
+never list the asset tree or trigger server-side archive extraction or remote
+fetch. bb.js JavaScript is bundled into these artifacts, not imported from a
+CDN at runtime. Its supported `wasmPath` option selects the emitted WASM;
+the integration also always supplies `crsPath` from the resolved CRS resources.
+The current unpatched browser loader ignores it, so that declaration still
+selects native Aztec hosting. A patched dependency must pass the custom-path
+qualification before the build may distribute CRS locally. No source rewrite,
+global-fetch URL substitution, or server-side proxy is required.
+Prefetch uses the same resolved resources as execution in either mode.
 
 ### Publication and compatibility
 
 Activation is asset-complete: every immutable resource referenced by an updated
 protocol resource or Worker is retrievable with its final bytes and response
 metadata before that update becomes reachable.
+The external Aztec request set is qualified before promotion; CDN availability
+cannot be made atomic with local deployment, and a later outage still fails
+proving if no usable cache is present.
 
 An unchanged asset retains its URL across compatible releases. Changed bytes or
 execution-relevant metadata receive a new immutable URL, and old URLs remain
@@ -214,14 +237,16 @@ their observable protocol or proof semantics change.
 ## Static artifact build
 
 `@libid/ceremony` owns a platform-neutral artifact pipeline. It produces one
-closed graph of public paths, response bodies, and response profiles, then
+graph of local public paths, response bodies, response profiles, and declared
+external asset requests, then
 materializes it as static files and a Static Web Server configuration. The
 graph has no separate serialized format or browser-visible manifest.
 
 ### Source declarations
 
-One resource table declares each protocol resource's stable public route,
-source entrypoint, and response profile:
+One resource table declares protocol entrypoints and non-imported assets.
+Protocol entries have a stable public route, source entrypoint, and response
+profile. An external asset instead retains its absolute fetch URL:
 
 ```ts
 const resources = {
@@ -250,12 +275,39 @@ const resources = {
     entry: prefetchEntry,
     profile: 'worker',
   },
+  crsG1: {
+    mode: 'external',
+    url: 'https://crs.aztec-cdn.foundation/g1_compressed.dat',
+    range: 'bytes=0-8388607',
+  },
 } as const
 ```
 
+The build resolves `crsPath` to the common base of the CRS entries, currently
+`https://crs.aztec-cdn.foundation`. Remaining CRS requests and any native
+fallback requests are declared in the same inventory; their exact paths,
+ranges, and sizes are defined in PROVING.md rather than duplicated here.
+
+| Mode | Build output | Browser use |
+|---|---|---|
+| `distributed` (default) | Compile, copy, or download the pinned source into the static output and resolve its local URL and response profile. | Prefetch and execution use that emitted URL. |
+| `external` | Retain the declared absolute HTTPS URL and request parameters; emit no asset body, route, or response profile for it. | Prefetch and execution fetch that URL directly under CORS; generated CSP admits its origin. |
+
+Both modes participate in the same selected-profile prefetch graph. Mode is a
+build-owned declaration, not an application input or runtime endpoint. External
+entries do not request a network download during ordinary artifact generation;
+release qualification checks their availability. Current external entries are
+CRS data, not executable scripts or workers. Changing where an asset is served
+must not change its logical role, bytes, or proving semantics. For distributed
+CRS, all members retain the loader's filenames under one immutable base
+directory so the same `crsPath` option selects the set.
+
 The entrypoints are build-tool inputs, not output filenames. First-party modules
 declare dependencies through ordinary imports; the module owning a non-imported
-proving resource declares it once by logical role. The build consumes the
+proving resource declares it once by logical role. External bb.js requests are
+recorded beside its pinned integration and checked against the real dependency
+loaders. Resolved local/external locations feed both prefetch and the explicit
+loader path options. The build consumes the
 compiler/bundler's emitted graph and filenames. It maintains no second filename
 list, generated-source scrape, or deployment template. Renaming an internal
 output therefore requires no manual mapping change; renaming an external
@@ -278,9 +330,9 @@ const responseProfiles = {
 
 Profiles contain fixed isolation, cache, framing, media-type, and CSP rules but
 no generated filenames. The build fills body-dependent values such as inline
-script hashes, generated resource URLs, and the build-pinned Notary
-Service origin. It does not parse this Markdown or ask SWS to reconstruct
-policy.
+script hashes, generated resource URLs, external asset origins, and the
+build-pinned Notary Service origin. It does not parse this Markdown or ask SWS
+to reconstruct policy.
 
 ### Generation
 
@@ -288,16 +340,20 @@ For each supported CCDP version, the pipeline:
 
 1. gives the declared entrypoints to the compiler/bundler;
 2. reads emitted filenames and dependency edges from its output API;
-3. materializes owner-declared external resources under immutable paths;
+3. materializes `distributed` dependencies under immutable paths and retains
+   `external` request URLs without downloading their bodies into the output;
 4. renders protocol bodies using those paths and response profiles;
 5. emits a Brotli sidecar for each unencoded public body only when it is
    smaller; and
-6. validates the closed graph before replacing the generated output.
+6. validates local graph completeness and the declared external request set
+   before replacing the generated output.
 
 The pipeline rejects a missing body, unindexed dependency, malformed external
 pin, mutable asset path, sidecar which does not decode to the original, or
 partial graph. Pinned source releases are cached by immutable identity rather
-than fetched on every build.
+than fetched on every build. The [dependency upgrade checks](PROVING.md#dependency-asset-resolution)
+detect changed upstream loader requests; live CDN qualification runs before
+release, not on every local build.
 
 ## Portable distribution
 
