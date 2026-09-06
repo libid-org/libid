@@ -9,8 +9,9 @@ The package API and result lifecycle are defined in
 [ARCHITECTURE.md](ARCHITECTURE.md). The browser boundary and its input/output
 messages are defined by [CCDP](CCDP.md#prover-get-prover). This document owns only the
 proof-generation implementation and its pinned asset selection; the CCDP Distribution
-serves all browser-fetched proving resources from an origin independent of the
-[OAuth bridge](OAUTH_BRIDGE.md).
+serves local proving resources from an origin independent of the
+[OAuth bridge](OAUTH_BRIDGE.md), while declared external resources retain their
+upstream URLs.
 TLSNotary sessions, transcript disclosure, and attestation delivery are defined
 in [NOTARIZATION.md](NOTARIZATION.md).
 Normative proof relations and authorization semantics remain in the
@@ -376,10 +377,13 @@ their causal lifecycle remains a platform-ceremony-version change.
 
 ## Shared toolchain and assets
 
-Each closed platform/version prover leaf pins its circuit path and complete
-prefetch set. A ceremony fetches only that set. X and GitHub reuse the
-notarization client and `bearer-link` circuit; Google fetches neither when it
-does not need them.
+Each platform/version's lightweight `assets` leaf composes its pinned circuit
+and shared integration resources into its selected-profile set. Shared bb.js,
+notarization, and circuit declarations are referenced, not copied between
+platforms; [resource ownership and collection](CCDP_DISTRIBUTION.md#source-declarations)
+define the import boundary. A ceremony fetches only its composed set and emitted
+execution dependencies. X and GitHub reuse the notarization client and
+`bearer-link` circuit; Google fetches neither when it does not need them.
 
 The ceremony package pins the compatible Noir and bb.js dependencies in code.
 Their JavaScript is bundled into the static prover distribution, not imported
@@ -398,8 +402,7 @@ Prefetch bootstrap which installs the Worker cannot depend on it during its
 first evaluation; it is contained in the versioned document or uses an
 implementation-private immutable chunk.
 
-Each closed platform/version prover leaf pins its circuit release. The ceremony
-package pins one launch-wide structured reference string size,
+The ceremony package pins one launch-wide structured reference string size,
 `SRS_SIZE = 2 ** 18`; SRS size is code, not deployment data:
 
 | Profile | Pinned libID assets | Measured circuit size | Pinned BN254 SRS size |
@@ -583,10 +586,18 @@ documents pinned; a live ceremony may still fail closed across deployment
 rotation as defined by the [CCDP Distribution contract](CCDP_DISTRIBUTION.md#protocol-resources).
 
 The Prefetch bootstrap accepts only the closed, cleared profile selected by its
-fragment. It uses that platform/version leaf's pinned prefetch set, which adds
-the shared notarization client only when required and combines it with the
-toolchain assets pinned by the prover build. Neither fragment nor message can
-supply an asset path.
+fragment and selects its resolved resource set from the lightweight catalog.
+Having metadata for all supported profiles does not fetch unselected assets.
+Neither fragment nor message can supply an asset path.
+
+Prefetch and its Worker contain fetching/cache logic and resource metadata,
+not platform execution or proving/notarization runtime code. They may fetch
+the selected emitted JavaScript chunks and workers as inert bytes for later
+execution; fetching those scripts does not import or execute them. The
+`/prover` HTML response, including its embedded entrypoint, is fetched by
+navigation and is not part of this asset prefetch. Its separately fetched
+dependencies are. Bundle qualification checks the import boundary as well as
+the emitted code, rather than relying on tree-shaking to remove unused runtimes.
 
 The prefetch branch contains no OAuth or proof input. The separately imported
 popup handler owns only its bounded temporary continuity entries. The branch

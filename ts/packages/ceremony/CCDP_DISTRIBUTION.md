@@ -244,11 +244,13 @@ graph has no separate serialized format or browser-visible manifest.
 
 ### Source declarations
 
-One resource table declares protocol entrypoints and non-imported assets.
-Protocol entries have a stable public route, source entrypoint, and response
-profile. An external asset instead retains its absolute fetch URL:
+The build's resource table collects protocol entrypoints and the owner-defined
+platform asset sets; it does not redeclare their resources. Protocol entries
+have a stable public route, source entrypoint, and response profile:
 
 ```ts
+import { assetsByPlatform } from './platforms/assets'
+
 const resources = {
   callback: {
     route: `/ccdp/v${version}/callback.js`,
@@ -275,43 +277,65 @@ const resources = {
     entry: prefetchEntry,
     profile: 'worker',
   },
-  crsG1: {
-    mode: 'external',
-    url: 'https://crs.aztec-cdn.foundation/g1_compressed.dat',
-    range: 'bytes=0-8388607',
-  },
+  assets: assetsByPlatform,
 } as const
 ```
 
+Shared integrations such as `prover/bb` and `prover/notarization` each define
+their resources once in a data-only `assets` module. Each declaration owns its
+exact source URL or pinned release member, request parameters, and mode.
+Platform/version asset leaves import these shared declarations and add their
+own requirements, for example:
+
+```ts
+// platforms/x/1/assets.ts
+import { resources as bb } from '../../../prover/bb/assets'
+import { resources as notarization } from '../../../prover/notarization/assets'
+import { circuit } from './circuit'
+
+export const resources = [...bb, ...notarization, circuit]
+```
+
+Other shared toolchain dependencies compose the same way. A circuit shared by
+multiple platforms likewise has one declaration, not a copy in each platform.
+`platforms/assets` maps supported platform/version pairs to these composed
+sets. It contains resource metadata only, not client or prover implementation
+imports. Prefetch consumes that catalog, not the build table containing the
+document entrypoints. The build collects shared references once while
+preserving membership in every profile that needs them. Both Prefetch and
+actual dependency loaders receive the same resolved resources; neither keeps
+another filename or URL list. The catalog is bundled metadata, not a fetched
+manifest or an independent platform-support registry.
+
 The build resolves `crsPath` to the common base of the CRS entries, currently
 `https://crs.aztec-cdn.foundation`. Remaining CRS requests and any native
-fallback requests are declared in the same inventory; their exact paths,
-ranges, and sizes are defined in PROVING.md rather than duplicated here.
+fallback requests belong to the bb integration's declarations; their exact
+paths, ranges, and sizes are defined in PROVING.md rather than duplicated here.
 
 | Mode | Build output | Browser use |
 |---|---|---|
 | `distributed` (default) | Compile, copy, or download the pinned source into the static output and resolve its local URL and response profile. | Prefetch and execution use that emitted URL. |
 | `external` | Retain the declared absolute HTTPS URL and request parameters; emit no asset body, route, or response profile for it. | Prefetch and execution fetch that URL directly under CORS; generated CSP admits its origin. |
 
-Both modes participate in the same selected-profile prefetch graph. Mode is a
-build-owned declaration, not an application input or runtime endpoint. External
-entries do not request a network download during ordinary artifact generation;
+Both modes participate in the same selected-profile prefetch graph. Location
+and mode are deployment policy controlled by the code-owned declaration; no
+deployer override input is defined. They are not application inputs or runtime
+endpoints. External entries do not request a network download during ordinary artifact generation;
 release qualification checks their availability. Current external entries are
 CRS data, not executable scripts or workers. Changing where an asset is served
 must not change its logical role, bytes, or proving semantics. For distributed
 CRS, all members retain the loader's filenames under one immutable base
 directory so the same `crsPath` option selects the set.
 
-The entrypoints are build-tool inputs, not output filenames. First-party modules
-declare dependencies through ordinary imports; the module owning a non-imported
-proving resource declares it once by logical role. External bb.js requests are
-recorded beside its pinned integration and checked against the real dependency
-loaders. Resolved local/external locations feed both prefetch and the explicit
-loader path options. The build consumes the
-compiler/bundler's emitted graph and filenames. It maintains no second filename
-list, generated-source scrape, or deployment template. Renaming an internal
-output therefore requires no manual mapping change; renaming an external
-release member changes only its code-owned pin.
+The entrypoints are build-tool inputs, not output filenames. First-party
+execution dependencies use ordinary imports; the build reads their emitted
+graph and filenames from the compiler/bundler. It augments each profile's
+resource declarations with its emitted dependency scripts for prefetch, without
+importing that execution code into Prefetch or its Worker. External dependency
+requests are checked against the real loaders. Renaming an internal output
+requires no manual mapping change; renaming an external release member changes
+only its owner-defined pin. No generated-source scrape or deployment template
+maintains another copy.
 
 One response-profile table is the executable source for the policies under
 [HTTP contract](#http-contract):
@@ -342,7 +366,9 @@ For each supported CCDP version, the pipeline:
 2. reads emitted filenames and dependency edges from its output API;
 3. materializes `distributed` dependencies under immutable paths and retains
    `external` request URLs without downloading their bodies into the output;
-4. renders protocol bodies using those paths and response profiles;
+4. resolves each platform/version's prefetch and loader locations from those
+   declarations and emitted dependencies, then renders protocol bodies using
+   the paths and response profiles;
 5. emits a Brotli sidecar for each unencoded public body only when it is
    smaller; and
 6. validates local graph completeness and the declared external request set

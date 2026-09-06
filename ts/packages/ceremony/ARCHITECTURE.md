@@ -131,13 +131,15 @@ Launch publishes one `@libid/ceremony` package:
 ├── prefetch    source entrypoint for Prefetch, the shared worker, and asset cache
 ├── prover
 │   ├── index          source entrypoint for the isolated Prover and WASM proving
+│   ├── bb             shared bb.js integration and resource declarations
 │   └── notarization  internal TLSNotary session and attestation adapter
 └── platforms
     ├── index    client-safe platform/version catalog and derived public result types
+    ├── assets   lightweight platform/version resource catalog
     ├── authorization  shared digest and PKCE helpers used under platform-version policy
-    ├── google/<version>/{client,types,prover}
-    ├── x/<version>/{client,types,prover}
-    └── github/<version>/{client,types,prover}
+    ├── google/<version>/{assets,client,types,prover}
+    ├── x/<version>/{assets,client,types,prover}
+    └── github/<version>/{assets,client,types,prover}
 ```
 
 `ccdp/index` is the pure protocol leaf imported by client, callback,
@@ -204,6 +206,19 @@ top-level document. The OAuth-bridge Callback installs no Worker.
 `prover/notarization` is an internal leaf shared by
 the X and GitHub prover leaves, not another package entrypoint or artifact.
 
+Shared integrations declare their resources in lightweight `assets` modules,
+separate from execution code. Each platform/version `assets` leaf composes
+shared declarations with its circuit and other dependencies; it copies no
+shared URL, mode, or request parameters. `platforms/assets` collects these sets
+by platform/version for Prefetch and the artifact build, without importing
+`platforms/index`, platform implementations, or proving/notarization runtimes.
+Execution modules import their asset declarations, never the reverse. This is
+an explicit dependency boundary, not a reliance on tree-shaking. The build
+checks that the asset catalog covers exactly the supported platform/version
+pairs and resolves the same declarations for prefetch and execution; the
+[Distribution's source declarations](CCDP_DISTRIBUTION.md#source-declarations)
+define collection and resource modes.
+
 OAuth Bridge implementations are outside the package. The GitHub version's
 prover leaf implements only the bridge-contract browser request/response codecs
 and validation; the bridge implements the required confidential endpoint.
@@ -224,6 +239,10 @@ prover ───> platforms/<platform>/<version>/prover ───> types
                               └──> platforms/authorization
 
 platforms/{x,github}/<version>/prover ───> prover/notarization
+
+prefetch, artifact build ───> platforms/assets ───> platforms/<platform>/<version>/assets
+platforms/<platform>/<version>/prover ───────────> platforms/<platform>/<version>/assets
+platforms/<platform>/<version>/assets ───> shared integrations' assets modules
 
 client, callback, prefetch, prover, platforms/index ───> ccdp
 client, callback, prefetch, prover ───> @libid/popup
