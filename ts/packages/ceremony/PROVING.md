@@ -134,10 +134,19 @@ Witness execution waits for both prepared inputs and backend readiness.
 
 Inside the proof worker, initialize ACVM and ABI WASM concurrently, then load
 Noir, Barretenberg, and the circuit concurrently before initializing the backend.
+Pass the build-emitted absolute same-origin WASM URLs explicitly to the
+ACVM/ABI initializers. Do not let wasm-bindgen infer sibling paths from a
+bundled or `blob:` worker's `import.meta.url`. Noir must reuse those initialized
+module instances, not a second bundled copy that repeats default initialization.
 Request up to four proof threads, capped by hardware concurrency. Check actual
 worker isolation, shared-memory availability, and effective thread count; a
 requested thread count is not evidence that multithreading started. Unsupported
 execution fails explicitly rather than silently accepting single-threaded work.
+
+That thread cap belongs to the proof engine, not to each TLSNotary session.
+Notarization chooses and measures its own WASM/thread-pool configuration; two
+concurrent sessions must not silently multiply a shared pool or inherit the
+proof-worker thread count.
 
 These overlaps change scheduling, not proof inputs, validation, or delivery
 conditions. Failure or cancellation tears down outstanding sibling work and
@@ -166,7 +175,15 @@ All pipelines use one proving engine. The platform module builds the closed
 Noir input map, the Noir ACIR virtual machine (ACVM) runtime solves the witness,
 and the circuit-compatible
 [Aztec bb.js](https://github.com/AztecProtocol/aztec-packages/tree/v5.2.0/barretenberg/ts/bb.js)
-release generates an UltraHonk proof. bb.js returns raw proof bytes and an
+release generates an UltraHonk proof with
+`backend.generateProof(witness, { verifierTarget: 'evm' })`. This explicitly
+selects ZK-Honk with the Keccak transcript, not the library's default or
+`evm-no-zk`. The option belongs to the pinned platform proving configuration;
+it is not selected from the caller's chain. Qualification verifies the browser
+output against the matching released verifier artifact and key, not just a
+local verifier configured with the same possibly incorrect defaults.
+
+bb.js returns raw proof bytes and an
 ordered flat array of field-valued public inputs. Google delivers the proof and
 its named semantic public values, not that flattened array. X and GitHub deliver
 the proof but not the array because their Platform Verifiers reconstruct its two
@@ -298,12 +315,15 @@ Profiles add these spans alongside proof-engine initialization:
 | Profile | Platform-step codes |
 |---|---|
 | `google` | `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` |
-| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; concurrent parents `token-session` and `identity-session`, each containing its own `*-session-create` → `*-websocket-connect` → `*-prover-setup` → `*-platform-request` → `*-reveal` → `*-attestation`; `circuit-inputs` starts once both required openings are available, without waiting for attestations |
+| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; concurrent parents `token-session` and `identity-session`, each containing `*-websocket-connect` → `*-prover-setup` → `*-platform-request` → `*-reveal` → `*-attestation`; identity adds `identity-credential-wait` between setup and request; `circuit-inputs` starts once both required openings are available, without waiting for attestations |
 | `github` | `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` |
 
 `prover-readiness` covers awaiting selected artifact single flights; downloads
 may already have started during prefetch. X's session setup overlaps; only
 `identity-platform-request` waits for the parsed token-response bearer.
+`identity-credential-wait` measures that remaining wait after identity setup
+completes, separate from setup and request latency. If the bearer is already
+available it still emits a started/completed pair with no artificial delay.
 `witness` waits for `circuit-inputs` and `proof-backend-initialization`, not for
 the attestation spans. `proof-wasm-load` covers concurrent ACVM/ABI initialization;
 `proof-circuit-load` covers concurrent Noir/Barretenberg/circuit loading.
@@ -358,7 +378,7 @@ Each closed platform/version prover leaf pins its circuit release. The ceremony
 package pins one launch-wide structured reference string size,
 `SRS_SIZE = 2 ** 18`; SRS size is code, not deployment data:
 
-| Profile | Configurable libID assets | Measured circuit size | Pinned BN254 SRS size |
+| Profile | Pinned libID assets | Measured circuit size | Pinned BN254 SRS size |
 |---|---|---:|---:|
 | `x` | shared notarization client and `bearer-link` circuit descriptor | 42,006 | 262,144 (2^18) points |
 | `github` | the same two shared artifacts as X | 42,006 | 262,144 (2^18) points |
@@ -407,6 +427,49 @@ and includes
 persists `Crs.new()` downloads. Its bytes also fix the CRS paths served
 by the [CCDP Distribution](CCDP_DISTRIBUTION.md#proving-assets).
 
+### Dependency asset resolution
+
+Every dependency's actual runtime loader consumes the build-emitted immutable
+CCDP-origin asset locations used by preparation and prefetch. This includes
+companion JavaScript, nested workers, WASM, circuits, and CRS, not just static
+imports. Pass explicit locations where the dependency supports them, including
+ACVM/ABI initialization above; resolve bb.js's upstream CRS requests to the
+pinned local bodies below. Fetch interception or dependency-source rewriting
+is an implementation workaround, not a standardized part of this contract.
+
+For pinned bb.js 5.2.0 and `SRS_SIZE = 2 ** 18`, the CRS mapping is:
+
+| Upstream request path | Required `Range` | Complete emitted body |
+|---|---|---:|
+| `/g1_compressed.dat` | `bytes=0-8388607` | 8,388,608 bytes: compressed BN254 G1 prefix |
+| `/g2.dat` | absent | 128 bytes: BN254 G2 |
+| `/grumpkin_g1_v2.dat` | `bytes=0-4194303` | 4,194,304 bytes: Grumpkin G1 prefix |
+
+Only bb.js's pinned `https://crs.aztec-cdn.foundation` and
+`https://crs.aztec-labs.com` request origins select these mappings. Both resolve
+to the same local resource, not separate cache keys. CRS resolution accepts only
+the listed GET request shapes with no query or fragment, replaces the URL,
+removes `Range`, and fetches the complete local body with same-origin credentials
+and redirects disabled. Cancellation remains attached to the fetch. Unexpected
+dependency requests fail rather than falling through to an upstream network
+request; a library bump must qualify the updated request graph.
+
+The build obtains and validates the exact CRS prefixes once; the browser receives
+ordinary complete `200` responses, not `206` responses needing range-cache
+handling. Prefetch requests those exact local URLs without `Range`. Validate
+status, media type, final URL, and expected decoded length before caching; a
+truncated or failed response is not a cache hit. Single-flight joiners receive
+their own readable response bodies, not an already-consumed shared stream.
+Failed flights are removed so a subsequent cold fetch can proceed. A canceled
+ceremony stops awaiting shared prefetch without canceling another ceremony's
+fetch; its own proof-worker requests and private work remain cancelable.
+
+Qualification runs actual pinned dependency initialization against the generated
+distribution with empty caches and external asset hosts blocked, then repeats
+after prefetch. Cached selected assets, including CRS, need no second download.
+Repeat with partial cache, concurrent profiles, worker restart, and the real
+nested-worker graph. This exercises loaders, not just an expected-URL list.
+
 ## Prefetch and cache lifecycle
 
 Every ceremony attempts consent-overlapped prover prefetch. It is fixed
@@ -421,7 +484,8 @@ posts the exact selected profile to that Worker, and reports dispatch without
 waiting for downloads. It never dispatches to a stale active Worker while a
 newer candidate is installing or waiting. The Worker composes the popup
 package's bounded MessagePort keeper with the selected immutable-asset and CRS
-single flights; no second Worker or registration exists. A Worker which
+single flights in one canonical root registration, regardless of stale nested
+registrations left by earlier deployments. A Worker which
 receives the prefetch request exact-validates it and attaches the fetch work to
 the message event with `event.waitUntil`.
 

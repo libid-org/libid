@@ -201,7 +201,7 @@ The following table is the complete CCDP version-1 message set.
 | [`ProverNotifyEvent`](#provernotifyevent) | Prover → Application | `AppStartProver` and valid OAuth acceptance | zero or more; advisory only |
 | [`ProverDeliverProof`](#proverdeliverproof) | Prover → Application | `AppStartProver` and valid OAuth acceptance | at most once; ends the Prover run |
 | [`CancelCeremony`](#cancelceremony) | Application → Callback or Prover; Prover → Application | active connection for Application cancellation; `AppStartProver` and valid OAuth denial for Prover cancellation | at most once; ends the run without a technical error |
-| [`AbortCeremony`](#abortceremony) | Callback or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
+| [`AbortCeremony`](#abortceremony) | Prefetch, Callback, or Prover → Application | connection acceptance | at most once; reports technical failure and ends the run |
 
 Every recipient requires a plain record with the exact fields, types, and bounds
 defined below. Unknown fields, coercion, normalization, defaults, and
@@ -342,7 +342,7 @@ interface AbortCeremony {
 ```
 
 `AbortCeremony` reports an observable technical failure after connection
-acceptance from whichever of Callback or Prover is active. `reason` is
+acceptance from whichever of Prefetch, Callback, or Prover is active. `reason` is
 a bounded sanitized diagnostic string, not a stable code or raw exception.
 Exact reason enums may emerge from implementation experience. The Application
 rejects the live ceremony. Failure before connection acceptance has no CCDP
@@ -410,6 +410,13 @@ alone retains that URL; neither the URL nor a navigation command crosses the
 carrier. Authorization is not a participating document, so the navigation
 retires the Prefetch carrier while leaving the Application endpoint available
 for Callback.
+
+Worker registration, activation, or selected-profile dispatch failure after
+connection acceptance sends `AbortCeremony` instead of `PrefetchStarted`;
+Application rejects without navigating to Authorization. Download failure
+after successful dispatch remains an asset-cache concern and uses the normal
+cold-fetch path, not a late Prefetch abort. Failures before connection acceptance
+are reported locally and release no protocol message.
 
 #### 2. Authorization to Callback
 
@@ -490,6 +497,9 @@ sequenceDiagram
     A->>P: Navigate to Prefetch
     P->>P: Prefetch accepts connection
     P->>P: Prefetch registers Worker and dispatches selected-profile fetches
+    break Prefetch setup fails
+        P-->>A: AbortCeremony
+    end
     P-->>A: PrefetchStarted
     A->>P: Navigate away to Authorization
 

@@ -157,7 +157,7 @@ reported.
 | service-worker lifecycle | registration, install, activation, control, update, and failure code |
 | selected profile | platform/version and immutable release identifier |
 | single flight | owner or joiner, work already completed, residual join wait, and terminal result |
-| ordinary artifacts | count, declared bytes, cache hits/misses, network fetches, transferred bytes, decoded bytes, and total duration |
+| ordinary artifacts | resource-request count, declared bytes, cache hits/misses, single-flight owners/joiners, actual network fetches, transferred bytes, decoded bytes, and duration |
 | CRS artifacts | the same aggregate fields, reported separately from ordinary artifacts |
 | asset class | code-defined class and logical asset code, never a URL |
 | pre-OAuth work | prefetch start through OAuth-platform navigation |
@@ -168,6 +168,15 @@ reported.
 Per-asset timings are useful in a manual diagnostics view, but production
 export should prefer the aggregates above. Resource Timing names are mapped to
 package-owned logical asset codes before leaving the local context.
+
+A resource request is a consumer asking for bytes, not necessarily a download.
+Count joiners separately: three requests sharing one uncached flight produce
+one network retrieval and two joiners, not three downloads. HTTP-cache and
+Service-Worker-cache responses add no network download. Record network activity
+where it occurs, including earlier Service Worker prefetch; Prover-local
+Resource Timing alone is not a complete total. Missing timing/worker history is
+`unavailable`, not zero, and joining or reading cached bytes must not count their
+transfer size again.
 
 Prefetch benefit is an estimate of work completed before proving, not a
 counterfactual speedup measurement. If its context and worker are both lost
@@ -190,8 +199,8 @@ It is not a client-side parsing span or a new CCDP lifecycle message.
 
 The prover also reports these bounded facts:
 
-- `crossOriginIsolated`, `SharedArrayBuffer` availability, worker support, and
-  effective proof thread count;
+- `crossOriginIsolated`, `SharedArrayBuffer` availability, worker support,
+  effective proof thread count, and separately measured TLSNotary pool sizes;
 - proof system, platform ceremony version, circuit release, runtime release,
   and SRS profile as package-owned identifiers;
 - proof-worker and notary-worker unexpected termination counts;

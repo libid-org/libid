@@ -56,7 +56,7 @@ One bridge deployment has these inputs:
 | CCDP origin | One canonical HTTPS origin selected by the operator; defaults to `https://lib.id` when omitted |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback shell | Supported CCDP versions, current default input tuple, optional per-version input overrides, stylesheet hash, and response-policy sources required to load [Callback](CCDP.md#callback-get-callbackjs) from the configured CCDP origin |
+| Callback shell | Supported CCDP versions, current default input tuple, optional per-version input overrides, and response-policy sources required to load [Callback](CCDP.md#callback-get-callbackjs) from the configured CCDP origin |
 | GitHub settings | Client secret, redirect URI, token endpoint settings, and server-side notary settings when GitHub is enabled |
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
@@ -83,7 +83,7 @@ The bridge exposes only:
 
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
-| `GET` | `/api/v1/ceremony/config` | always | public platform and CCDP configuration | exact request `Origin` member of `allowedAppOrigins`; exact noncredentialed CORS |
+| `GET` | `/api/v1/ceremony/config` | always | public platform and CCDP configuration | exact allowed browser origin; absent `Origin` accepted only by the same-origin rule below |
 | `GET` | configured callback path, default `/auth/callback` | always | registered OAuth callback shell | none at HTTP ingress; callback authenticates its popup connection after clearing its input |
 | `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured CCDP origin; exact noncredentialed CORS |
 
@@ -139,16 +139,25 @@ The response rules are:
 - The record contains no secret, `allowedAppOrigins`, artifact URL, CSP source,
   notary setting, platform display metadata, or application-specific value.
 
-The request must carry an `Origin` which exactly matches an
-`allowedAppOrigins` member. A successful response sets that exact origin in
-`Access-Control-Allow-Origin`, permits no credentials, never uses `*`, and uses
-`Content-Type: application/json`, `Cache-Control: no-store`, and
-`X-Content-Type-Options: nosniff`. Missing and unlisted origins fail without
-returning configuration. Request values do not alter the response record.
+When present, `Origin` must exactly match an `allowedAppOrigins` member. A
+successful cross-origin response sets that exact origin in
+`Access-Control-Allow-Origin`, permits no credentials, and never uses `*`.
+A same-origin browser GET may omit `Origin`: accept that case only when
+`Sec-Fetch-Site` is `same-origin` and the Bridge's configured public origin is
+itself in `allowedAppOrigins`. It needs no CORS response header. Do not infer
+admission from `Referer`, the request host, or absent Fetch Metadata; an explicit
+invalid, `null`, or unlisted `Origin` always fails.
+
+Both cases use `Content-Type: application/json`, `Cache-Control: no-store`,
+`Vary: Origin, Sec-Fetch-Site`, and `X-Content-Type-Options: nosniff`. Rejected
+requests return no configuration. These browser admission checks do not make
+the public record a secret from non-browser clients. Request values do not
+alter the response record.
 
 The application-scoped `CeremonyClient` fetches and validates this record once
-at creation. It freezes the selected client ID, redirect URI, CCDP origin,
-and mutually supported platform ceremony version in each live ceremony. CCDP
+at creation using `credentials: 'omit'`. It freezes the selected client ID,
+redirect URI, CCDP origin, and mutually supported platform ceremony version
+in each live ceremony. CCDP
 [resources](CCDP.md#documents-and-routes) never fetch bridge configuration.
 
 ## Callback document
@@ -166,7 +175,7 @@ opener whenever OAuth-platform policy permits.
 The OAuth Bridge owns the shell's input handling, clearing, version selection,
 response policy, and module invocation. It embeds only the closed
 supported-version map, optional input overrides, `allowedAppOrigins`, the
-configured CCDP origin, stylesheet hash, and fixed CSP sources. CCDP owns the
+configured CCDP origin and fixed CSP sources. CCDP owns the
 invoked [Callback](CCDP.md#callback-get-callbackjs) behavior.
 
 ### Shell document
@@ -300,15 +309,17 @@ The callback response uses:
 - `frame-src` admitting only the exact configured CCDP origin;
 - `connect-src` admitting only fixed sources required by the configured popup
   fallback;
-- `style-src` permitting only the exact package stylesheet hash;
+- `style-src 'unsafe-inline'` for package-owned inline styles, with no external
+  stylesheet sources or Bridge-pinned stylesheet hash;
 - one exact hash for the inline clearing bootstrap and only the exact supported
   Callback implementation URLs on the configured CCDP origin; and
 - no broad scheme, JavaScript `'unsafe-inline'`, or `'unsafe-eval'` source.
 
 The CCDP Distribution's Callback module uses its
 [protocol-resource response profile](CCDP_DISTRIBUTION.md#protocol-resources).
-Markup, styles, and logo remain package-owned; the bridge exposes no separate
-template or theme contract.
+Markup, styles, and logo remain package-owned. There is no styling customization
+input, template, or theme contract. Compatible Callback UI changes require no
+Bridge update; inline styling permission does not permit inline JavaScript.
 
 ## GitHub token endpoint
 
@@ -348,8 +359,10 @@ most 1,024 bytes. `codeVerifier` matches `[A-Za-z0-9_-]{43}`. The bridge does
 not normalize either value.
 
 `accessToken` is nonempty printable ASCII without whitespace or control bytes
-and at most 4,096 bytes. `attestedData` decodes to a nonempty byte-exact record
-of at most 2 MiB; `signature` decodes to exactly 65 bytes; and `bearerOpening`
+and at most 128 bytes, matching GitHub v1's bearer circuit. Both Bridge and
+Prover enforce this bound before dependent identity notarization; an oversized
+token fails rather than being truncated. `attestedData` decodes to a nonempty
+byte-exact record of at most 2 MiB; `signature` decodes to exactly 65 bytes; and `bearerOpening`
 decodes to exactly 16 bytes. Every byte string uses canonical unpadded base64url.
 The encoded response body is at most 3 MiB.
 

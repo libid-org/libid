@@ -294,7 +294,9 @@ export type SupportedCeremonyVersion<P extends PlatformId> =
 export type ProofByPlatformVersion = {
   [P in PlatformId]: {
     [V in SupportedCeremonyVersion<P>]:
-      ReturnType<(typeof platforms)[P]['versions'][V]['validateProof']>
+      (typeof platforms)[P]['versions'][V] extends {
+        validateProof(value: unknown): infer Proof
+      } ? Proof : never
   }
 }
 
@@ -305,7 +307,7 @@ export declare function validateProofMessage<
   platformId: P,
   platformCeremonyVersion: V,
   message: ProverDeliverProof,
-): ProverDeliverProof<ProofByPlatformVersion[P][V]>
+): ProverDeliverProof & { proof: ProofByPlatformVersion[P][V] }
 
 export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
   Object.keys(platforms) as PlatformId[],
@@ -327,9 +329,9 @@ interface CeremonyClient {
 ```
 
 `validateProofMessage` dispatches to the selected version's exact `types`
-validator and returns the generic CCDP envelope narrowed to that validator's
-derived proof type. Any implementation-only assertion needed to express the
-indexed dispatch to TypeScript remains behind this validated aggregation
+validator and returns the same CCDP envelope with its proof field narrowed to
+that validator's derived proof type. Any implementation-only assertion needed
+to express the indexed dispatch to TypeScript remains behind this validated aggregation
 boundary; the Ceremony Client performs no cast. The CCDP codec layer keeps the
 proof opaque and does not import the catalog.
 
@@ -598,11 +600,12 @@ the two bearer commitments from their respective verified attestations. Their
 client identifier, identity, and evidence time likewise come only from those
 signed attestation bytes.
 
-No record contains chain ID or Authorization Digest: the Proof Verifier
-observes the former from its chain environment and recomputes the latter. No
-record adds a verifier address, verification key, validity bound, normalized
-handle, or a second copy of any field already authenticated by a proof or
-attestation.
+Neither `OAuthProof` nor its platform proof contains chain ID or Authorization
+Digest: the Proof Verifier observes the former from its chain environment and
+recomputes the latter. The client-facing `Identity` separately exposes the
+retained digest. No proof record adds a verifier address, verification key,
+validity bound, normalized handle, or a second copy of any field already
+authenticated by a proof or attestation.
 The Ceremony Client uses shared protocol primitives and the selected platform
 module to check that exact `OAuthProof` against the live Ceremony's retained
 authorization fields, derive the identity preview from locally validated

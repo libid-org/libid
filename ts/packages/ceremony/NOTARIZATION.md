@@ -91,11 +91,19 @@ interface NotarizationSession {
   reveal(reveals: Reveals): Promise<RevealResult>
 }
 
-declare function prepareNotarization(): Promise<NotarizationSession>
+declare function prepareNotarization(
+  url: string,
+  signal: AbortSignal,
+): Promise<NotarizationSession>
 ```
 
-Preparation connects and performs TLSNotary setup without needing the HTTP
-request or bearer. Each session accepts one `send`, followed by one `reveal`.
+The platform leaf supplies its code-owned canonical HTTPS request URL before
+preparation. It contains no credentials or fragment. The adapter derives the
+TLS server name and port from it before constructing the TLSNotary prover and
+performing setup; it neither accepts a separate hostname nor follows redirects.
+`send` requires the exact prepared URL, while headers and body may wait for the
+bearer. Thus independent setup needs no credential, but has a fixed TLS target.
+Each session accepts one `send`, followed by one `reveal`.
 `send` exposes the complete local transcript before reveal/finalization;
 `reveal` exposes the private commitment openings as soon as available, while its
 `attestation` promise covers final channel retrieval, decoding, and correlation.
@@ -107,8 +115,13 @@ Early transcript and opening values are provisional. The adapter retains what
 it needs to correlate them against the final signed bytes before resolving
 `attestation`. The pipeline observes failures immediately, tears down sibling
 work on failure/cancellation, and delivers nothing until all final attestation
-promises succeed. The session owner must release its channel and workers on
-every terminal path, including abandonment between stages.
+promises succeed. The supplied signal covers preparation and every later stage,
+including an idle prepared session. An already-aborted signal opens nothing;
+later abort rejects pending operations, closes the socket, releases session-owned
+workers and private buffers, and prevents later sends. Completion or failure
+performs the same resource cleanup and removes its abort listener. The platform
+pipeline aborts its shared controller on cancellation, sibling failure, or
+abandonment in `finally`; no separate session disposal API is needed.
 
 This API is internal to the prover. `CommitmentOpening.blinder` is exactly 16
 bytes. Header order is not semantic: selection operates on the actual
@@ -258,7 +271,7 @@ sequenceDiagram
     participant N as Notary Service
     participant P as Platform HTTPS server
 
-    M->>T: prepareNotarization()
+    M->>T: prepareNotarization(url, signal)
     T->>N: Open wss://<notary-origin>/notarize-proxy
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)

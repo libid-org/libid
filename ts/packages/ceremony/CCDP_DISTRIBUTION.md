@@ -69,9 +69,10 @@ All protocol resources send their exact media type and
 `Referrer-Policy: no-referrer` and are not frameable. Document CSP begins with
 `default-src 'none'`, `object-src 'none'`, `base-uri 'none'`,
 `form-action 'none'`, and `frame-ancestors 'none'`; admits only the exact
-build-generated entry code, stylesheet, resources, and network sources needed
-by that document; and uses neither JavaScript `'unsafe-inline'` nor
-`'unsafe-eval'`.
+build-generated entry code, resources, and network sources needed by that
+document; and uses neither JavaScript `'unsafe-inline'` nor `'unsafe-eval'`.
+Package-owned UI uses `style-src 'unsafe-inline'` with no external stylesheet
+source or styling customization input.
 
 | Resource | Form | Additional response contract |
 |---|---|---|
@@ -92,6 +93,15 @@ Both Prover responses close script, worker, and asset sources to the
 build-generated same-origin graph and toolchain-required `blob:` workers.
 Their `connect-src https:` permits any validated third-party OAuth Bridge; the
 build additionally pins the Notary Service's exact WebSocket origin.
+
+Every context that compiles WASM, including dedicated proof and TLSNotary
+workers, includes `script-src 'wasm-unsafe-eval'` alongside its code sources.
+This permits WASM compilation, not JavaScript string evaluation. External worker
+scripts have their own generated CSP; they do not rely on the document's CSP.
+Blob workers inherit their creator's policy. Worker profiles admit only their
+required script, asset, and protocol connections, and `worker-src` admits
+same-origin or `blob:` children only for workers that spawn them. The Service
+Worker only caches bytes and keeps ports: it needs no WASM compilation permission.
 
 Each request-invariant Prover response supports multiple platform profiles and
 arbitrary canonical HTTPS OAuth Bridges. CSP cannot express a runtime-selected
@@ -130,6 +140,9 @@ again. Neither response parses platform-specific return fields before
 Worker state, signaling, logs, or telemetry.
 
 Both paths resolve the root-scope Worker registration installed by Prefetch.
+Resolve its exact `/` scope, not the longest scope matching the current page
+or a registration identified only by script URL. A stale `/ccdp/v1/`
+registration may use the same script URL and must not replace the root choice.
 This lets the popup package preserve a MessagePort internally while the same
 Worker's asset flights and caches remain available to the final Prover.
 Before connection readiness the entrypoint performs no proving or CCDP
@@ -176,6 +189,11 @@ The distribution contains every path referenced by its code. Browsers never
 list the asset tree, reach an upstream source, or trigger archive extraction or
 remote fetch. A separate asset CDN is unnecessary: `ccdpOrigin` is the stable
 browser-facing origin and may itself run behind a CDN.
+
+Dependency-internal fetches use the same emitted URLs as Prefetch, including
+bb.js's raw CRS requests. The build materializes their complete bounded bodies;
+[dependency asset resolution](PROVING.md#dependency-asset-resolution) defines
+the request mapping and cache contract.
 
 ### Publication and compatibility
 
@@ -254,12 +272,13 @@ const responseProfiles = {
   proverFallback: proverFallbackResponseProfile,
   worker: workerResponseProfile,
   asset: immutableAssetResponseProfile,
+  executionWorker: immutableExecutionWorkerResponseProfile,
 } as const
 ```
 
 Profiles contain fixed isolation, cache, framing, media-type, and CSP rules but
 no generated filenames. The build fills body-dependent values such as inline
-script/style hashes, generated resource URLs, and the build-pinned Notary
+script hashes, generated resource URLs, and the build-pinned Notary
 Service origin. It does not parse this Markdown or ask SWS to reconstruct
 policy.
 
@@ -270,7 +289,7 @@ For each supported CCDP version, the pipeline:
 1. gives the declared entrypoints to the compiler/bundler;
 2. reads emitted filenames and dependency edges from its output API;
 3. materializes owner-declared external resources under immutable paths;
-4. renders protocol bodies using those paths and response profiles; and
+4. renders protocol bodies using those paths and response profiles;
 5. emits a Brotli sidecar for each unencoded public body only when it is
    smaller; and
 6. validates the closed graph before replacing the generated output.
@@ -341,9 +360,10 @@ undeclared entry paths such as `/prover/index.html`. Other protocol routes map
 directly to exact files. SWS uses generated Brotli sidecars for
 `Accept-Encoding` negotiation and never compresses a response at request time.
 
-The generator emits one non-overlapping `advanced.headers` rule for every
-versioned protocol resource and one recursive rule for the `/ccdp/assets/`
-namespace. Those rules are compiled from the response-profile table; SWS does
+The generator emits non-overlapping `advanced.headers` rules covering every
+public resource. Assets with execution-worker CSP use their own exact path
+rules, not a generic asset policy; identical profiles may be grouped only
+without overlap. Those rules are compiled from the response-profile table; SWS does
 not reconstruct policy. They set exact media, cache, isolation, framing, CORS,
 CSP, and `Service-Worker-Allowed` headers. The generator rejects overlapping
 patterns, an omitted profile, an unrepresented file, or any SWS option that
