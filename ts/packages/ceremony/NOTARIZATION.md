@@ -81,17 +81,34 @@ interface NotaryAttestation {
   signature: Uint8Array // exactly 65 bytes
 }
 
-interface NotarizeResult {
-  transcript: Transcript
+interface RevealResult {
   openings: readonly CommitmentOpening[]
-  attestation: NotaryAttestation
+  attestation: Promise<NotaryAttestation>
 }
 
-declare function notarize(
-  request: ExactHttpRequest,
-  selectReveals: (transcript: Transcript) => Reveals,
-): Promise<NotarizeResult>
+interface NotarizationSession {
+  send(request: ExactHttpRequest): Promise<Transcript>
+  reveal(reveals: Reveals): Promise<RevealResult>
+}
+
+declare function prepareNotarization(): Promise<NotarizationSession>
 ```
+
+Preparation connects and performs TLSNotary setup without needing the HTTP
+request or bearer. Each session accepts one `send`, followed by one `reveal`.
+`send` exposes the complete local transcript before reveal/finalization;
+`reveal` exposes the private commitment openings as soon as available, while its
+`attestation` promise covers final channel retrieval, decoding, and correlation.
+Platform code selects reveals from that session's transcript. This staged API
+keeps independent setup, token parsing, and witness construction off the final
+attestation critical path; it is not a generic session/job framework.
+
+Early transcript and opening values are provisional. The adapter retains what
+it needs to correlate them against the final signed bytes before resolving
+`attestation`. The pipeline observes failures immediately, tears down sibling
+work on failure/cancellation, and delivers nothing until all final attestation
+promises succeed. The session owner must release its channel and workers on
+every terminal path, including abandonment between stages.
 
 This API is internal to the prover. `CommitmentOpening.blinder` is exactly 16
 bytes. Header order is not semantic: selection operates on the actual
@@ -106,8 +123,8 @@ the notarization instead of truncating the transcript.
 The transcript exists only long enough for the platform module to parse its
 private response and build its witness. It never crosses CCDP or the public
 ceremony API. The adapter correlates the raw TLSNotary commitments with the
-signed attestation, discards duplicate commitment hashes, and returns only the
-range and private blinder for each opening.
+signed attestation before final completion, discards duplicate commitment hashes,
+and exposes only the range and private blinder for each opening.
 
 ## Canonical attested-data decoder
 
@@ -216,10 +233,11 @@ internal camel-case `NotaryAttestation` without changing either byte string,
 then requires end-of-stream. A malformed length or UTF-8/JSON value, unknown or
 duplicate field, trailing byte, second frame, or missing close fails.
 
-### Implementation status
+### Integration qualification
 
-This is the target launch transport, not the contract of the currently deployed
-notary. The implementation is assembled from three in-flight pieces:
+The reported active PoC exercises direct WebSocket notarization and receives
+the final attestation over that same reclaimed socket, without HTTP session
+creation or polling. Related upstream work is tracked in:
 
 1. [notary #3](https://github.com/libid-org/notary/pull/3) produces the canonical
    ceremony attestation and removes the single-platform authority pin;
@@ -228,11 +246,9 @@ notary. The implementation is assembled from three in-flight pieces:
 3. [TLSNotary #1178](https://github.com/tlsnotary/tlsn/pull/1178) returns the
    completed session channel to the caller.
 
-The remaining integration replaces the current session creation and
-attestation polling with the final frame below on the reclaimed WebSocket, then
-qualifies X token, X identity, and GitHub identity against the testnet service.
-Until that integration lands, the deployed service is useful for implementation
-work but does not satisfy this browser transport contract.
+Qualify the selected server/client artifacts together for X token, X identity,
+and GitHub identity against the framing below. The PoC result does not establish
+that every deployed service or older release supports this transport.
 
 ```mermaid
 sequenceDiagram
@@ -242,28 +258,31 @@ sequenceDiagram
     participant N as Notary Service
     participant P as Platform HTTPS server
 
-    M->>T: notarize(request, selectReveals)
+    M->>T: prepareNotarization()
     T->>N: Open wss://<notary-origin>/notarize-proxy
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)
     N-->>W: TLSNotary setup messages (Proxy profile)
+    T-->>M: Prepared session
+    M->>T: send(request)
     T->>W: sendRequest(request)
     W->>N: TLSNotary request messages (Proxy profile)
     N->>P: Forward encrypted TLS records
     P-->>N: Return encrypted TLS records
     N-->>W: TLSNotary response messages (Proxy profile)
     W-->>T: Complete local transcript
-    T->>M: selectReveals(transcript)
-    M-->>T: Revealed ranges
+    T-->>M: Transcript available for response parsing
+    M->>T: reveal(selected ranges)
     T->>W: reveal(ranges and complement commitments)
     W->>N: Reveal proof and commitments
     N-->>W: Accept authenticated partial transcript
     W-->>T: Commitment openings
+    T-->>M: Openings and pending attestation
     T->>W: finish()
     N->>N: finish()
     N-->>T: NotaryAttestation
     T->>T: Correlate signed output and openings
-    T-->>M: NotarizeResult
+    T-->>M: Resolve attestation
 ```
 
 `finish()` releases each TLSNotary driver from its side of the original
@@ -274,10 +293,11 @@ all signed data, so no ceremony ID, request ID, platform, or token/identity tag
 crosses this boundary.
 
 The adapter is also indifferent to application sequencing. Platform code
-retains which call produced each result; within one X ceremony, token
-notarization completes before identity notarization starts because the latter's
-request requires the bearer. Independent ceremonies may notarize concurrently
-on separate channels. The final Platform Verifier checks each attestation's
+retains which session produced each result. Within one X ceremony, both
+sessions connect and perform setup concurrently; only sending the identity
+request waits for the bearer parsed from the token transcript. Reveal and final
+attestation work may overlap that request and proof generation. Independent
+sessions and ceremonies use separate channels. The final Platform Verifier checks each attestation's
 exact authority, method, path, framing, and proof position rather than trusting
 browser execution order.
 
@@ -338,7 +358,8 @@ token and identity attestations in their named fields alongside the
 and locally extracted identity fields do not enter the platform proof.
 
 Malformed signed data, range ordering, coverage, commitment correlation,
-same-channel framing, cancellation, or a partial result rejects the call.
+same-channel framing, cancellation, or a partial result rejects final completion
+and invalidates any speculative witness or proof built from the early material.
 Authoritative signature and platform-profile acceptance remains the Ledger Verifier's
 responsibility.
 

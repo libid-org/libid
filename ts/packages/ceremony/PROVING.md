@@ -124,6 +124,27 @@ browser call sites, and attestation handoff are defined in
 
 ## Platform pipelines
 
+### Shared startup
+
+Prover imports its runtime concurrently with joining selected-profile asset
+prefetch. Once both are ready and the OAuth return is accepted, platform input
+preparation and dedicated proof-worker startup run concurrently. Backend
+initialization needs the selected circuit, not the ceremony's private inputs.
+Witness execution waits for both prepared inputs and backend readiness.
+
+Inside the proof worker, initialize ACVM and ABI WASM concurrently, then load
+Noir, Barretenberg, and the circuit concurrently before initializing the backend.
+Request up to four proof threads, capped by hardware concurrency. Check actual
+worker isolation, shared-memory availability, and effective thread count; a
+requested thread count is not evidence that multithreading started. Unsupported
+execution fails explicitly rather than silently accepting single-threaded work.
+
+These overlaps change scheduling, not proof inputs, validation, or delivery
+conditions. Failure or cancellation tears down outstanding sibling work and
+discards any provisional result.
+
+### Circuit selection
+
 The platform-version prover leaves own witness construction and orchestration; the circuit
 repository owns the exact proof relation and ABI. Launch uses these artifacts:
 
@@ -177,6 +198,11 @@ JSON Web Key Set (JWKS) endpoint and constructs the `oidc_google` input map:
   containing `SHA256(aud)`, one packed `sub` field, two packed email fields,
   `exp`, and eighteen RSA-modulus limbs.
 
+JWT decoding, signing-key retrieval and selection, and circuit-input
+construction overlap proof-worker startup and backend initialization. Witness
+execution starts once both inputs and backend are ready. No TLSNotary session
+is created for Google.
+
 The semantic groups flatten to exactly 56 bb.js public-input fields. The module
 derives the candidate authorization digest from the signed nonce; the circuit
 re-encodes it as the exact unpadded base64url nonce and verifies the RS256
@@ -192,18 +218,29 @@ authoritative.
 
 `platforms/x/1/prover` performs two browser-owned TLSNotary Proxy sessions:
 
-1. Notarize the fixed `/2/oauth2/token` exchange using the captured code,
+1. Connect and set up the token and identity TLSNotary sessions concurrently,
+   while the proof backend initializes. Each session owns its own WebSocket.
+2. Execute the fixed `/2/oauth2/token` exchange using the captured code,
    derived code verifier, frozen redirect URI, and client identifier. Reveal
    the profile-owned request and delimiter ranges and commit the returned
    bearer.
-2. Use that bearer in the fixed `/2/users/me` request. Reveal the complete
+3. Parse the bearer from the token-response transcript as soon as it is
+   available, without waiting for token reveal or attestation completion. Use
+   it in the already-prepared identity session's fixed `/2/users/me` request.
+   Reveal the complete
    request framing around its committed bearer plus the identity response's
    canonical `id` and `username` ranges.
-3. Build the shared `bearer-link` witness from the private bearer, its length,
-   and the two independent 16-byte TLSNotary blinders, then generate the proof.
+4. Once both sessions expose the required reveal material and independent
+   16-byte commitment openings, build the `bearer-link` witness from the private
+   bearer, its length, and those blinders. Execute the witness and generate the
+   proof as soon as the backend is ready, overlapping final notarization work.
+5. Deliver only after the proof and both final attestations are complete and
+   their commitment correlations pass. A late notarization failure discards an
+   already-generated proof.
 
-Token notarization completes before identity notarization starts because its
-request requires the returned bearer. The circuit constrains the bearer to
+Only the identity HTTP request waits for the token-response bearer; session
+setup and attestation completion are not that dependency. Early transcript and
+opening material is provisional, not an authenticated attestation. The circuit constrains the bearer to
 nonempty printable ASCII of at most 128 bytes and exposes exactly the two
 32-byte bearer commitments, token first and identity second; Noir flattens them
 to 64 bb.js public-input fields. Delivery contains only the proof and the two
@@ -256,18 +293,21 @@ Every profile includes these spans:
   `proof-circuit-load` → `proof-backend-initialization` → `witness` → `proof` →
   `proof-backend-destroy`.
 
-Profiles add these spans before the proof engine:
+Profiles add these spans alongside proof-engine initialization:
 
 | Profile | Platform-step codes |
 |---|---|
 | `google` | `token-decoding` → `signing-key-fetch` → `signing-key-selection` → `circuit-inputs` |
-| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; parent `token-session` with `token-session-create` → `token-websocket-connect` → `token-prover-setup` → `token-platform-request` → `token-reveal`; then parent `identity-session` with `identity-session-create` → `identity-websocket-connect` → `identity-prover-setup` → `identity-platform-request` → `identity-reveal`; then `token-attestation` → `identity-attestation` → `circuit-inputs` |
+| `x` | `notary-worker-bootstrap` → `notary-wrapper-load` → `notary-wasm-instantiation` → `notary-worker-initialization`; concurrent parents `token-session` and `identity-session`, each containing its own `*-session-create` → `*-websocket-connect` → `*-prover-setup` → `*-platform-request` → `*-reveal` → `*-attestation`; `circuit-inputs` starts once both required openings are available, without waiting for attestations |
 | `github` | `token-exchange-request` → `token-exchange-validation` → `notary-initialization` → `identity-session` → `identity-attestation` → `circuit-inputs` |
 
 `prover-readiness` covers awaiting selected artifact single flights; downloads
-may already have started during prefetch. X's token and identity session spans
-are sequential because the identity session requires the bearer produced by
-the token session. GitHub exposes its one server request and local validation
+may already have started during prefetch. X's session setup overlaps; only
+`identity-platform-request` waits for the parsed token-response bearer.
+`witness` waits for `circuit-inputs` and `proof-backend-initialization`, not for
+the attestation spans. `proof-wasm-load` covers concurrent ACVM/ABI initialization;
+`proof-circuit-load` covers concurrent Noir/Barretenberg/circuit loading.
+GitHub exposes its one server request and local validation
 of the complete response, but no fictional server-internal progress.
 
 On a successful run, each code emits `started` once and `completed` once. On
@@ -400,13 +440,13 @@ supply an asset path.
 
 The prefetch branch contains no OAuth or proof input. The separately imported
 popup handler owns only its bounded temporary continuity entries. The branch
-owns each selected immutable asset fetch from the first byte, keys
-ordinary artifact single flights by canonical URL, starts the fixed launch
-bb.js CRS loaders—
-`Crs.new(SRS_SIZE)` and `GrumpkinCrs.new(2 ** 16)`—as curve-specific single
-flights, and extends the initiating worker event through completion. Those
-loaders use bb.js's fixed CRS endpoints and IndexedDB cache. Merely importing
-bb.js is not CRS prefetch.
+owns each selected immutable asset fetch from the first byte and keys single
+flights by canonical URL. It fetches missing runtime assets, selected circuits,
+WASM, and the pinned raw BN254/Grumpkin CRS bodies concurrently, sharing pending
+asset and raw-CRS fetches between requests. It extends the initiating worker
+event through completion. Prefetch warms bytes, not computation: it does not
+initialize proof backends, preprocess CRS, or retain WASM instances or
+TLSNotary sessions across OAuth. Merely importing bb.js is not CRS prefetch.
 
 Ordinary asset prefetches use `credentials: 'same-origin'`, matching native module
 and worker requests. Fetch-event handling preserves the admitted request's URL
@@ -427,9 +467,11 @@ prefetch/cache contract; artifact fetch failure records no weaker mode and
 leaves proving on the identical cold path. The active prover resolves
 the same profile using the exact `AppStartProver` platform/version. Ordinary asset
 requests join an in-flight fetch or read the completed Cache Storage entry. It
-asks the service worker to finish or restart the fixed CRS single flights;
-`Barretenberg.new({ srsSize: SRS_SIZE })` then reads the resulting bb.js
-IndexedDB cache before proof generation.
+joins raw-CRS fetches in the same way. Backend initialization through
+`Barretenberg.new({ srsSize: SRS_SIZE })` keeps bb.js's native processed-CRS
+IndexedDB cache enabled; on a miss its normal CRS loading consumes the prefetched
+raw responses. The worker does not reproduce that processing or maintain a
+second processed-CRS cache.
 
 A later ceremony reuses every repeated artifact URL and the same CRS entries;
 only missing profile assets are fetched. OAuth navigation therefore neither
@@ -438,16 +480,39 @@ Prover share the CCDP origin and worker registration, so the final Prover
 reuses the same fetches and caches.
 
 A new document reconnects to the worker rather than awaiting a Promise owned
-by a destroyed prefetch document. Worker termination after completion is
-harmless because ordinary responses live in Cache Storage and completed CRS
-data lives in bb.js's IndexedDB cache; no separate durable completion marker
-exists.
+by a destroyed prefetch document. Completed asset and raw-CRS responses live in
+Cache Storage; processed CRS from backend initialization lives in bb.js's
+native IndexedDB cache. If the worker stops midway, completed responses remain
+usable and missing resources follow the normal fetch path. No separate durable
+completion marker exists.
+
+Service-worker asset caches are separated by asset release, while unchanged
+content-addressed URLs remain reusable across releases. A new release checks
+retained caches for those identical URLs rather than forcing downloads merely
+because the cache namespace changed. Stable protocol endpoints revalidate;
+immutable asset paths do not change without changed content or response policy.
 
 Registration and activation failure are terminal. A missing or malformed
 selected profile also fails before OAuth. Fetch, eviction, or quota
 failure follows the identical selected-profile cold fetch path and changes
 latency only; it never weakens isolation, worker count, or verification. Warm
 state is never a ceremony checkpoint.
+
+### PoC measurements and rationale
+
+The retained PoC optimizations above reportedly brought X proving to roughly
+six seconds in the tested setup; this is not a cross-browser latency target or
+an OAuth-inclusive timing guarantee. In a small Chromium A/B sample, custom
+pre-OAuth CRS preprocessing reduced cold backend initialization by about 740 ms
+but total post-OAuth proving by only about 200 ms. It was removed: warm runs
+already benefited from the native processed-CRS cache. Preserve raw-byte
+prefetch and native caching without introducing another preprocessing pipeline.
+
+Concurrent span durations are not additive elapsed time. A displayed prefetch
+benefit estimates work completed before proving, not a measured counterfactual
+speedup. The active path skips local cryptographic proof verification; a PoC
+UI label saying “verified proof” does not establish otherwise. Ledger Verifier
+acceptance remains authoritative.
 
 ## Execution isolation
 

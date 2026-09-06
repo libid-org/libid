@@ -169,8 +169,9 @@ Per-asset timings are useful in a manual diagnostics view, but production
 export should prefer the aggregates above. Resource Timing names are mapped to
 package-owned logical asset codes before leaving the local context.
 
-Prefetch is best effort. If its context and worker are both lost before a
-later prover can observe the flight, exact benefit is `unavailable`, not zero.
+Prefetch benefit is an estimate of work completed before proving, not a
+counterfactual speedup measurement. If its context and worker are both lost
+before a later prover can observe the flight, that estimate is `unavailable`, not zero.
 Persisting a diagnostic-only prefetch receipt remains an open decision; such a
 receipt must be expiring, non-authoritative, contain no ceremony input, and
 never affect cache or ceremony behavior.
@@ -200,9 +201,10 @@ The prover also reports these bounded facts:
   their contents.
 
 Initialization, notarization, witness, and proof durations remain distinct.
-For X, token and identity session parents preserve their defined sequential
-dependency; elapsed parent time must not be computed by summing overlapping
-children.
+For X, session setup overlaps and only the identity request waits for the
+token-response bearer. Proof generation may overlap final attestations. Measure
+elapsed time from the relevant start/end timestamps, never by summing
+overlapping session, initialization, or proof spans.
 
 ### Proof delivery and cleanup
 
@@ -215,6 +217,8 @@ codes.
 No diagnostic success precedes local proof-shape validation. Ledger Verifier proof
 verification and every post-ceremony application action remain outside this
 catalog.
+An accepted delivery or a PoC “verified proof” label is not evidence of local
+cryptographic verification, which the active proving path does not perform.
 
 ### Failure classification
 
