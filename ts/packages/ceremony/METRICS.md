@@ -128,7 +128,7 @@ machine codes should remain closed package constants.
 | OAuth authorization interval | OAuth-platform navigation to cleared callback bootstrap; includes platform and human time |
 | post-OAuth machinery | cleared callback bootstrap to accepted proof result or terminal failure |
 | prover run | `AppStartProver` to locally validated proof delivery |
-| result assembly | proof receipt, exact shape validation, preview derivation, and public result resolution |
+| result assembly | proof receipt, exact shape validation, retained-field wrapping, and public result resolution |
 | configuration | config fetch, decode, validation, selected platform/version, and failure code |
 | ceremony construction | input validation, authorization digest/PKCE work, and frozen configuration |
 | launch | popup creation result, callback bootstrap readiness, and OAuth-platform navigation |
@@ -218,7 +218,7 @@ overlapping session, initialization, or proof spans.
 ### Proof delivery and cleanup
 
 Measure proof generation to connection send, connection send to client receipt,
-proof-shape validation, preview construction, application observer delivery,
+proof-shape validation, retained-field wrapping, application observer delivery,
 and connection/context cleanup separately. Record duplicate or late delivery,
 discarded result, ignored progress, and close failure as stable counters or
 codes.

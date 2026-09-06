@@ -2,8 +2,8 @@
 
 This document defines the browser-side `prover/notarization` module: how it
 runs a TLSNotary session, applies platform-selected transcript disclosures, and
-returns a byte-exact attestation plus private commitment openings. The enclosing
-pipeline is defined in [PROVING.md](PROVING.md), browser placement in
+returns a byte-exact attestation with its decoded view plus private commitment
+openings. The enclosing pipeline is defined in [PROVING.md](PROVING.md), browser placement in
 [CCDP.md](CCDP.md), asset serving in [CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md#proving-assets),
 and GitHub's confidential exchange in
 [OAUTH_BRIDGE.md](OAUTH_BRIDGE.md#github-token-endpoint). Exact proof semantics
@@ -79,6 +79,7 @@ interface CommitmentOpening {
 interface NotaryAttestation {
   attestedData: Uint8Array
   signature: Uint8Array // exactly 65 bytes
+  decoded: DecodedAttestedData
 }
 
 interface RevealResult {
@@ -123,8 +124,10 @@ performs the same resource cleanup and removes its abort listener. The platform
 pipeline aborts its shared controller on cancellation, sibling failure, or
 abandonment in `finally`; no separate session disposal API is needed.
 
-This API is internal to the prover. `CommitmentOpening.blinder` is exactly 16
-bytes. Header order is not semantic: selection operates on the actual
+Session operations and openings are internal to the prover; `NotaryAttestation`
+and its decoded view are also returned in the public platform proof.
+`CommitmentOpening.blinder` is exactly 16 bytes. Header order is not semantic:
+selection operates on the actual
 serialized transcript, while the Platform Verifier checks request framing and
 profile-significant fields without requiring relative header position. Request
 body bytes remain exact because a platform's form grammar may depend on them.
@@ -132,6 +135,14 @@ The adapter applies the code-owned `MAX_SENT_DATA = 4 KiB` and
 `MAX_RECEIVED_DATA = 32 KiB` ceilings to all three calls; no caller,
 server response, or CCDP input can change them. Exceeding either ceiling fails
 the notarization instead of truncating the transcript.
+
+These are adapter-enforced transcript acceptance bounds, not TLSNotary Proxy
+setup parameters. The pinned Proxy implementation does not enforce the SDK's
+`max_sent_data` or `max_recv_data` options. The adapter checks actual sent and
+received transcript lengths before resolving `send`, exposing them to platform
+parsing, or permitting reveal. A post-receive length check bounds acceptance,
+not memory or network consumption during reception; any receive-time resource
+cap needs separate enforcement.
 
 The transcript exists only long enough for the platform module to parse its
 private response and build its witness. It never crosses CCDP or the public
@@ -143,7 +154,9 @@ and exposes only the range and private blinder for each opening.
 
 `prover/notarization` owns one read-only decoder for the signed attested-data
 bytes. It does not expose an encoder and never reserializes a received record.
-The decoder returns this internal view:
+The decoder returns this view, attached as `NotaryAttestation.decoded` and
+exposed through the public platform proof. Its types are client-safe; the
+decoder implementation stays in the Prover:
 
 ```ts
 const MAX_ATTESTED_DATA_BYTES = 2 * 1024 * 1024
@@ -166,7 +179,7 @@ interface DecodedDirection {
 
 interface DecodedAttestedData {
   authorityId: Uint8Array // exactly 32 bytes
-  createdAt: bigint
+  createdAt: string // canonical unsigned decimal u64, signed Unix seconds
   sentTranscriptLength: number
   receivedTranscriptLength: number
   sent: DecodedDirection
@@ -204,8 +217,19 @@ an input over `MAX_ATTESTED_DATA_BYTES` and bounds every count and length agains
 the remaining input and signed transcript length. It rejects truncation,
 trailing bytes, overflow, empty or unordered ranges, overlaps, out-of-bounds
 ranges, malformed commitments, and values that cannot be represented exactly.
-`createdAt` stays a `bigint`; every accepted offset and transcript length fits
-exactly in a JavaScript `number`.
+`createdAt` is decoded losslessly and exposed as canonical unsigned decimal
+text (`0` or a nonzero digit followed by digits, no leading zeroes), bounded by
+`18446744073709551615`. This preserves the full u64 range without a `bigint`
+transport requirement. Every accepted offset and transcript length fits exactly
+in a JavaScript `number`.
+
+`decoded` contains only data present in the original signed record, not the
+private transcript, bearer, or commitment openings. It is convenient for
+inspection and UI, not a second signed representation. The Client checks its
+shape and bounds but does not re-decode `attestedData` or authenticate the view.
+Ledger serialization omits `decoded` and preserves the original signed bytes;
+the Ledger Verifier derives all authoritative values from those bytes. Decoded
+reveals remain evidence-bearing data and must not enter progress or metrics.
 
 The decoder is pinned to the complete cross-language fixture from the rebased
 [`libid-rs` encoder](https://github.com/libid-org/libid-rs/blob/239a4bb426ac72591fe30006f22660e164a98d96/crates/libid-ceremony/src/attestation.rs).
@@ -242,9 +266,10 @@ The JSON object contains exactly `attested_data` and `notary_signature`, each an
 array of integer bytes in `[0, 255]`. The frame is at most 10 MiB;
 `attested_data` remains subject to `MAX_ATTESTED_DATA_BYTES`, and
 `notary_signature` is exactly 65 bytes. The adapter maps those fields to the
-internal camel-case `NotaryAttestation` without changing either byte string,
-then requires end-of-stream. A malformed length or UTF-8/JSON value, unknown or
-duplicate field, trailing byte, second frame, or missing close fails.
+camel-case fields without changing either byte string, requires end-of-stream,
+then attaches the validated decoder result as `decoded`. The Notary Service's
+wire record does not gain that field. A malformed length or UTF-8/JSON value,
+unknown or duplicate field, trailing byte, second frame, or missing close fails.
 
 ### Integration qualification
 
@@ -293,15 +318,15 @@ sequenceDiagram
     T-->>M: Openings and pending attestation
     T->>W: finish()
     N->>N: finish()
-    N-->>T: NotaryAttestation
-    T->>T: Correlate signed output and openings
-    T-->>M: Resolve attestation
+    N-->>T: Signed attested-data bytes and signature
+    T->>T: Decode and correlate signed output and openings
+    T-->>M: Resolve attestation with decoded view
 ```
 
 `finish()` releases each TLSNotary driver from its side of the original
 JavaScript `IoChannel`. Once its verifier finishes, the Notary Service writes
-the one length-prefixed `NotaryAttestation` on that same channel and closes it;
-it reads no application-level request. The verified session already supplies
+the one length-prefixed signed-data/signature record on that same channel and
+closes it; it reads no application-level request. The verified session already supplies
 all signed data, so no ceremony ID, request ID, platform, or token/identity tag
 crosses this boundary.
 
@@ -338,7 +363,8 @@ OAuth client, chain, transaction, or extracted bearer.
 For X and GitHub, `bearer-link` later proves that one private bearer opens the
 token-exchange and identity-request commitments under their independent
 blinders. The Platform Verifier reconstructs both public commitments from the
-verified attestations; the delivered proof does not copy them.
+verified attestations; they appear in `decoded` for inspection, not as separate
+proof-input fields.
 
 ## Platform call sites
 
@@ -363,12 +389,13 @@ owns browser-side response validation and subsequent `/user` orchestration.
 
 ## Attestation handoff
 
-The adapter preserves `attestedData` and its signature byte-for-byte. It decodes
-the required read-only view for bounds and commitment correlation but never
-normalizes or re-encodes the signed bytes. Platform proofs place the unchanged
-token and identity attestations in their named fields alongside the
-`bearer-link` proof. Transcripts, access tokens, blinders, raw TLSNotary objects,
-and locally extracted identity fields do not enter the platform proof.
+The adapter preserves `attestedData` and its signature byte-for-byte. It reuses
+the decoded view needed for bounds and commitment correlation as `decoded`,
+without another parse, normalization, or re-encoding. Platform proofs place
+both attestations in their named fields alongside `bearerLinkProof` and the
+platform-extracted `identity`. Private transcripts, access tokens, blinders,
+and raw TLSNotary objects never enter the result. Exposing the complete signed
+view requires no new reveals and creates no additional notary or ledger field.
 
 Malformed signed data, range ordering, coverage, commitment correlation,
 same-channel framing, cancellation, or a partial result rejects final completion

@@ -44,39 +44,52 @@ signed token nonce as a proof public input; X and GitHub expose the attested
 code verifier. The Ledger Verifier matches that binding to the
 Authorization Digest it recomputes from `OAuthProof`.
 
-The prover does not assemble or verify `OAuthProof`, construct `Identity`, call
-a Ledger Verifier, or persist credential-bearing state. The Ceremony Client combines
-the selected delivery variant with its retained ceremony fields and derives the
-locally checked, non-authoritative preview. Prover inputs, workers, witnesses,
+The prover constructs each platform proof's shared `Identity` and complete
+decoded attestation views from its evidence. It does not assemble or verify
+`OAuthProof`, call a Ledger Verifier, or persist credential-bearing state. The
+Ceremony Client structurally validates the selected delivery variant and wraps
+it with retained ceremony fields; it does not repeat evidence parsing or
+identity extraction. Prover inputs, workers, witnesses,
 and outputs are cleared after delivery, `CancelCeremony`, `AbortCeremony`, failure, or context
 destruction.
 
 ## Proof delivery
 
-Google delivers its proof bytes, the exact signed audience, subject, email and
-expiry, and the selected JWK modulus as `GoogleProofV1`. It delivers no
-attestation.
-The Ceremony Client exact-matches that client identifier to the live Ceremony
-and adds the common authorization fields to assemble `OAuthProof<'google'>`.
+Google delivers `identityProof`, a shared `identity` containing the exact signed
+audience, subject, and email, the signed expiry, and the selected JWK modulus
+as `GoogleProofV1`. It delivers no attestation. The Prover matches the signed
+audience to the request's frozen client identifier. The Ceremony Client adds
+the common authorization fields to assemble `OAuthProof<'google'>`.
 The Google adapter flattens the named values into the circuit's 56 public-input
 fields only at the verifier/transaction-encoding boundary; the Ceremony Client
 does not verify the proof.
 
 For X, `ProverDeliverProof.proof` is `XProofV1`; for GitHub it is `GitHubProofV1`.
-Each independently contains exactly the `bearer-link` proof bytes and two
-attestations ordered token session then identity session.
+Each independently contains `identity`, `bearerLinkProof`, and the named
+`tokenAttestation` and `identityAttestation`.
 Each attestation preserves the byte-exact attested-data serialization and its
 associated signature as produced by the pinned notary client. The signature
 covers exactly those attested-data bytes, including server identity, evidence
-time, transcript lengths, reveals, and commitments. The prover does not
-normalize or reserialize the attested data, project selected fields into
-sidecars, or accept a caller-supplied replacement.
+time, transcript lengths, reveals, and commitments. Each attestation also
+contains the existing decoder's complete `decoded` view, defined in
+[NOTARIZATION.md](NOTARIZATION.md#canonical-attested-data-decoder). It preserves
+authority, creation time, transcript lengths, every reveal, and every
+commitment; it does not add hidden bearer bytes, commitment openings, or
+witnesses. The prover never normalizes or reserializes the signed bytes or
+accepts a caller-supplied replacement.
+
+The platform leaf extracts `identity.oauthClientId` from the token-request
+evidence and `identity.userId`/`identity.userName` from the identity-response
+evidence using its exact profile grammar. Provisional transcript parsing may
+overlap proving, but delivery waits for correlation with the final signed
+attestations. The Client does not repeat this extraction.
 
 The link circuit's two 32-byte bearer commitments are public inputs to the
-circuit, ordered token then identity. They are not fields in `XProofV1`,
-`GitHubProofV1`, or the assembled `OAuthProof`: the prover discards bb.js's
-flattened public-input array, and the Platform Verifier reconstructs the two
-values from the corresponding verified attestations before checking the proof.
+circuit, ordered token then identity. They are not separate proof-input fields:
+the prover discards bb.js's flattened public-input array, and the Platform
+Verifier reconstructs the two values from the corresponding verified
+attestations before checking the proof. They remain visible in each
+attestation's decoded commitments for inspection.
 The circuit proves only that one hidden bearer opens both commitments; PKCE
 binds the token exchange to the Authorization Digest outside the circuit.
 
@@ -85,32 +98,35 @@ an unknown logical value:
 
 | Platform | Prover delivery | Ceremony Client additions | OAuth proof |
 |---|---|---|---|
-| Google | `GoogleProofV1 { honkProof, clientId, userId, email, tokenExpiresAt, signingKeyModulus }` | common fields | `OAuthProof<'google'>` with ceremony version `1` |
-| X | `XProofV1 { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'x'>` with ceremony version `1` |
-| GitHub | `GitHubProofV1 { honkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` with ceremony version `1` |
+| Google | `GoogleProofV1 { identity, identityProof, tokenExpiresAt, signingKeyModulus }` | common fields | `OAuthProof<'google'>` with ceremony version `1` |
+| X | `XProofV1 { identity, bearerLinkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'x'>` with ceremony version `1` |
+| GitHub | `GitHubProofV1 { identity, bearerLinkProof, tokenAttestation, identityAttestation }` | common fields | `OAuthProof<'github'>` with ceremony version `1` |
 
 Each platform/version `prover` leaf constructs its exact proof object. Its
 side-effect-free `types` leaf owns the matching runtime validator dispatched by
 `platforms/index`. The
 validator is selected from the live Ceremony's platform and ceremony version,
 not from a discriminator inside the nested value. It rejects unknown fields, malformed arrays and bytes, and
-profile-bound violations, then returns a typed `ProverDeliverProof`. CCDP never
+profile-bound violations and a mismatched `identity.platformId`, then returns a
+typed `ProverDeliverProof`. It checks the decoded view's structure, not its
+agreement with signed bytes; that decoding belongs to the Prover. CCDP never
 changes when another platform proof type is added.
 
 The common fields are platform ID, platform ceremony version, operation domain,
 authorization nonce, and transaction data. The
 exact records are defined in the
 [package architecture](ARCHITECTURE.md#result-and-lifecycle). The Ceremony
-Client adds no chain ID, Authorization Digest, identity sidecar, code verifier,
-evidence-time sidecar, verifier address, or verification-key field.
+Client adds no chain ID, Authorization Digest, second identity copy, code
+verifier, evidence-time summary, verifier address, or verification-key field.
 
 The platform pipelines request the profile's exact reveals and commitments.
 Attestation authenticity, authority, method and path, request grammar,
 transcript tiling, bearer framing, identity extraction, and evidence time are
-authoritative Platform Verifier checks over those signed bytes, not additional
-prover outputs. GitHub repeats the token-session subset specified below as a
-local precondition before using a server-returned bearer; that repeat does not
-make browser acceptance authoritative.
+authoritative Platform Verifier checks over those signed bytes. Decoded views
+and extracted identity are browser conveniences, not alternate authorities or
+additional ledger inputs. GitHub repeats the token-session subset specified
+below as a local precondition before using a server-returned bearer; that
+repeat does not make browser acceptance authoritative.
 
 ## Browser notarization
 
@@ -225,11 +241,11 @@ derives the candidate authorization digest from the signed nonce; the circuit
 re-encodes it as the exact unpadded base64url nonce and verifies the RS256
 signature and signed claims. The module then generates one proof and returns it
 with the exact signed audience, subject, email and expiry plus the selected JWK
-modulus as `GoogleProofV1`, with no attestation or flattened public-input array. The
-Ceremony Client exact-validates their shape, matches the audience to its
-retained client identifier, and derives the local identity preview without
-verifying the Honk proof. Only Ledger Verifier verification makes the fields
-authoritative.
+modulus as `GoogleProofV1`, with no attestation or flattened public-input array.
+The Prover builds `identity` with `platformId: 'google'`, `oauthClientId` from
+`aud`, `userId` from `sub`, and `userName` from `email`, without normalization.
+The Ceremony Client checks result structure and wraps it; only Ledger Verifier
+verification makes these fields authoritative.
 
 ### X
 
@@ -251,20 +267,21 @@ authoritative.
    16-byte commitment openings, build the `bearer-link` witness from the private
    bearer, its length, and those blinders. Execute the witness and generate the
    proof as soon as the backend is ready, overlapping final notarization work.
-5. Deliver only after the proof and both final attestations are complete and
-   their commitment correlations pass. A late notarization failure discards an
-   already-generated proof.
+5. Deliver `bearerLinkProof`, both final attestations with their decoded views,
+   and the extracted `identity` only after commitment and transcript
+   correlations pass. A late notarization failure discards an already-generated
+   proof.
 
 Only the identity HTTP request waits for the token-response bearer; session
 setup and attestation completion are not that dependency. Early transcript and
 opening material is provisional, not an authenticated attestation. The circuit constrains the bearer to
 nonempty printable ASCII of at most 128 bytes and exposes exactly the two
 32-byte bearer commitments, token first and identity second; Noir flattens them
-to 64 bb.js public-input fields. Delivery contains only the proof and the two
-attestations in the same token/identity order. Identity fields and the
-authorization digest are derived by the Platform Verifier from the verified
-attestations and submitted authorization fields, not duplicated as circuit
-outputs.
+to 64 bb.js public-input fields. `identity` uses `platformId: 'x'`, the attested
+token-request client identifier, and the attested response's `id` and
+`username`. These extracted fields are not extra circuit outputs. The Platform
+Verifier derives authoritative identity and authorization binding from the
+verified attestations and submitted authorization fields.
 
 ### GitHub
 
@@ -285,10 +302,13 @@ canonical `id` and `login` ranges. The OAuth bridge route is defined in
 The module then runs the same `bearer-link` circuit with the token-exchange and
 identity blinders. Its public-input count and order are identical to X: 64
 fields representing token commitment then identity commitment. Delivery
-contains only the proof and the two attestations in token-exchange/identity
-order. GitHub-specific server exchange and transcript construction therefore
-remain platform code; no GitHub-specific proving circuit or proving engine
-exists.
+contains `bearerLinkProof`, the token-exchange and identity attestations with
+their decoded views, and `identity` with `platformId: 'github'`, the attested
+token-request client identifier, and `/user`'s `id` and `login`. The browser
+decodes the server-returned token attestation itself; the bridge's JSON response
+does not gain a `decoded` field. GitHub-specific server exchange and transcript
+construction therefore remain platform code; no GitHub-specific proving
+circuit or proving engine exists.
 
 ## Platform progress
 
@@ -335,7 +355,7 @@ any run, every started span emits exactly one terminal `completed` or `failed`;
 a failure does not invent later spans. Message order preserves that per-span
 lifecycle and the parent/dependency rules above; unrelated spans may overlap
 and therefore have no total order. A cache hit emits the same lifecycle. OAuth,
-isolation, delivery, and preview construction are represented elsewhere and do
+isolation, delivery, and Client result assembly are represented elsewhere and do
 not add platform steps. Events remain credential-free; implementations may
 derive durations from their prover-stamped timestamps.
 
