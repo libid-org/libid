@@ -285,7 +285,8 @@ migration, no per-user transaction.
 
 ## The backend
 
-A **stateless, read-only CCIP-Read gateway**. No database, no queue, no write
+A **read-only CCIP-Read gateway** with no state of its own: it reads the
+Postgres mirror `usernames-indexer` keeps of every chain. No queue, no write
 path, one signing key.
 
 ```
@@ -294,7 +295,8 @@ request   →  GET /{sender}/{data}.json      (ERC-3668)
 work      →  1. decode → (DNS-encoded name, record calldata)
              2. parse right to left → handle, platform, optional chain
              3. platformId = keccak256(platform domain)
-             4. chainId = coinType & 0x7fffffff; refuse on chain-label mismatch
+             4. match coinType forward against the chains the store holds;
+                a label naming another chain answers null
              5. look the binding up in that chain's indexed model
              6. sign (resolver, expires, keccak(callData), keccak(result))
 
