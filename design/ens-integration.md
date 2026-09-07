@@ -275,7 +275,10 @@ reverting `OffchainLookup`; the callback verifying the response;
 **What the gateway signs for**; owner-managed gateway URLs and signer set. It
 holds no names.
 
-**2. The gateway** — below.
+**2. The gateway** — below. It reads the indexed model `usernames-indexer`
+keeps of every chain, and nothing else: no RPC, no per-chain configuration.
+The chains it serves are the chains indexers have written; a new indexer is
+served the first time it commits.
 
 **3. Nothing on the write path.** `IdentityNames` is untouched: no new call, no
 migration, no per-user transaction.
@@ -292,7 +295,7 @@ work      →  1. decode → (DNS-encoded name, record calldata)
              2. parse right to left → handle, platform, optional chain
              3. platformId = keccak256(platform domain)
              4. chainId = coinType & 0x7fffffff; refuse on chain-label mismatch
-             5. IdentityNames.resolveHandle(platformId, handle) on that chain
+             5. look the binding up in that chain's indexed model
              6. sign (resolver, expires, keccak(callData), keccak(result))
 
 response  →  { "data": "0x…" }   → the resolver's callback verifies
