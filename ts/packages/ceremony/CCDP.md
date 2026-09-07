@@ -24,7 +24,7 @@ the distinction is immaterial.
 | Actor | Browser authority | Responsibility |
 |---|---|---|
 | Application | application origin | hosts the application document, owns the operation and ceremony state, and drives the protocol |
-| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, hosts the callback shell, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
+| OAuth Bridge | OAuth bridge origin | publishes ceremony configuration, serves the complete Callback document obtained from the Distribution with bridge-owned inputs, owns OAuth registrations, and performs enabled confidential OAuth exchanges |
 | CCDP Distribution | CCDP origin | contains the versioned [resources](#documents-and-routes) and proving assets used by any number of OAuth Bridges; it may be the canonical libID distribution or an operator-selected replacement |
 | OAuth Platform | OAuth-platform origin set | hosts authorization/login documents and issues the OAuth return |
 
@@ -35,10 +35,11 @@ none of those relationships. Browser authority is always established against
 an exact origin. A composition which continues the live popup connection after
 CCDP has the additional requirements below.
 
-The OAuth Bridge owns the registered callback shell because the OAuth redirect
-URI must terminate on the bridge origin. After clearing the OAuth return, that
-shell dynamically loads CCDP's versioned Callback module from the configured
-CCDP origin.
+The OAuth redirect URI terminates on the bridge origin. The OAuth Bridge serves
+CCDP's self-contained Callback artifact with its deployment inputs already
+inserted; artifact retrieval happens server-side, independently of OAuth
+requests. Callback captures and clears the OAuth return, then selects its
+bundled CCDP implementation without another browser request.
 
 Multiple independently operated OAuth Bridges may select the same CCDP
 Distribution through its `ccdpOrigin`. The Distribution keeps no Bridge
@@ -77,11 +78,11 @@ Worker. Authorization is an external document, not a CCDP resource.
 | Role | Owns login and consent during [Authorization to Callback](#2-authorization-to-callback). No CCDP participant runs and no CCDP message or popup connection is exposed to this document. |
 | External policy | Controlled entirely by the OAuth Platform. CCDP assumes nothing about its markup, scripts, headers, or origin transitions; it may sever the opener or browsing-context group. Callback reconnects without assuming direct window continuity. The selected platform ceremony version owns authorization request and return semantics. |
 
-### Callback `GET /callback.js`
+### Callback `GET redirectUri`
 
 | Property | Contract |
 |---|---|
-| Location and context | CCDP origin; versioned, cross-origin-loadable module dynamically loaded into the OAuth Bridge's top-level, non-isolated callback shell |
+| Location and context | OAuth Bridge origin at its configured registered callback path, default `/auth/callback`; top-level, non-isolated document with complete bundled Callback code and bridge-owned deployment inputs |
 | Role | Authenticates the Application during [Authorization to Callback](#2-authorization-to-callback), then privately carries the captured OAuth return in popup navigation to Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
@@ -105,29 +106,39 @@ Worker. Authorization is an external document, not a CCDP resource.
 
 #### Paths and versioning
 
-The CCDP routes above are relative to `/ccdp/v{CCDPVersion}`. All
-[resources](#documents-and-routes) resolve against `ccdpOrigin`.
-Authorization is the external frozen
+Prefetch, Prover, and Worker routes are relative to
+`{ccdpOrigin}/ccdp/v{CCDPVersion}`. Callback executes at the frozen `redirectUri`
+on the OAuth Bridge origin; the Distribution defines the public artifact the
+bridge retrieves to serve it. Authorization is the external frozen
 `platformAuthorizationUrl`, not a CCDP route.
 
 Before launch, the Application freezes the CCDP origin, redirect URI, platform
 authorization URL, ceremony ID, platform ID, and platform ceremony version.
 This document defines `CCDPVersion = 1`. The Application selects it in the
 Prefetch path, carries the same version through OAuth `state`, and uses the
-matching Prover path. Callback selects its implementation from that
-state; fragments and messages do not repeat the version.
+matching Prover path. Callback selects its bundled implementation from that
+state; fragments and messages do not repeat the version. Google returns state
+in the fragment, so the bridge cannot perform this selection at HTTP ingress.
 
 Compatible implementation changes keep the version. A breaking fragment
 grammar, navigation order, message shape, direction, ordering, or validation
-rule increments it, publishes new CCDP paths and Worker, and adds the
-Callback version to the OAuth Bridge shell's closed supported-version map. Old
-resources remain available for live ceremonies and a compatibility window.
+rule increments it, publishes new CCDP paths and Worker, and adds that version's
+implementation to the self-contained Callback artifact. Old resources and
+bundled Callback implementations remain available for live ceremonies and a
+compatibility window.
+
+Once that window ends, a build may omit a retired Callback implementation.
+Its version then takes Callback's local unsupported-version error path before
+connection setup, rather than requiring an older transport or error protocol.
+The popup owns that error display; it never falls forward to a different CCDP
+version or reports this failure as OAuth denial.
 
 A later CCDP version substitutes its decimal version in the common path. The
-OAuth Bridge dynamically loads the matching Callback module from the CCDP
-origin; the top-level [resources](#documents-and-routes) execute their
-implementations directly. Internal bundle names are not protocol surface. All
-[resources](#documents-and-routes) share the CCDP origin.
+registered callback URL stays fixed: its document includes a closed set of
+supported implementations and enters the selected one directly. All browser
+documents execute embedded entry code. Internal bundle names are not protocol
+surface; obtaining Callback bytes from the Distribution does not change its
+OAuth Bridge execution origin.
 
 The Prefetch and Prover paths select both CCDP version and document
 role.
@@ -184,8 +195,8 @@ connecting Application's own proof request. Prover receives the captured return
 from Callback, not directly from the platform. Callback exact-authenticates the
 Application against its containing OAuth Bridge's explicit deployment
 allowlist before navigating with that return to the configured CCDP origin.
-The public Callback module is
-cross-origin-loadable from the CCDP origin, but that resource policy does not
+The public Callback artifact contains no Bridge policy; the serving Bridge
+inserts its trusted configuration. Server-side artifact retrieval does not
 replace Callback's credential-release check. Asset caching and popup-connection
 construction are outside CCDP.
 
@@ -353,7 +364,7 @@ path and remains local.
 The protocol advances one named ceremony popup through
 [Prefetch](#prefetch-get-prefetch),
 [Authorization](#authorization-get-platformauthorizationurl),
-[Callback](#callback-get-callbackjs), and
+[Callback](#callback-get-redirecturi), and
 [Prover](#prover-get-prover). Those route sections own each participant's
 inputs, context, and role; [Messages](#messages) owns the records crossing the
 popup connection. The phases below own their sequencing, entry conditions, and
@@ -423,9 +434,9 @@ are reported locally and release no protocol message.
 This phase begins when [Authorization](#authorization-get-platformauthorizationurl)
 loads. The OAuth Platform owns the popup and initiates browser navigation to
 the frozen `redirectUri` after approval or denial; neither CCDP endpoint
-initiates that transition. The OAuth Bridge shell captures and clears the
-return, selects the CCDP version from `state`, and dynamically imports the
-matching [Callback](#callback-get-callbackjs) module in the same document. The
+initiates that transition. The Bridge serves the complete
+[Callback](#callback-get-redirecturi), which captures and clears the return and
+enters its bundled CCDP implementation selected by `state`. The
 [OAuth Bridge contract](OAUTH_BRIDGE.md#callback-document) exclusively defines
 ingress.
 
@@ -436,7 +447,7 @@ no OAuth-return message. Connection acceptance permits the Prover transition.
 
 #### 3. Callback to Prover
 
-The popup-side [Callback](#callback-get-callbackjs) endpoint asks its connection
+The popup-side [Callback](#callback-get-redirecturi) endpoint asks its connection
 to navigate to the frozen [Prover](#prover-get-prover) location, supplying the
 ceremony ID and captured query/fragment as that route's structured fragment.
 Callback owns this transition to keep the return private from Application and
@@ -506,7 +517,7 @@ sequenceDiagram
     Note over A,P: Phase 2 - Authorization to Callback
     Note over P: User completes login and consent in Authorization
     P->>P: OAuth Platform redirects to redirectUri
-    P->>P: OAuth Bridge loads Callback
+    P->>P: Callback starts and selects its bundled version
     P->>P: Callback accepts authenticated connection
     break Callback fails after connection acceptance
         P-->>A: AbortCeremony
