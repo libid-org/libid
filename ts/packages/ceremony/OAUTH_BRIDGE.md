@@ -370,9 +370,11 @@ The returned fields are one correlated result: the uniquely framed bearer
 commitment in `tokenAttestation.attestedData` equals
 `SHA256(accessToken || bearerOpening)`. The bridge preserves signed attestation
 bytes exactly. Before its dependent identity notarization, the prover validates
-the response encoding, correlation, and open request bindings. Local notary
-signature verification remains optional; downstream proof verification is
-authoritative.
+the response encoding, correlation, and open request bindings. Neither Prover
+nor Client performs local notary-signature verification. A structurally valid
+forged signature is not detected by these checks alone; downstream verification
+of the original bytes against trusted notary keys remains authoritative and
+mandatory.
 
 The endpoint contract is:
 

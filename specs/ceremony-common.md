@@ -204,6 +204,14 @@ identity-platform signing root, notary key, proof verifier, verifier governance,
 browser supply chain, or Consumer Chain invalidates the properties that depend
 on it.
 
+Browser result acceptance is not ledger verification. The Prover performs
+canonical parsing and local request/commitment consistency checks; the Ceremony
+Client validates the result shape. Neither performs local notary-signature
+verification or a separate Google nonce-versus-expected-digest comparison.
+Well-formed mismatches or forgeries can therefore survive those browser checks,
+but must still fail the applicable downstream proof, digest-binding, trusted
+signing-key, or notary-signature check before an authoritative effect.
+
 - SP-BIND-01:
   Evidence produced by a ceremony discharges only for the Authorized
   Transaction Data committed in its Authorization Digest. Depends on
@@ -212,11 +220,13 @@ on it.
   conformance tests (supporting, not proving) plus the collision resistance of
   SHA-256 and keccak256.
 - SP-CLIENT-01:
-  The Canonical Runtime rejects evidence issued to an OAuth client other than
-  the one fixed by its immutable ceremony profile. Depends on ASM-PROV-04,
-  ASM-PROV-05, ASM-PROV-07, ASM-NOTARY-01, ASM-PROOF-01, and ASM-BROWSER-01.
-  Evidence: checked invariant in the Canonical Runtime, plus conformance tests
-  (supporting).
+  The browser Prover rejects a parsed OAuth client identifier differing from
+  the one fixed by its immutable ceremony profile. This is a local consistency
+  check, not authentication of an attestation's claimed identifier; ledger
+  verification authenticates the returned client identifier independently.
+  Depends on ASM-PROV-04, ASM-PROV-05, ASM-PROV-07, ASM-NOTARY-01,
+  ASM-PROOF-01, and ASM-BROWSER-01. Evidence: checked invariant in the browser
+  Prover, plus conformance tests (supporting).
 - SP-DELIVERY-01:
   An authorization response for one OAuth client reaches only an origin
   registered to that client, so a site borrowing another deployment's client
@@ -1229,8 +1239,9 @@ the constructions that role implements.
   moves no value; and a call whose native value differs from the quoted value
   is rejected at every hop.
 - TEST-COMMON-17 (exercises REQ-COMMON-33, REQ-COMMON-34B, REQ-COMMON-33A, REQ-COMMON-34, REQ-COMMON-34A, REQ-COMMON-34C, REQ-COMMON-34D, REQ-COMMON-34E):
-  An attestation carrying a foreign notary signature is rejected; a
-  verification whose fee was not delivered is rejected; the charged fee is
+  At ledger verification, an attestation carrying a foreign notary signature
+  is rejected by the trusted Notary Service; a verification whose fee was not
+  delivered is rejected; the charged fee is
   identical across differing attested content, authors, payers, and
   submitters; the current fee is readable before submission; and a
   verification whose native value differs from the current fee is
