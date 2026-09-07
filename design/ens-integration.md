@@ -316,20 +316,25 @@ under its own address (ENSIP-22), so `{sender}` names the universal resolver.
 The reference `offchain-resolver` gateway signs for the path and would fail on
 that route; that, and not taste, is why the resolver announces ENSIP-10 and
 nothing else. Signing for the configured address costs one setting and holds on
-both routes. `{sender}` is logged and not parsed strictly — viem lowercases
-it, so a checksum check refuses every request. One instance serves one
-resolver; another network or a replacement resolver gets its own.
+both routes. `{sender}` never enters the digest; the gateway may refuse a
+mismatch with a terminal 400, and logs it either way. The comparison is
+case-insensitive — viem lowercases it, so a checksum check refuses every
+request — and that refusal is the first thing to relax before any ERC-7996
+deployment. One instance serves one resolver; another network or a
+replacement resolver gets its own.
 
 **CORS, on every response.** The mainnet universal resolver lists its gateways
 as `["https://ccip-v3.ens.xyz", "x-batch-gateway:true"]`, and the second entry
 tells viem to run the batch gateway inside the page. The browser therefore
 fetches this gateway directly from the wallet's origin, and without
 `Access-Control-Allow-Origin: *` the script never sees the answer and the name
-does not resolve. The header goes on every response, errors included, with an
-`OPTIONS` handler for the `POST` form ERC-3668 falls back to when a template has
-no `{data}`. It belongs in the binary rather than in a proxy in front of it, so
-no deployment can lose it. `*` is right: the answers are public and signed, and
-nothing is sent with credentials.
+does not resolve. The header goes on every response, errors included. `GET` is
+the only method: the resolver's `urls` carry `{data}`, the deployment workflow
+refuses a template without it, and ERC-3668 uses its `POST` form only when
+`{data}` is absent — so no `POST` route and no preflight. It belongs in the
+binary rather than in a proxy in front of it, so no deployment can lose it. `*`
+is right: the answers are public and signed, and nothing is sent with
+credentials.
 
 **Direct invocation, later.** Once the gateway signs for a configured address
 and can answer a `multicall(bytes[])` inside `resolve`, a new resolver
