@@ -45,7 +45,7 @@ One bridge deployment has these inputs:
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback inputs | `versionedInputs` with an explicit tuple for each supported CCDP version, and deployment-policy sources specified by the [artifact contract](CCDP_DISTRIBUTION.md#callback-artifact) |
-| GitHub settings | Client secret, redirect URI, token endpoint settings, and optional development notary override when GitHub is enabled |
+| GitHub settings | Client secret, redirect URI, and token endpoint settings when GitHub is enabled |
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
 deployment error rather than something the bridge normalizes. The set drives
@@ -191,7 +191,7 @@ requires a new bridge API version.
 interface TokenRequest {
   code: string
   codeVerifier: string
-  isTestnet: boolean
+  notaryAddress: string
 }
 
 interface TokenResponse {
@@ -212,14 +212,20 @@ invalid. The versioned route carries no redundant schema field.
 most 1,024 bytes. `codeVerifier` matches `[A-Za-z0-9_-]{43}`. The bridge does
 not normalize either value.
 
-`isTestnet` is a required JSON boolean, forwarded unchanged by Prover from
-`AppStartProver`. The Bridge selects `https://testnet.notary.lib.id` for
-`true` and `https://notary.lib.id` for `false`, matching the browser's
-[notary selection](NOTARIZATION.md#notary-address). A process-environment
-`LIBID_NOTARY_ADDRESS` may override that address for local development; it
-must be a canonical HTTPS origin. The request cannot supply an address, and
-failure never switches to the other network. Callback configuration and public
+`notaryAddress` is a required canonical HTTPS origin with no credentials, path,
+query, or fragment. Prover supplies its already
+[resolved address](NOTARIZATION.md#notary-address), including any development
+override, and uses that same address for identity notarization. The Bridge
+derives the fixed `/notarize-proxy` WebSocket endpoint from it; it neither
+classifies ledgers nor maintains a profile mapping or second override.
+Failure never selects a different notary. Callback configuration and public
 `CeremonyConfig` carry no notary selection.
+
+This server-side destination is request-controlled. Origin/CORS checks do not
+authenticate non-browser callers or replace egress controls. The Bridge must
+prevent access to private/internal destinations, including through DNS
+resolution, unless its operator explicitly permits the development destination.
+Canonical HTTPS syntax alone is insufficient; redirects remain forbidden.
 
 `accessToken` is nonempty printable ASCII without whitespace or control bytes
 and at most 128 bytes, matching GitHub v1's bearer circuit. Both Bridge and
@@ -246,9 +252,9 @@ The endpoint contract is:
 - successful preflight admits only `POST` and `Content-Type`, uses no
   credentials, and returns no ceremony data;
 - malformed UTF-8, JSON, or fields fail before token exchange;
-- client ID, client secret, redirect URI, GitHub endpoint, proxy, and
-  destination come only from bridge configuration; the notary address follows
-  the fixed boolean mapping or development override above;
+- client ID, client secret, redirect URI, and the GitHub TLS/request target
+  come only from bridge configuration; only the notary destination comes from
+  the validated request above;
 - redirects are rejected and request duration and response size are bounded;
 - success is status `200` with exact noncredentialed CORS,
   `Content-Type: application/json`, `Cache-Control: no-store`, and one bounded

@@ -109,9 +109,9 @@ same-origin graph and toolchain-required `blob:` workers. Asset fetches are
 not restricted to the CCDP origin: their `connect-src https:` admits bb.js's
 Aztec CRS downloads as well as validated third-party OAuth Bridges. The build
 additionally admits the two exact Notary Service WebSocket origins selected by
-[`isTestnet`](NOTARIZATION.md#notary-address), or the single development
+[`LedgerId.isTestnet()`](NOTARIZATION.md#notary-address), or the single development
 override origin when built with `LIBID_NOTARY_ADDRESS`. The response is
-identical for either boolean; network selection changes no asset or cache key.
+identical for either network; selection changes no asset or cache key.
 
 Every context which fetches or prefetches CRS, including the Service Worker
 and dedicated proof workers, admits both `https://crs.aztec-cdn.foundation`

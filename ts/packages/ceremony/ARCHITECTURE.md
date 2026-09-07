@@ -246,6 +246,7 @@ platforms/<platform>/<version>/assets ───> shared integrations' assets mod
 
 client, callback, prefetch, prover, platforms/index ───> ccdp
 client, callback, prefetch, prover ───> @libid/popup
+client, prover ───> @libid/ledger
 wallet-client ─────────> client + ceremony + wallet/protocol + @libid/popup
 ```
 
@@ -258,7 +259,7 @@ The package-facing API surface is:
 
 | Export or entrypoint | Contract |
 |---|---|
-| `@libid/ceremony` | `LedgerId` contract; catalog-derived `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult` |
+| `@libid/ceremony` | catalog-derived `PlatformId`, `PlatformCeremonyVersion`, `supportedPlatforms`, `ProofByPlatformVersion`, `OAuthProof`, `Identity`, and `IdentityResult` |
 | `@libid/ceremony/ccdp` | internal CCDP record types, per-record decoder companions, protocol version, and direction/order checks; no application export |
 | `@libid/ceremony/client` | `CeremonyConfig` fetch/validation, application-scoped `CeremonyClient`, stateful `Ceremony` orchestration, and public catalog/result re-exports |
 | `@libid/ceremony/callback` | [browser entrypoint](CCDP.md#callback-get-redirecturi) bundled into the complete Callback artifact; the OAuth Bridge retrieves it from the CCDP Distribution, inserts deployment data, and serves it without a separate browser script fetch |
@@ -295,6 +296,7 @@ One closed catalog derives `PlatformId`, `supportedPlatforms`, supported
 versions, and `ProofByPlatformVersion` from the same keys and validators:
 
 ```ts
+import { LedgerId } from '@libid/ledger'
 import * as googleV1 from './platforms/google/1/client'
 import * as xV1 from './platforms/x/1/client'
 import * as githubV1 from './platforms/github/1/client'
@@ -332,11 +334,6 @@ export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
   Object.keys(platforms) as PlatformId[],
 )
 
-interface LedgerId {
-  isTestnet(): boolean
-  hash(): Uint8Array // exact 32-byte Chain Profile identifier
-}
-
 interface CeremonyClient {
   readonly enabledPlatforms: readonly PlatformId[]
   new: <P extends PlatformId>(
@@ -371,24 +368,26 @@ stable discovery order, not a product ranking; applications may present
 another order. Neither array contains OAuth clients, ceremony versions, server
 configuration, or display metadata.
 
-The composition supplies a `LedgerId`, an exact 32-byte `operationDomain`
-hash, and bounded opaque `transactionData`. Ledger integrations implement
-`LedgerId`: `hash()` derives the exact canonical Chain Profile hash also used
-by the Ledger Verifier, and `isTestnet()` classifies that ledger. Ceremony
-owns no chain catalog or chain-specific encoding and does not infer testnet
-status from the hash.
+The composition supplies a [`LedgerId`](../ledger/README.md) from
+`@libid/ledger`, an exact 32-byte `operationDomain` hash, and bounded opaque
+`transactionData`. The ledger package owns encoding/decoding, the canonical
+Chain Profile hash used by the Ledger Verifier, and code-owned testnet
+classification. Ceremony owns no ledger catalog or chain-specific parser.
 
-During `new`, the client calls each method once, requires an exact 32-byte
-hash and a boolean without coercion, and copies the hash as its retained
-`chainId`. It validates and copies `operationDomain` and freezes `isTestnet`
-alongside the ceremony inputs; later changes to the supplied object or buffers
-cannot change the ceremony. All authorization/proof-input construction uses
-that retained `chainId`, not another hash or serialization of `LedgerId`.
-The boolean selects the fixed [notary address](NOTARIZATION.md#notary-address)
-but adds no field to the authorization digest or `OAuthProof`. Neither the
-ledger object nor its hash is sent to Prover; only `isTestnet` is carried for
-notary selection. Callers supply neither a separate network flag nor a
-notary URL.
+During `new`, the client snapshots `ledgerId.encode()` and decodes it through
+`LedgerId.decode`, rejecting unsupported or noncanonical identifiers before
+OAuth. It derives the retained `chainId` from that immutable value's `hash()`,
+requires and copies exactly 32 bytes, and validates/copies `operationDomain`.
+Later changes to supplied objects or buffers cannot change the ceremony. All
+authorization/proof-input construction uses that retained Chain Profile hash,
+not a hash of the ledger's transport encoding.
+
+`AppStartProver` carries the encoded ledger string. Prover first validates the
+message, then reconstructs the same value with `LedgerId.decode`; the message
+decoder itself still returns the original record. `isTestnet()` determines the
+fixed [notary address](NOTARIZATION.md#notary-address). Callers supply neither a
+separate network flag nor a notary URL, and neither encoding nor classification
+adds a field to the authorization digest or `OAuthProof`.
 
 The client requires the selected platform to be enabled by validated
 `CeremonyConfig`, chooses the numerically greatest ceremony version supported
@@ -479,7 +478,7 @@ Callback authenticates the Application, then navigates directly to Prover
 with the captured OAuth query/fragment in a private structured fragment.
 `proveUserIdentity()` receives no OAuth return. It accepts one fieldless
 `ProverReady` and sends one `AppStartProver` containing the frozen platform,
-version, client ID, redirect URI, nullable code verifier, and `isTestnet`.
+version, client ID, redirect URI, nullable code verifier, and encoded `ledgerId`.
 
 The selected Prover leaf validates the retained return against that request,
 the CCDP version, and the authenticated connection's ceremony ID. A valid
