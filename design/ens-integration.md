@@ -39,6 +39,12 @@ gas-heavy transaction, never repeated; it produces an ordinary ENS registry entr
 that a wildcard resolver then serves. The `.link` TLD is already wired into ENS
 (`registry.resolver(link)` is set), so nothing exotic is required.
 
+**ENSv2 changes none of this.** Its root registry gives every DNS TLD one
+`DNSTLDResolver`, whose first step is to look the name up in the v1 registry and
+hand the query to whatever resolver it finds there, full name included. A DNS
+name imported as above therefore keeps resolving through the same entry and the
+same resolver after v2 ships; only `.eth` names have a migration.
+
 A `.eth` second-level name was the alternative, and it is rejected. It costs an
 annual renewal whose expiry would kill every name beneath it at once — a recurring
 dependency taken on for nothing, since the DNS domain already exists and is
@@ -265,7 +271,8 @@ the gateway's signing key.
 
 **1. The resolver contract** — mainnet, small, stateless. `resolve(name, data)`
 reverting `OffchainLookup`; the callback verifying the response;
-`supportsInterface(0x9061b923)`; owner-managed gateway URLs and signer set. It
+`supportsInterface(0x9061b923)` and no other id — ERC-7996 in particular, see
+**What the gateway signs for**; owner-managed gateway URLs and signer set. It
 holds no names.
 
 **2. The gateway** — below.
@@ -286,7 +293,7 @@ work      →  1. decode → (DNS-encoded name, record calldata)
              3. platformId = keccak256(platform domain)
              4. chainId = coinType & 0x7fffffff; refuse on chain-label mismatch
              5. IdentityNames.resolveHandle(platformId, handle) on that chain
-             6. sign (sender, expires, keccak(callData), keccak(result))
+             6. sign (resolver, expires, keccak(callData), keccak(result))
 
 response  →  { "data": "0x…" }   → the resolver's callback verifies
 ```
@@ -299,6 +306,38 @@ response  →  { "data": "0x…" }   → the resolver's callback verifies
 - **Cacheable** — answers are `IdentityNames` reads and carry an expiry the
   resolver enforces.
 
+**What the gateway signs for.** The `resolver` in the digest is the address the
+gateway is configured to serve, never the `{sender}` in the path. Today the two
+agree, but only because of the route: a wallet reaches the resolver through the
+ENS `UniversalResolver`, which forwards the `OffchainLookup` to a batch gateway
+with the original sender intact (ENSIP-21). A resolver announcing ERC-7996 is
+instead called directly, and the universal resolver raises the lookup again
+under its own address (ENSIP-22), so `{sender}` names the universal resolver.
+The reference `offchain-resolver` gateway signs for the path and would fail on
+that route; that, and not taste, is why the resolver announces ENSIP-10 and
+nothing else. Signing for the configured address costs one setting and holds on
+both routes. `{sender}` is logged and not parsed strictly — viem lowercases
+it, so a checksum check refuses every request. One instance serves one
+resolver; another network or a replacement resolver gets its own.
+
+**CORS, on every response.** The mainnet universal resolver lists its gateways
+as `["https://ccip-v3.ens.xyz", "x-batch-gateway:true"]`, and the second entry
+tells viem to run the batch gateway inside the page. The browser therefore
+fetches this gateway directly from the wallet's origin, and without
+`Access-Control-Allow-Origin: *` the script never sees the answer and the name
+does not resolve. The header goes on every response, errors included, with an
+`OPTIONS` handler for the `POST` form ERC-3668 falls back to when a template has
+no `{data}`. It belongs in the binary rather than in a proxy in front of it, so
+no deployment can lose it. `*` is right: the answers are public and signed, and
+nothing is sent with credentials.
+
+**Direct invocation, later.** Once the gateway signs for a configured address
+and can answer a `multicall(bytes[])` inside `resolve`, a new resolver
+deployment may announce ERC-7996 with `eth.ens.resolver.extended.multicall`:
+one signed answer then carries a whole profile, and the ENS batch gateway drops
+out of the path. Not before the v2 contracts are final, and never by editing
+the deployed resolver, which is immutable — replacing it is one `setResolver`.
+
 It belongs in its own repository, following the pattern of `notary` and
 `identity-backend`: a small Rust binary shipped as a container. It must not live
 inside `identity-backend`, which is the write path — OAuth, proofs, claiming.
@@ -309,7 +348,9 @@ serverless deployment.
 and a client with CCIP-Read enabled follows the lookup silently, which makes an
 offchain resolver look like an on-chain one. Telling the two apart means disabling
 CCIP-Read deliberately — in viem that is a client option, and passing it to the
-action instead is silently ignored.
+action instead is silently ignored. A test through the mainnet
+`UniversalResolver`, with the batch gateway played by the test, covers the route
+a wallet actually takes; the resolver's own tests do not.
 
 ## What ENSIP-15 allows
 
@@ -500,7 +541,9 @@ where attention usually goes.
 
 What a signature covers is `(resolver, expires, keccak(callData), keccak(result))`.
 An answer is therefore bound to that resolver and that query, and expires — it
-cannot be replayed for another name or after its deadline.
+cannot be replayed for another name or after its deadline. The `resolver` is the
+gateway's own configuration, not the request's `{sender}`, for the reason given
+under **The backend**.
 
 A storage proof against an L2 state root posted on L1 would replace the signature,
 and it is not the plan. It also would not generalize: it needs a chain that posts
