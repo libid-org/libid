@@ -257,16 +257,24 @@ interface AppStartProver {
   clientId: string
   redirectUri: string
   codeVerifier: string | null
+  isTestnet: boolean
 }
 ```
 
 `platformId` and `platformCeremonyVersion` are the exact supported profile
 selected at launch and must match the active Prover. The message is valid only
 after `ProverReady`. The remaining fields are the frozen client identifier and
-redirect and derived code verifier. The OAuth return is already retained by
-Prover and is not repeated in the message. Starting Prover initiates OAuth
-validation; it does not assert acceptance or mean that proof generation has
+redirect, derived code verifier, and boolean ledger classification. The OAuth
+return is already retained by Prover and is not repeated in the message.
+Starting Prover initiates OAuth validation; it does not assert acceptance or
+mean that proof generation has
 already begun.
+
+`isTestnet` is frozen by the Application for the target ledger. Prover uses
+it to select its code-pinned notary address and forwards it unchanged in any
+GitHub token request; no caller-selected notary URL is accepted. Google makes
+no notary request for either value. This routing choice changes no proof
+statement or ledger trust rule.
 
 The Application origin is trusted for this transient input because it already
 supplies the operation being authorized. It retains the authorization nonce;

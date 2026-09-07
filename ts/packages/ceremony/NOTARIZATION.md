@@ -27,19 +27,36 @@ churn from platform code. It ships inside the selected versioned prover root; th
 separately fetched notarization client is the pinned `tlsn_wasm.js` module and
 its deterministic sibling `tlsn_wasm_bg.wasm`.
 
-The module pins the one shared browser Notary Service address:
+### Notary address
+
+The module selects between two code-pinned Notary Service addresses using the
+ceremony's frozen `isTestnet` boolean:
 
 ```ts
-const NOTARY_ADDRESS = 'https://notary.lib.id'
+const notaryAddress = isTestnet
+  ? 'https://testnet.notary.lib.id'
+  : 'https://notary.lib.id'
 ```
 
-The build may replace this default only through `LIBID_NOTARY_ADDRESS`, which
-must be a canonical HTTPS origin. The resulting value is compiled into the
-static Prover distribution and its response policy. Applications, runtime
-deployment configuration, ceremony inputs, OAuth responses, and CCDP messages
-cannot replace it or select an OAuth-platform request, disclosure layout, or
-Notary Service behavior. The address is only network routing; Ledger Verifier
-governance independently decides which notary signatures are authoritative.
+X uses the selected address for both browser sessions. GitHub passes the same
+boolean to its Bridge for token notarization and uses it locally for identity
+notarization. The Bridge applies
+this same fixed mapping; no request supplies a URL or failure switches to the
+other network. Google uses neither address.
+
+For local development, `LIBID_NOTARY_ADDRESS` overrides the resolved address
+for either boolean value. It must be a canonical HTTPS origin and is read
+when building the static Prover distribution, never from browser runtime
+inputs. The build emits the effective WebSocket origins in the response policy.
+The GitHub Bridge may read the same override from its process environment;
+development deployments configure both sides consistently. Asset declarations,
+prefetch, and proof formats are identical for both networks.
+
+Applications and messages supply only the boolean, not an arbitrary endpoint,
+OAuth-platform request, disclosure layout, or Notary Service behavior. The
+address is only network routing; Ledger Verifier governance independently
+decides which notary signatures are authoritative. No browser signature check
+or notary-key input is introduced by this selection.
 
 ## Internal contract
 
@@ -94,6 +111,7 @@ interface NotarizationSession {
 
 declare function prepareNotarization(
   url: string,
+  isTestnet: boolean,
   signal: AbortSignal,
 ): Promise<NotarizationSession>
 ```
@@ -246,12 +264,15 @@ The decoded values and every malformed variant are asserted by the
 
 ### Network transport
 
-The adapter changes `NOTARY_ADDRESS` only from `https` to `wss` and opens the
-exact `/notarize-proxy` path with no query:
+The adapter resolves the [notary address](#notary-address), changes only its
+scheme from `https` to `wss`, and opens the exact `/notarize-proxy` path with
+no query:
 
 ```text
 https://notary.lib.id
     -> wss://notary.lib.id/notarize-proxy
+https://testnet.notary.lib.id
+    -> wss://testnet.notary.lib.id/notarize-proxy
 ```
 
 The same WebSocket carries the complete TLSNotary Proxy byte stream and the
@@ -296,7 +317,7 @@ sequenceDiagram
     participant N as Notary Service
     participant P as Platform HTTPS server
 
-    M->>T: prepareNotarization(url, signal)
+    M->>T: prepareNotarization(url, isTestnet, signal)
     T->>N: Open wss://<notary-origin>/notarize-proxy
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)

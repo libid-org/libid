@@ -216,8 +216,10 @@ notarization module pins both immutable asset paths. Each remains a normal,
 independently cached response; the browser never downloads or unpacks a release
 archive. The [CCDP Distribution contract](CCDP_DISTRIBUTION.md#proving-assets) owns their
 serving.
-Neither an application nor `AppStartProver` selects a notary, circuit, or
-bb.js version.
+`AppStartProver.isTestnet` selects only the code-pinned
+[notary address](NOTARIZATION.md#notary-address). It cannot supply an arbitrary
+endpoint or select a circuit or bb.js version. Both values use the same assets
+and prefetch graph; Google does not use a notary.
 
 ### Google
 
@@ -294,10 +296,12 @@ verified attestations and submitted authorization fields.
 
 ### GitHub
 
-`platforms/github/1/prover` first sends the captured code and derived verifier
-to the fixed OAuth bridge token-exchange route. The bridge uses its
-confidential client secret, performs the token-exchange TLSNotary session, and
-returns the bounded access token, token attestation, and `bearerOpening`: the
+`platforms/github/1/prover` first sends the captured code, derived verifier,
+and unchanged `isTestnet` to the fixed OAuth bridge token-exchange route.
+The Bridge and browser identity session use the same notary selection. The
+bridge uses its confidential client secret, performs the token-exchange
+TLSNotary session, and returns the bounded access token, token attestation,
+and `bearerOpening`: the
 canonical unpadded base64url encoding of the token session's exact 16-byte
 TLSNotary blinder. The
 browser exact-validates the selected version's token response, attestation
