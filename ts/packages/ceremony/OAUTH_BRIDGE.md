@@ -79,9 +79,9 @@ The bridge exposes only:
 
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
-| `GET` | `/api/v1/ceremony/config` | always | public platform and CCDP configuration | exact allowed browser origin; absent `Origin` accepted only by the same-origin rule below |
+| `GET` | `/api/v1/ceremony/config` | always | public platform and CCDP configuration | exact `Origin` in `allowedAppOrigins`; absent `Origin` accepted only by the same-origin rule below |
 | `GET` | configured callback path, default `/auth/callback` | always | complete OAuth Callback document | none at HTTP ingress; callback authenticates its popup connection after clearing its input |
-| `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to the configured CCDP origin; exact noncredentialed CORS |
+| `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` equal to `ccdpOrigin` only, checked on every request; exact noncredentialed CORS |
 
 Top-level navigation may omit `Origin`, and an OAuth-platform callback may
 identify the platform rather than the application. `Referer` is never an
@@ -189,6 +189,11 @@ retains no state. The prover derives this fixed route from the origin of the
 Ceremony Client's frozen `redirectUri` in `AppStartProver`; the prover document
 does not embed it.
 
+The browser caller is Prover on `ccdpOrigin`, not the Application. This route
+therefore admits only that configured origin, not the union with
+`allowedAppOrigins`. An application origin is admitted only if it is also
+exactly `ccdpOrigin`; the requested `notaryAddress` grants no caller admission.
+
 The bridge API version implements GitHub ceremony version `1` only. The request
 carries no ceremony-version field, and configuration must not advertise a
 GitHub version requiring different token-service semantics. Such a change
@@ -255,7 +260,10 @@ mandatory.
 The endpoint contract is:
 
 - the query is empty and the request media type is exactly `application/json`;
-- preflight and POST `Origin` exactly equal the configured CCDP origin;
+- every preflight and POST carries one valid `Origin` exactly equal to
+  `ccdpOrigin`; missing, `null`, malformed, multiple, or different origins
+  reject before notary resolution, connection, or token exchange. Successful
+  preflight never substitutes for checking the actual POST;
 - successful preflight admits only `POST` and `Content-Type`, uses no
   credentials, and returns no ceremony data;
 - malformed UTF-8, JSON, or fields fail before token exchange;
