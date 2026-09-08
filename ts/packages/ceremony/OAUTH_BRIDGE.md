@@ -44,7 +44,7 @@ One bridge deployment has these inputs:
 | CCDP origin | One canonical HTTPS origin selected by the operator; defaults to `https://lib.id` when omitted |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
-| Callback inputs | `versionedInputs` with an explicit tuple for each supported CCDP version, and deployment-policy sources specified by the [artifact contract](CCDP_DISTRIBUTION.md#callback-artifact) |
+| Callback inputs | One unversioned list `[allowedAppOrigins, ccdpOrigin]` derived from the values above, plus deployment-policy sources required by the [artifact contract](CCDP_DISTRIBUTION.md#configuration-insertion); no separate input configuration or CCDP version list |
 | GitHub settings | Client secret, redirect URI, and token endpoint settings when GitHub is enabled |
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
@@ -58,6 +58,13 @@ Callback can navigate the popup to Prover. The bridge also resolves the fixed
 Callback artifact path against it; no separate Callback artifact URL is
 configured. Omitting it selects the canonical `https://lib.id`
 Distribution.
+
+The Bridge injects the same input list regardless of CCDP version. New versions
+with compatible inputs work on artifact refresh without a Bridge rebuild or
+configuration change. Callback owns browser version selection; the Bridge
+neither enumerates versions nor reads input declarations from the artifact.
+Input-contract versioning and Bridge awareness are introduced only if that
+contract actually becomes incompatible, not for an ordinary CCDP version bump.
 
 One platform configuration generates both the public profile entries and the
 OAuth registrations used by the callback. The bridge advertises only
@@ -161,7 +168,7 @@ selection, and failure UI. The bridge only:
   independently of callback requests, rejecting upstream redirects;
 - sends no callback query, OAuth return, incoming request headers, cookies, or
   credentials upstream; the configured source never depends on a request;
-- validates and inserts trusted deployment data using the artifact contract,
+- validates and inserts its unversioned input list using the artifact contract,
   then publishes the completed HTML and matching response headers atomically;
 - serves the cached result until a valid replacement is ready; a failed
   refresh retains the last valid result, or returns an inert unavailable
