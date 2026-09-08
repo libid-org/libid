@@ -352,14 +352,12 @@ export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
 interface CeremonyClient {
   readonly enabledPlatforms: readonly PlatformId[]
   new: <P extends PlatformId>(
+    conn: PopupConnection<Message>,
     ceremonyId: string,
-    input: {
-      connection: PopupConnection<Message>
-      ledgerId: LedgerId
-      platformId: P
-      operationDomain: Uint8Array
-      transactionData: Uint8Array
-    },
+    ledgerId: LedgerId,
+    platformId: P,
+    operationDomain: Uint8Array,
+    transactionData: Uint8Array,
   ) => Ceremony<P>
 }
 ```
@@ -412,8 +410,9 @@ values before constructing OAuth or allowing OAuth-platform navigation. Client
 initialization has already fetched and validated `CeremonyConfig`, so `new`
 does only local synchronous work.
 
-`CeremonyClient.new(ceremonyId, input)` accepts a plain string which must be a
-lowercase UUIDv4. A composition normally generates one value and calls it
+`CeremonyClient.new` takes six positional arguments in the order shown above;
+there is no separate input object. `ceremonyId` is a plain string which must be
+a lowercase UUIDv4. A composition normally generates one value and calls it
 `jobId` in its Job API and `ceremonyId` in this API. The equality is a
 composition invariant, not a shared branded type. The identifier is not chain
 authorization, but its unpredictability and one-use handling provide browser
@@ -474,13 +473,14 @@ function activate(event: MouseEvent) {
     connectionId: ceremonyId,
     allowedPopupOrigins: [ccdpOrigin, new URL(redirectUri).origin],
   })
-  const ceremony = ceremonies.new(ceremonyId, {
+  const ceremony = ceremonies.new(
     connection,
+    ceremonyId,
     ledgerId,
     platformId,
     operationDomain,
     transactionData,
-  })
+  )
 
   anchor.href = ceremony.launchUrl
   anchor.target = target
@@ -594,13 +594,14 @@ Callers do not supply a generic explicitly. A static platform literal flows
 through `new` and `proveUserIdentity()`:
 
 ```ts
-const ceremony = ceremonies.new(jobId, {
+const ceremony = ceremonies.new(
   connection,
+  jobId,
   ledgerId,
-  platformId: 'google',
+  'google',
   operationDomain,
   transactionData,
-})
+)
 
 const result = await ceremony.proveUserIdentity()
 if (result.status === 'accepted') {
