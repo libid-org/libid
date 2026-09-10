@@ -35,13 +35,15 @@ Bridge registration and receives no application allowlists.
 
 ## Deployment configuration
 
-One bridge deployment has these inputs:
+One bridge deployment has these inputs. Every origin follows the
+[CCDP origin policy](CCDP.md#origin-policy), including HTTP on exact
+`localhost` and `127.0.0.1` hosts:
 
 | Input | Contract |
 |---|---|
-| Bridge origin | Canonical HTTPS origin used by every bridge route and the configured OAuth redirect URI; explicit loopback development is the only HTTP exception |
-| `allowedAppOrigins` | Nonempty, duplicate-free set of canonical HTTPS application origins admitted by the bridge |
-| CCDP origin | One canonical HTTPS origin selected by the operator; defaults to `https://lib.id` when omitted |
+| Bridge origin | Canonical origin used by every bridge route and the configured OAuth redirect URI |
+| `allowedAppOrigins` | Nonempty, duplicate-free set of canonical application origins admitted by the bridge |
+| CCDP origin | One canonical origin selected by the operator; defaults to `https://lib.id` when omitted |
 | Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback inputs | One unversioned list `[allowedOrigins, ccdpOrigin]` derived from the values above, plus deployment-policy sources required by the [artifact contract](CCDP_DISTRIBUTION.md#configuration-insertion); no separate input configuration or CCDP version list |
@@ -66,6 +68,16 @@ Callback can navigate the popup to Prover. The bridge also resolves the fixed
 Callback artifact path against it; no separate Callback artifact URL is
 configured. Omitting it selects the canonical `https://lib.id`
 Distribution.
+
+An all-HTTP local setup can use Application `http://localhost:3000`, Bridge
+`http://localhost:3001`, and CCDP `http://localhost:8787`. The Bridge configures
+the Application in `allowedAppOrigins`, adds the CCDP origin to `allowedOrigins`,
+publishes `http://localhost:3001/auth/callback` as `redirectUri`, and retrieves
+`http://localhost:8787/ccdp/callback.html` without requiring a local certificate.
+Callback receives that same HTTP allowlist and CCDP origin; the client,
+Callback, Prover, and their popup connections must not reject them solely for
+using HTTP. Notary selection remains on the supplied ledger, not this config.
+Platform acceptance of the registered redirect URI is a separate prerequisite.
 
 The Bridge injects the same input list regardless of CCDP version. New versions
 with compatible inputs work on artifact refresh without a Bridge rebuild or
@@ -130,10 +142,12 @@ interface CeremonyConfig {
 The response rules are:
 
 - `PlatformCeremonyVersion` is an unsigned 16-bit integer.
-- `redirectUri` is the canonical registered URL on the bridge origin. It
-  contains no credentials, query, or fragment.
-- `ccdpOrigin` is the configured canonical HTTPS origin with no credentials,
-  path, query, or fragment.
+- `redirectUri` is the canonical registered URL on the bridge origin under the
+  [origin policy](CCDP.md#origin-policy). It contains no credentials, query, or
+  fragment.
+- `ccdpOrigin` is the configured canonical origin under that same policy, with
+  no credentials, path, query, or fragment. The client validator accepts the
+  localhost HTTP exception for both fields and for its `oauthBridge` input.
 - Each platform entry has one public client ID and a nonempty, duplicate-free
   list of supported ceremony versions. List order has no meaning.
 - Unknown fields, malformed URLs, and unsupported numeric representations are
@@ -231,12 +245,14 @@ invalid. The versioned route carries no redundant schema field.
 most 1,024 bytes. `codeVerifier` matches `[A-Za-z0-9_-]{43}`. The bridge does
 not normalize either value.
 
-`notaryAddress` is a required canonical HTTPS origin with no credentials, path,
-query, or fragment. Prover supplies its already
-[resolved address](NOTARIZATION.md#notary-address), including any development
-override, and uses that same address for identity notarization. The Bridge
-derives the fixed `/notarize-proxy` WebSocket endpoint from it; it neither
-classifies ledgers nor maintains a profile mapping or second override.
+`notaryAddress` follows the canonical origin rules in
+[`AppStartProver`](CCDP.md#appstartprover), including its localhost HTTP exception;
+credentials, paths, queries, and fragments remain forbidden. Prover forwards
+the address [snapshotted by CeremonyClient](ARCHITECTURE.md#notary-selection) from the
+supplied ledger, and uses that same address for identity notarization. The Bridge
+derives the fixed `/notarize-proxy` WebSocket endpoint, mapping HTTPS to WSS or
+permitted local HTTP to WS while preserving host and effective port; it neither
+classifies ledgers nor maintains a notary mapping or override.
 Failure never selects a different notary. Callback configuration and public
 `CeremonyConfig` carry no notary selection.
 
@@ -244,7 +260,10 @@ This server-side destination is request-controlled. Origin/CORS checks do not
 authenticate non-browser callers or replace egress controls. The Bridge must
 prevent access to private/internal destinations, including through DNS
 resolution, unless its operator explicitly permits the development destination.
-Canonical HTTPS syntax alone is insufficient; redirects remain forbidden.
+The localhost HTTP exception removes the TLS requirement, not these egress
+checks. Loopback is the Bridge's machine, which may differ from the browser's;
+a development setup must make the intended notary reachable by both. Canonical
+origin syntax alone is insufficient; redirects remain forbidden.
 
 `accessToken` is nonempty printable ASCII without whitespace or control bytes
 and at most 128 bytes, matching GitHub v1's bearer circuit. Both Bridge and

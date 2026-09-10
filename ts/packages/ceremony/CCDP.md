@@ -185,11 +185,29 @@ direction and state before acting.
 
 #### Origin policy
 
+Application, OAuth Bridge, CCDP, and notary origins use one rule: canonical
+HTTPS origins, or HTTP origins on the exact hosts `localhost` and `127.0.0.1`.
+An origin-only value has no credentials, path, query, or fragment; a nondefault
+port is explicit. No protocol-specific port is required; example port numbers
+are illustrative. Other HTTP hosts, aliases, subdomains, IP literals, and
+noncanonical spellings are rejected rather than normalized into acceptance.
+The origin of a URL-bearing field such as `redirectUri` follows the same rule;
+its path and other components retain that field's own contract.
+
+This rule applies to configuration, Callback inputs, explicit connection
+allowlists, and open-origin admission alike. It needs no development flag.
+Exact origin matching and duplicate rejection still apply: different ports,
+schemes, or `localhost` versus `127.0.0.1` are not interchangeable. Open
+admission never accepts an opaque or `null` origin. The exception does not
+relax OAuth-platform TLS rules, pinned external-asset URLs, or browser
+secure-context and Prover-isolation requirements.
+
 Because one CCDP Distribution serves Applications admitted by any number of
 independent OAuth Bridges, Prefetch and Prover use
-`allowedApplicationOrigins: '*'`. They accept any valid browser-observed HTTPS
-Application origin and pin that exact origin and source for each carrier, while
-the Application exact-authenticates the configured CCDP origin. Open admission
+`allowedApplicationOrigins: '*'`. They accept any browser-observed Application
+origin satisfying the rule above and pin that exact origin and source for each
+carrier, while the Application exact-authenticates the configured CCDP origin.
+Open admission
 grants only public asset prefetch, carrier continuity, and processing of the
 connecting Application's own proof request. Prover receives the captured return
 from Callback, not directly from the platform. Callback exact-authenticates the
@@ -257,25 +275,28 @@ interface AppStartProver {
   clientId: string
   redirectUri: string
   codeVerifier: string | null
-  ledgerId: string
+  notaryAddress: string | null
 }
 ```
 
 `platformId` and `platformCeremonyVersion` are the exact supported profile
 selected at launch and must match the active Prover. The message is valid only
 after `ProverReady`. The remaining fields are the frozen client identifier and
-redirect, derived code verifier, and canonical encoded ledger identifier. The
+redirect, derived code verifier, and resolved notary address. The
 OAuth return is already retained by Prover and is not repeated in the message.
 Starting Prover initiates OAuth validation; it does not assert acceptance or
 mean that proof generation has
 already begun.
 
-`ledgerId` is the frozen encoding of the target ledger, using the shared
-[ledger identity contract](../ledger/README.md). Prover decodes and validates
-it before credential use. Its code-owned classification selects the notary
-address; no separate testnet flag, hash, or caller-selected notary URL is
-accepted. Google makes no notary request. This routing choice changes no proof
-statement or ledger trust rule.
+`notaryAddress` follows the [origin policy](#origin-policy) for a platform that
+uses notarization; it is null for Google. The local HTTP exception needs no
+client option or environment override. A remote HTTP address is rejected,
+never upgraded or used as a downgrade fallback.
+The Application selects and freezes it before OAuth. Prover validates it before
+credential use and uses it unchanged for all sessions, including the GitHub
+token request. It neither selects defaults nor accepts a separate profile,
+ledger identifier, hash, or testnet flag. The address changes network routing,
+not the proof statement or trusted signing keys.
 
 The Application origin is trusted for this transient input because it already
 supplies the operation being authorized. It retains the authorization nonce;

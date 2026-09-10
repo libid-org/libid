@@ -29,33 +29,20 @@ its deterministic sibling `tlsn_wasm_bg.wasm`.
 
 ### Notary address
 
-Prover resolves one Notary Service address per ceremony from the decoded
-`LedgerId`, using two code-pinned defaults:
+The adapter receives the canonical `notaryAddress` read from the ledger and
+frozen by [CeremonyClient](ARCHITECTURE.md#notary-selection), through
+[`AppStartProver`](CCDP.md#appstartprover), including its localhost HTTP exception.
+It owns no profile defaults, ledger classification, or environment override.
+X uses that address for both browser sessions. GitHub passes it unchanged in
+its Bridge token request and uses it locally for identity notarization. Neither
+Prover nor Bridge remaps the address, and failure never selects a different
+notary. Google supplies null and never invokes this adapter.
 
-```ts
-const notaryAddress = ledgerId.isTestnet()
-  ? 'https://testnet.notary.lib.id'
-  : 'https://notary.lib.id'
-```
-
-X uses the resolved address for both browser sessions. GitHub passes that
-address in its Bridge token request and uses it locally for identity
-notarization. The Bridge neither classifies ledgers nor remaps the address;
-failure never switches to the other network. Google uses neither address.
-
-For local development, `LIBID_NOTARY_ADDRESS` overrides the resolved address
-for either network. It must be a canonical HTTPS origin and is read
-when building the static Prover distribution, never from browser runtime
-inputs. The build emits the effective WebSocket origins in the response policy.
-The same resolved override reaches GitHub through its token request; no second
-Bridge override or profile configuration exists. Asset declarations,
-prefetch, and proof formats are identical for both networks.
-
-Applications supply a supported ledger identity, not an arbitrary endpoint,
-OAuth-platform request, disclosure layout, or Notary Service behavior. The
-address is only network routing; Ledger Verifier governance independently
-decides which notary signatures are authoritative. No browser signature check
-or notary-key input is introduced by this selection.
+The address is only network routing, not a caller-selected platform request,
+disclosure layout, or Notary Service behavior. Ledger Verifier governance
+independently decides which notary signatures are authoritative. No browser
+signature check or notary-key input is introduced by this selection. Asset
+declarations, prefetch, and proof formats do not depend on the address.
 
 ## Internal contract
 
@@ -116,8 +103,10 @@ declare function prepareNotarization(
 ```
 
 The platform leaf supplies its code-owned canonical HTTPS request URL and the
-ceremony's resolved notary address before preparation. The latter is a canonical
-HTTPS origin, distinct from the platform target; all sessions reuse it unchanged.
+ceremony's resolved [notary address](#notary-address) before preparation.
+It is distinct from the platform target; all sessions reuse it unchanged.
+The localhost exception applies only to the notary connection: the platform
+request still requires HTTPS and its pinned TLS identity.
 The request URL contains no credentials or fragment. The adapter derives the
 TLS server name and port from it before constructing the TLSNotary prover and
 performing setup; it neither accepts a separate hostname nor follows redirects.
@@ -266,15 +255,25 @@ The decoded values and every malformed variant are asserted by the
 ### Network transport
 
 The adapter validates the already resolved [notary address](#notary-address),
-changes only its scheme from `https` to `wss`, and opens the exact
-`/notarize-proxy` path with no query:
+maps `https` to `wss` or the permitted localhost `http` to `ws`, and opens the
+exact `/notarize-proxy` path with no query. Host and effective port are preserved:
 
 ```text
 https://notary.lib.id
     -> wss://notary.lib.id/notarize-proxy
 https://testnet.notary.lib.id
     -> wss://testnet.notary.lib.id/notarize-proxy
+http://localhost:7047
+    -> ws://localhost:7047/notarize-proxy
+http://127.0.0.1:7047
+    -> ws://127.0.0.1:7047/notarize-proxy
 ```
+
+No TLS certificate is required for the permitted local HTTP/WS connection.
+Browser mixed-content and local-network access policies still apply; report a
+connection failure rather than bypassing browser protections or downgrading a
+remote destination. Loopback refers to the connecting process's machine:
+browser and Bridge sessions must both reach the intended development notary.
 
 The same WebSocket carries the complete TLSNotary Proxy byte stream and the
 final attestation. This flow performs no `POST /session`, carries no
@@ -319,7 +318,7 @@ sequenceDiagram
     participant P as Platform HTTPS server
 
     M->>T: prepareNotarization(url, notaryAddress, signal)
-    T->>N: Open wss://<notary-origin>/notarize-proxy
+    T->>N: Open derived notary WebSocket
     T->>W: setup(IoChannel)
     W->>N: TLSNotary setup messages (Proxy profile)
     N-->>W: TLSNotary setup messages (Proxy profile)

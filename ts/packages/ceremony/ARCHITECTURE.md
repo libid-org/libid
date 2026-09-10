@@ -127,7 +127,7 @@ Launch publishes one `@libid/ceremony` package:
 @libid/ceremony
 ├── ccdp
 │   └── index         ceremony records, directional codecs, and protocol version
-├── client      CeremonyConfig fetch, application-side API, and orchestration
+├── client      CeremonyConfig fetch, ledger-input snapshots, application-side API, and orchestration
 ├── callback    bundled Callback implementations and URL-clearing entrypoint
 ├── prefetch    source entrypoint for Prefetch, the shared worker, and asset cache
 ├── assets      lightweight resource declarations, shared header policy, and URL resolution
@@ -258,7 +258,7 @@ owner-defined asset modules ───> assets (declarations and URL resolution o
 
 client, callback, prefetch, prover, platforms/index ───> ccdp
 client, callback, prefetch, prover ───> @libid/popup
-client, prover ───> @libid/ledger
+client ───> @libid/ledger
 wallet-client ─────────> client + ceremony + wallet/protocol + @libid/popup
 ```
 
@@ -308,7 +308,7 @@ One closed catalog derives `PlatformId`, `supportedPlatforms`, supported
 versions, and `ProofByPlatformVersion` from the same keys and validators:
 
 ```ts
-import { LedgerId } from '@libid/ledger'
+import type { LedgerId } from '@libid/ledger'
 import * as googleV1 from './platforms/google/1/client'
 import * as xV1 from './platforms/x/1/client'
 import * as githubV1 from './platforms/github/1/client'
@@ -349,6 +349,10 @@ export const supportedPlatforms: readonly PlatformId[] = Object.freeze(
   Object.keys(platforms) as PlatformId[],
 )
 
+export declare function createCeremonyClient(options: {
+  oauthBridge: string
+}): Promise<CeremonyClient>
+
 interface CeremonyClient {
   readonly enabledPlatforms: readonly PlatformId[]
   new: <P extends PlatformId>(
@@ -383,24 +387,22 @@ configuration, or display metadata.
 
 The composition supplies a [`LedgerId`](../ledger/README.md) from
 `@libid/ledger`, an exact 32-byte `operationDomain` hash, and bounded opaque
-`transactionData`. The ledger package owns encoding/decoding, the canonical
-Chain Profile hash used by the Ledger Verifier, and code-owned testnet
-classification. Ceremony owns no ledger catalog or chain-specific parser.
+`transactionData`. The ledger package owns the canonical Chain Profile hash
+used by the Ledger Verifier and the ledger's notary address. Ceremony owns no
+ledger catalog, network classification, or chain-specific parser.
 
-During `new`, the client snapshots `ledgerId.encode()` and decodes it through
-`LedgerId.decode`, rejecting unsupported or noncanonical identifiers before
-OAuth. It derives the retained `chainId` from that immutable value's `hash()`,
-requires and copies exactly 32 bytes, and validates/copies `operationDomain`.
+During `new`, the client reads `ledgerId.hash()` once, requires and copies
+exactly 32 hash bytes as `chainId`, and validates/copies `operationDomain` and
+`transactionData`. For a platform that uses notarization, it also reads and
+validates `ledgerId.notaryAddress()` once as described in
+[notary selection](#notary-selection).
+Missing methods, thrown errors, or invalid returned values fail before OAuth.
 Later changes to supplied objects or buffers cannot change the ceremony. All
-authorization/proof-input construction uses that retained Chain Profile hash,
-not a hash of the ledger's transport encoding.
+authorization/proof-input construction uses the retained Chain Profile hash.
 
-`AppStartProver` carries the encoded ledger string. Prover first validates the
-message, then reconstructs the same value with `LedgerId.decode`; the message
-decoder itself still returns the original record. `isTestnet()` determines the
-fixed [notary address](NOTARIZATION.md#notary-address). Callers supply neither a
-separate network flag nor a notary URL, and neither encoding nor classification
-adds a field to the authorization digest or `OAuthProof`.
+`AppStartProver` carries only the resolved address, not the ledger object or
+hash. Prover needs no ledger dependency. Notary routing adds no field to the authorization digest
+or `OAuthProof`.
 
 The client requires the selected platform to be enabled by validated
 `CeremonyConfig`, chooses the numerically greatest ceremony version supported
@@ -493,7 +495,8 @@ Callback authenticates the Application, then navigates directly to Prover
 with the captured OAuth query/fragment in a private structured fragment.
 `proveUserIdentity()` receives no OAuth return. It accepts one fieldless
 `ProverReady` and sends one `AppStartProver` containing the frozen platform,
-version, client ID, redirect URI, nullable code verifier, and encoded `ledgerId`.
+version, client ID, redirect URI, nullable code verifier, and resolved notary
+address (null when the selected platform does not use notarization).
 
 The selected Prover leaf validates the retained return against that request,
 the CCDP version, and the authenticated connection's ceremony ID. A valid
@@ -529,6 +532,37 @@ The client fetches and validates the origin-controlled
 [`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
 the chosen platform, version, client ID, redirect URI, and CCDP origin. CCDP
 [resources](CCDP.md#documents-and-routes) never fetch it.
+The `oauthBridge` constructor input, configured origins, redirect URI, and
+connection allowlists follow the same [origin policy](CCDP.md#origin-policy),
+including the localhost HTTP exception. Client validation must not impose a
+second HTTPS-only restriction.
+
+### Notary selection
+
+For a platform that uses notarization, `new` takes the address directly from
+the supplied ledger:
+
+```ts
+const notaryAddress = ledgerId.notaryAddress()
+```
+
+The client validates a nonempty canonical notary origin under
+[`AppStartProver`](CCDP.md#appstartprover), including its explicit localhost
+HTTP exception, and freezes it before OAuth. Credentials, paths, queries, and
+fragments are forbidden. Missing, throwing, or invalid results fail `new`;
+there is no default fallback. The client has no
+notary profiles, environment lookup, or constructor override. Ledger
+definitions own their addresses; tests and local development can supply a
+[ledger fixture](../ledger/README.md#api) with a different address and the same
+Chain Profile hash.
+
+Google does not call `notaryAddress()` and retains and sends null instead.
+Prover validates and uses the supplied address unchanged for all browser
+sessions and forwards the same value to GitHub's token
+endpoint. Neither Prover nor Bridge selects or switches notaries on failure.
+Assets and prefetch caches are unchanged.
+The address selects a network destination, not a trusted signing key; ledger
+verification remains authoritative.
 
 ## Result and lifecycle
 
@@ -705,7 +739,7 @@ information; only Ledger Verifier acceptance makes identity authoritative.
 
 The live `Ceremony` privately retains its ID, copied operation inputs, selected
 platform and ceremony version, authorization nonce and digest, OAuth client and
-redirect, derived code verifier, and supplied popup connection. A restart creates a fresh Ceremony
+redirect, resolved notary address, derived code verifier, and supplied popup connection. A restart creates a fresh Ceremony
 with a fresh nonce, digest, and verifier. After proof acceptance, the Job may
 store the accepted `IdentityResult` alongside its original operation inputs. Before
 acceptance, no Job or IndexedDB index stores the authorization nonce or digest,

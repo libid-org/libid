@@ -7,8 +7,9 @@ build, and deployment contract.
 
 ## Distribution boundary
 
-One CCDP Distribution is served from one canonical HTTPS `ccdpOrigin`. Explicit
-loopback development is the only HTTP exception. It contains:
+One CCDP Distribution is served from one canonical `ccdpOrigin` under the
+[CCDP origin policy](CCDP.md#origin-policy): HTTPS, or HTTP on exact `localhost`
+and `127.0.0.1` hosts. It contains:
 
 - every protocol resource for each supported CCDP version, including one
   self-contained Callback artifact containing its supported implementations; and
@@ -105,13 +106,26 @@ response profile, adds `Content-Encoding: br`, and includes
 runtime compression or other negotiated representation exists.
 
 Both Prover responses close script and worker sources to the build-generated
-same-origin graph and toolchain-required `blob:` workers. Asset fetches are
-not restricted to the CCDP origin: their `connect-src https:` admits bb.js's
-Aztec CRS downloads as well as validated third-party OAuth Bridges. The build
-additionally admits the two exact Notary Service WebSocket origins selected by
-[`LedgerId.isTestnet()`](NOTARIZATION.md#notary-address), or the single development
-override origin when built with `LIBID_NOTARY_ADDRESS`. The response is
-identical for either network; selection changes no asset or cache key.
+same-origin graph and toolchain-required `blob:` workers. Every context that
+fetches distributed assets, including Prefetch, Prover, the Service Worker,
+and dedicated workers, admits `'self'` in `connect-src`; same-origin HTTP
+assets must not be accidentally excluded by an HTTPS-only source list.
+
+Prover additionally admits `https: wss:` for bb.js's Aztec CRS downloads,
+validated third-party OAuth Bridges, and secure notary WebSockets. Its local
+Bridge HTTP sources are `http://localhost:* http://127.0.0.1:*`; its local
+notary WS sources are `ws://localhost:* ws://127.0.0.1:*`. Both Prover responses
+include these fixed sources for default and custom ports. Dedicated workers
+include the corresponding sources where they perform Bridge or notary requests.
+No resource admits a general `http:` or `ws:` source. Generated policy does
+not add `upgrade-insecure-requests` or otherwise force local requests to TLS.
+Script and worker loading remains same-origin under either permitted scheme;
+these fetch exceptions admit no remote code. The Distribution embeds no
+selected notary address, profile, or environment override; one byte-identical
+response supports the same admitted origins in local and hosted deployments.
+Selection changes no asset or cache key. This policy permits those network
+schemes and explicit loopback hosts, not just the selected notary; application
+code enforces destination selection.
 
 Every context which fetches or prefetches CRS, including the Service Worker
 and dedicated proof workers, admits both `https://crs.aztec-cdn.foundation`
@@ -134,9 +148,10 @@ same-origin or `blob:` children only for workers that spawn them. The Service
 Worker only caches bytes and keeps ports: it needs no WASM compilation permission.
 
 Each request-invariant Prover response supports multiple platform profiles and
-arbitrary canonical HTTPS OAuth Bridges. CSP cannot express a runtime-selected
-exact Bridge origin, so its HTTPS connection class is not per-Bridge
-compartmentalization. Prover derives GitHub's fixed token route only from the
+arbitrary OAuth Bridges satisfying the [origin policy](CCDP.md#origin-policy).
+CSP cannot express a runtime-selected exact Bridge origin, so its HTTPS class
+and fixed localhost HTTP sources are not per-Bridge compartmentalization.
+Prover derives GitHub's fixed token route only from the
 validated `redirectUri` frozen by the Application; no message supplies another
 Bridge endpoint. Compromised Prover code can use every network class admitted
 by the response.
@@ -194,8 +209,10 @@ using the Bridge's [effective allowlist](OAUTH_BRIDGE.md#deployment-configuratio
 There is no version-keyed wrapper, input-declaration block, or Bridge-side
 CCDP version list. Every bundled Callback implementation receives a deeply
 frozen copy of the same list. The first two positions require a nonempty,
-duplicate-free canonical HTTPS allowlist containing the configured canonical
-HTTPS CCDP origin, and that origin itself. These match the effective admission
+duplicate-free allowlist of canonical origins containing the configured CCDP
+origin, and that origin itself. Both use the
+[CCDP origin policy](CCDP.md#origin-policy), including its HTTP localhost
+exception. These match the effective admission
 set and public `CeremonyConfig` respectively. The list contains no secrets.
 Neither URL input nor an upstream artifact supplies deployment values.
 
@@ -256,7 +273,8 @@ fragment, platform, or ceremony. The completed response uses:
   `Cache-Control: no-store`, and `Referrer-Policy: no-referrer`;
 - CSP beginning with `default-src 'none'`, `object-src 'none'`,
   `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
-- `frame-src` admitting only the exact configured CCDP origin;
+- `frame-src` admitting only the exact configured CCDP origin, retaining HTTP
+  and the configured port for an admitted localhost origin;
 - `connect-src` admitting only fixed sources required by the configured popup
   fallback;
 - `style-src 'unsafe-inline'` for package-owned inline styles; and
@@ -670,9 +688,10 @@ dependency fails artifact generation.
 
 Profiles compose the shared [declared header policy](#header-policy-and-generated-metadata),
 with no generated filenames or representation metadata. The build fills CSP
-hashes, generated resource URLs, external asset origins, and the build-pinned
-Notary Service origins. It does not parse this Markdown or ask SWS to
-reconstruct policy.
+hashes, generated resource URLs, and external asset origins. The shared Prover
+and TLSNotary-worker policies declare their required network scheme sources;
+no client-specific notary setting participates in the build. It does not parse
+this Markdown or ask SWS to reconstruct policy.
 
 ### Generation
 
@@ -846,6 +865,12 @@ request-time templating, or platform-specific manifest is required.
 
 Local preview and browser integration tests run the same pinned SWS binary and
 generated configuration as deployment, directly or through the same image.
+Loopback HTTP needs no TLS ingress or development-only response profile. The
+browser must still provide a secure context, Service Workers, and final Prover
+isolation; the exception relies on the browser's
+[potentially trustworthy loopback handling](https://www.w3.org/TR/secure-contexts/#is-origin-trustworthy),
+not disabled security checks. OAuth Platforms and pinned external assets
+continue to use their required HTTPS URLs.
 Unit tests may use fakes for build logic, but HTTP qualification does not use a
 TypeScript imitation of SWS. For example:
 
