@@ -88,6 +88,10 @@ handlers registered before the caller yields precede every delivery; `ready`
 settles once a carrier is selected and rejects with a `PopupError` if the
 endpoint failed first.
 
+For local development, canonical HTTP origins on exactly `localhost` or
+`127.0.0.1` are also admitted throughout allowlists, navigation and isolation fallback.
+Other HTTP hosts remain rejected.
+
 `allowedApplicationOrigins` is an explicit list of canonical HTTPS origins or
 `'*'`, which accepts any canonical HTTPS origin the browser observed on the
 opener's handshake while still binding that exact origin and source. An
