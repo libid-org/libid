@@ -1027,8 +1027,9 @@ REQ-COMMON-18A requires.
   which either delimiter matches at more than one position, per common
   REQ-COMMON-19A. The Platform Verifier MUST reject a noncanonical `id`
   encoding. The GitHub profile fixes the structural byte following the
-  `id` integer token, which common REQ-COMMON-19D leaves to the profile, as
-  `,` or `}` and no other byte. The Platform Verifier MUST reject any other
+  `id` integer token and any JSON whitespace admitted by REQ-COMMON-19F as
+  `,` or `}` and no other byte. Common REQ-COMMON-19D leaves this choice to
+  the profile. The Platform Verifier MUST reject any other
   following byte. Necessity: the terminator is what proves the revealed digits
   are the whole number rather than a prefix of a longer one, and JSON member
   order does not guarantee which of the two closes it.
