@@ -17,7 +17,7 @@ import {
   type Carrier,
   type CarrierConstructor,
   decodeControl,
-  isCanonicalHttpsUrl,
+  isCanonicalWebUrl,
   isConnectionId,
   isNavigationCarrier,
   isReservedType,
@@ -69,7 +69,7 @@ export interface ConnectOptions {
 
 export interface AcceptOptions {
   connectionId: string
-  /** Explicit origins, or `'*'` for any canonical HTTPS origin the browser observed. */
+  /** Explicit origins, or `'*'` for any canonical HTTPS (or localhost HTTP) origin the browser observed. */
   allowedApplicationOrigins: readonly string[] | '*'
   /**
    * Requires cross-origin isolation. A document that is not isolated keeps
@@ -94,10 +94,10 @@ function requireConnectionId(value: string): string {
  * parameters, serialized now so later mutation of `fragment` is invisible.
  */
 function destination(url: string, fragment: URLSearchParams | undefined, report: Reporter): string {
-  if (!isCanonicalHttpsUrl(url) || url.includes('#')) {
+  if (!isCanonicalWebUrl(url) || url.includes('#')) {
     report('control-rejected')
     throw new TypeError(
-      'navigation requires a canonical absolute HTTPS URL without credentials or fragment',
+      'navigation requires a canonical absolute HTTPS (or localhost HTTP) URL without credentials or fragment',
     )
   }
   const serialized = fragment?.toString() ?? ''
@@ -112,7 +112,7 @@ const sameDocument = (url: URL, location: Location): boolean =>
   url.pathname === location.pathname &&
   url.search === location.search
 
-/** The same-origin HTTPS fallback, carrying the captured fragment. */
+/** The same-origin HTTPS (or localhost HTTP) fallback, carrying the captured fragment. */
 function resolveFallback(value: string, location: Location, fragment: string): URL {
   let url: URL
   try {
@@ -120,8 +120,10 @@ function resolveFallback(value: string, location: Location, fragment: string): U
   } catch {
     throw new TypeError('isolationFallbackUrl must be a URL')
   }
-  if (url.protocol !== 'https:' || url.origin !== location.origin || value.includes('#')) {
-    throw new TypeError('isolationFallbackUrl must be a same-origin HTTPS URL without fragment')
+  if (!isCanonicalWebUrl(url.href) || url.origin !== location.origin || value.includes('#')) {
+    throw new TypeError(
+      'isolationFallbackUrl must be a same-origin HTTPS (or localhost HTTP) URL without fragment',
+    )
   }
   url.hash = fragment
   return url

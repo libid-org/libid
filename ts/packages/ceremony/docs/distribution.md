@@ -1,0 +1,882 @@
+# CCDP Distribution
+
+Local development exception: references to HTTPS Bridge, CCDP, application and
+notary URLs below also admit canonical HTTP URLs on exactly `localhost` or
+`127.0.0.1`. A local HTTP notary uses WS at the same authority. This exception does
+not apply to OAuth provider requests or external proving assets. COOP/COEP, origin
+admission, callback privacy and all other validation remain required. LAN addresses,
+lookalike domains and noncanonical spellings are not admitted.
+Every asset-fetching context explicitly includes `'self'` in `connect-src`, so
+local HTTP assets use the same policies without requiring TLS or an upgrade.
+Execution CSP additionally permits `http://localhost:*`, `http://127.0.0.1:*`
+and, for notary execution, `ws://localhost:*`, `ws://127.0.0.1:*`. These are
+explicit host sources, never unrestricted `http:` or `ws:`. The shared artifact
+therefore permits loopback access even when served publicly; CSP does not bind
+connections to the selected ledger notary. Browser network permissions still apply.
+
+
+This document defines the static browser resources and proving assets required
+by [CCDP](documents.md#documents-and-routes). CCDP owns the protocol routes,
+fragments, roles, navigations, and versions; this document owns their HTTP,
+build, and deployment contract.
+
+## Distribution boundary
+
+One CCDP Distribution is served from one canonical HTTPS `ccdpOrigin`. Explicit
+development on the explicit hosts above is the only HTTP exception. It contains:
+
+- every protocol resource for each supported CCDP version, including one
+  self-contained Callback artifact containing its supported implementations; and
+- their bundled JavaScript, workers, WASM, circuits, and libID-owned assets.
+
+The resource graph distinguishes distributed assets from external assets.
+Browsers prefetch and fetch external resources at their declared absolute
+URLs; the static build does not download or mirror them. The current bb.js CRS
+resources use that mode with the native Aztec URLs. The exact dependency
+requests and cache behavior are defined in
+[PROVING.md](proving.md#dependency-asset-resolution).
+
+The OAuth Bridge separately serves ceremony configuration, the registered
+Callback document, and enabled confidential platform endpoints. It retrieves
+the public Callback artifact server-side and inserts its deployment data before
+serving it; this does not change the document's OAuth Bridge origin. Requests
+to the OAuth Platform, OAuth Bridge, Notary Service, and public platform APIs are
+protocol traffic rather than CCDP assets.
+
+The Distribution may be the canonical libID release or an operator-selected
+replacement. Replacing it changes the code-supply-chain authority for Callback
+and proof generation.
+
+One Distribution may serve any number of independently operated OAuth Bridges.
+It does not enumerate or register them: each Bridge selects a `ccdpOrigin`,
+which serves the same public resources to all of them. A Bridge advertises only
+platform/version pairs present in its selected Distribution; no shared
+deployment system is required.
+
+## HTTP contract
+
+The Distribution is static and request-invariant. It sets no cookies, serves no
+unrelated same-origin application API, and performs no request-time compilation,
+templating, source resolution, archive extraction, or remote asset fetch.
+
+### Protocol resources
+
+The Distribution exposes the exact versioned
+[resources](documents.md#documents-and-routes) defined by CCDP. Their fragments,
+roles, and execution contexts remain CCDP rules.
+
+Prefetch and Prover contain their clearing bootstrap and entry code directly,
+with no browser-visible manifest or second entry-script request. They may load
+implementation-private immutable chunks and expose only an empty mount point
+to package-owned presentation.
+
+The aggregate [Callback artifact](distribution.md#callback-artifact) is retrieved server-side
+by OAuth Bridges; the contract below defines its configuration slot, embedded
+startup, and the response they serve.
+
+Each supported path has one decoded representation and response policy.
+`Accept-Encoding` may select only the Brotli or gzip transfer representations defined
+below. Conditional caching may return `304 Not Modified`; otherwise query
+values, request headers, `Origin`, `Referer`, cookies, and user agent cannot
+select different bytes, policy, embedded configuration, or implementation. A
+nonempty query may receive the same static resource, but its clearing bootstrap
+rejects before protocol execution. Only `GET` and `HEAD` are defined. Unknown
+paths and versions return an inert failure without fallback or redirect; other
+methods execute no CCDP code.
+
+The not-found response is static HTML containing no script, style, link, form,
+redirect, or protocol data.
+
+Versioned protocol resources and the aggregate Callback artifact use
+`Cache-Control: no-cache` and an ETag so a path may receive compatible
+implementation updates. A breaking protocol change publishes new versioned
+routes and adds its implementation to the Callback artifact. The Bridge serves
+its configured Callback response with `no-store`, independently of its own
+upstream artifact cache.
+
+All protocol resources send their exact media type and
+`X-Content-Type-Options: nosniff`. Top-level documents additionally send
+`Referrer-Policy: no-referrer` and are not frameable. Document CSP begins with
+`default-src 'none'`, `object-src 'none'`, `base-uri 'none'`,
+`form-action 'none'`, and `frame-ancestors 'none'`; admits only the exact
+build-generated entry code, resources, and network sources needed by that
+document; and uses neither JavaScript `'unsafe-inline'` nor `'unsafe-eval'`.
+Package-owned UI uses `style-src 'unsafe-inline'` with no external stylesheet
+source or styling customization input.
+
+| Resource | Form | Additional response contract |
+|---|---|---|
+| [Callback artifact](distribution.md#callback-artifact) | self-contained HTML template at `/ccdp/callback.html`, retrieved server-side by OAuth Bridges | `text/html; charset=utf-8`, `no-cache` and ETag, with exact executable hashes in CSP. No browser CORS permission is needed for this retrieval. The configured response follows [Served response](distribution.md#served-response). |
+| Prefetch | top-level non-isolated HTML | `Cross-Origin-Opener-Policy: unsafe-none` and no COEP. Script/worker sources remain same-origin; `connect-src` admits local assets and the pinned Aztec CRS origins. |
+| Prover | top-level HTML | `Document-Isolation-Policy: isolate-and-require-corp`, `Cross-Origin-Opener-Policy: unsafe-none`, and no COEP. |
+| Prover isolation fallback | top-level HTML at `/ccdp/v{CCDPVersion}/prover/fallback` | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Same Prover entrypoint, fragment contract, and non-isolation response rules. |
+| Worker | module Service Worker JavaScript | `text/javascript; charset=utf-8` and `Service-Worker-Allowed: /`. Prefetch registers it with `scope: '/'`; it remains compatible with every live CCDP version and passes unrelated requests through unchanged. Code is same-origin; `connect-src` also admits the pinned Aztec CRS origins for asset caching. |
+
+For each resource, the build retains Brotli and gzip representations only
+when they are smaller. SWS negotiates an accepted representation, serving the
+original when neither compressed representation is available or accepted. A
+compressed response keeps the original media type and response profile, adds
+the matching `Content-Encoding`, and includes `Vary: Accept-Encoding`. Decoding
+it produces the exact original bytes. No runtime compression or other
+negotiated representation exists.
+
+Both Prover responses close script and worker sources to the build-generated
+same-origin graph and toolchain-required `blob:` workers. Asset fetches are
+not restricted to the CCDP origin: `connect-src 'self' https: wss:` admits bb.js's
+Aztec CRS downloads, validated third-party OAuth Bridges, and secure WebSocket
+connections to the notary address supplied by the Application. Dedicated
+TLSNotary workers also admit `wss:` where they open that connection. The
+Distribution embeds no notary addresses, profiles, or environment override;
+one byte-identical response supports any client-supplied notary address.
+Selection changes no asset or cache key. This policy permits those network
+schemes, not just the selected notary; application code enforces destination
+selection. It grants no remote script or worker permission.
+
+Every context which fetches or prefetches CRS, including the Service Worker
+and dedicated proof workers, admits both `https://crs.aztec-cdn.foundation`
+and `https://crs.aztec-labs.com` in `connect-src` for the current native loader,
+unless already covered by its HTTPS source. These sources are generated from
+the external request declarations, not a second manually maintained list.
+They are fetch permissions, not remote JavaScript/worker
+permissions. The requests use noncredentialed CORS and must remain readable
+under both Prover isolation responses. No `no-cors` or opaque-response bypass
+is allowed. The CDN's availability and CORS policy are external dependencies,
+covered by release qualification rather than headers set by this Distribution.
+
+Every context that compiles WASM, including dedicated proof and TLSNotary
+workers, includes `script-src 'wasm-unsafe-eval'` alongside its code sources.
+This permits WASM compilation, not JavaScript string evaluation. External worker
+scripts have their own generated CSP; they do not rely on the document's CSP.
+Blob workers inherit their creator's policy. Worker profiles admit only their
+required script, asset, and protocol connections, and `worker-src` admits
+same-origin or `blob:` children only for workers that spawn them. The Service
+Worker only caches bytes and keeps ports: it needs no WASM compilation permission.
+
+Each request-invariant Prover response supports multiple platform profiles and
+arbitrary canonical HTTPS OAuth Bridges. CSP cannot express a runtime-selected
+exact Bridge origin, so its HTTPS connection class is not per-Bridge
+compartmentalization. Prover derives GitHub's fixed token route only from the
+validated `redirectUri` frozen by the Application; no message supplies another
+Bridge endpoint. Compromised Prover code can use every network class admitted
+by the response.
+
+### Callback artifact
+
+`GET /ccdp/callback.html` supplies a complete Callback document for
+[OAuth Bridges](oauth-bridge.md#callback-document) to configure and serve at
+their registered redirect URI. It executes on that Bridge's origin, without
+a separate shell, HTTP redirect, or browser-side entry-script fetch.
+
+The artifact bundles the supported CCDP Callback implementations and their
+dependencies. Its version-independent path lets the browser select a bundled
+implementation from OAuth `state`, including Google fragment returns which
+the Bridge cannot see. It contains no Bridge configuration and cannot accept
+a connection until configured; a direct visit clears URL input and fails
+locally on the missing deployment data.
+
+#### Configuration insertion
+
+The artifact contains the semantic equivalent of:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>libID</title>
+  </head>
+  <body>
+    <main id="libid-root"></main>
+    <script id="libid-callback-config" type="application/json">__LIBID_CALLBACK_CONFIG__</script>
+    <script type="module">/* complete bundled Callback code */</script>
+  </body>
+</html>
+```
+
+The build produces exactly one configuration marker, in this non-executable
+data block. The bridge substitutes serialized deployment data there, never
+JavaScript source. Serialization escapes `<` as `\u003c` so data cannot terminate
+the script element or introduce markup. Missing or repeated markers reject the
+artifact. No callback request value participates in substitution.
+
+The inserted data is one unversioned JSON list, `[allowedOrigins, ccdpOrigin]`,
+using the Bridge's [effective allowlist](oauth-bridge.md#deployment-configuration):
+
+```json
+[
+  ["https://app.example", "https://lib.id"],
+  "https://lib.id"
+]
+```
+
+There is no version-keyed wrapper, input-declaration block, or Bridge-side
+CCDP version list. Every bundled Callback implementation receives a deeply
+frozen copy of the same list. The first two positions require a nonempty,
+duplicate-free canonical HTTPS allowlist containing the configured canonical
+HTTPS CCDP origin, and that origin itself. These match the effective admission
+set and public `CeremonyConfig` respectively. The list contains no secrets.
+Neither URL input nor an upstream artifact supplies deployment values.
+
+Compatible evolution preserves existing positions, types, and meanings. New
+optional trailing inputs may be defaulted when absent by newer implementations
+and ignored by older ones. New CCDP versions using that compatible contract
+require no Bridge change. A new required input or incompatible interpretation
+instead requires an explicit input-contract version and corresponding Bridge
+support; no such versioning is defined until needed.
+
+This is a data-insertion contract, not a UI template or renderer API. Callback
+owns all code, markup, styles, and the inline libID logo. Its dependencies are
+bundled into this HTML rather than loaded relative to the bridge or fetched
+from the Distribution by the browser.
+
+#### Browser entry
+
+URL clearing, version dispatch, and startup/failure UI are built and tested
+with the bundled Callback implementations, not implemented by the Bridge.
+A live document keeps the code and configuration it received.
+
+The embedded Callback code, before rendering, storage, error reporting, or any
+network use:
+
+1. bounds and copies the raw query and fragment, then clears both with
+   `history.replaceState` while retaining the same path;
+2. requires exactly one routing `state` and reads its `v<version>.` prefix;
+3. rejects a malformed version or one absent from its bundled implementations;
+4. requires a JSON input list, validates the inputs used by the selected
+   implementation, and freezes the list and captured location; and
+5. enters the selected Callback implementation once, without dynamic import.
+
+Oversized or malformed input is cleared and renders only fixed failure text.
+A version absent from the bundle, including a retired version, displays a
+package-owned message such as **This ceremony version is no longer supported.
+Update the application and try again.** It establishes no connection, emits no
+protocol message, and never substitutes another version. No retired transport
+or abort-message implementation is retained for this screen. Applications need
+no version-specific failure UI and receive no protocol notification of this
+local failure; their ordinary cancellation/connection-failure handling remains.
+
+Missing or malformed required inputs likewise render fixed local
+failure text without establishing a connection or emitting a protocol message.
+
+No platform credential is parsed here. The selected Callback
+authenticates the Application against its configured allowlist before the
+captured return can leave this document, then follows
+[CCDP](documents.md#callback-get-redirecturi).
+
+#### Served response
+
+For one active artifact/configuration pair, HTML and headers are invariant
+across requests. Nothing is derived from request `Origin`, `Referer`, query,
+fragment, platform, or ceremony. The completed response uses:
+
+- `Cross-Origin-Opener-Policy: unsafe-none`, without COEP;
+- `Content-Type: text/html; charset=utf-8`, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: no-store`, and `Referrer-Policy: no-referrer`;
+- CSP beginning with `default-src 'none'`, `object-src 'none'`,
+  `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'none'`;
+- `frame-src` admitting only the exact configured CCDP origin;
+- `connect-src` admitting only fixed sources required by the configured popup
+  fallback;
+- `style-src 'unsafe-inline'` for package-owned inline styles; and
+- `script-src` containing only the build-generated hashes for the bundled
+  executable code, with no external script source, JavaScript
+  `'unsafe-inline'`, or `'unsafe-eval'`.
+
+The bridge combines the artifact's executable hashes with its own
+deployment-specific policy, not an upstream policy permitting arbitrary
+sources. Data substitution does not change executable bytes. Artifact and
+matching policy update atomically; compatible UI changes require no manual
+stylesheet hash, theme, or styling configuration.
+
+The Bridge accepts only a successful HTML artifact with the required unique
+data slot and hash-only executable script policy. It performs substitution on
+the decoded body and composes the final HTML and headers as one unit. Upstream
+cache and transfer headers are not copied: the source artifact is revalidated,
+while the configured browser response is non-cacheable.
+
+### Prover isolation
+
+CCDP has one logical [Prover](documents.md#prover-get-prover), reached by ordinary
+`connection.navigate(proverUrl, fragment)`. The Distribution supplies two static responses
+for that participant, not another protocol step or application-level choice.
+
+The primary response requests
+[Document-Isolation-Policy](https://wicg.github.io/document-isolation-policy/)
+without severing the opener. Its entrypoint calls `PopupConnection.accept`
+with `isolationFallbackUrl` set to the same-origin
+`/ccdp/v{CCDPVersion}/prover/fallback`. The fallback embeds that same entrypoint
+and supplies the same option. The popup package establishes the carrier,
+checks isolation before exposing connection readiness or dispatching
+application messages, and performs any necessary same-origin replacement.
+If the fallback is still unisolated, acceptance fails rather than navigating
+again. Ceremony code neither detects browsers nor implements the transition.
+
+Both responses use the Prover fragment grammar, including its private
+OAuth-return fields. Their first bootstrap captures and clears the fragment
+before rendering, imports, storage access, or reporting errors. It supplies
+the retained `URLSearchParams` snapshot to popup construction through the
+package's fragment-capture API, so URL clearing cannot erase fallback input.
+`isolationFallbackUrl` contains no fragment; automatic replacement preserves
+the snapshot without an override. The final response captures and clears it
+again. Neither response parses platform-specific return fields before
+`AppStartProver`, sends the captured return to Application, or puts it into
+Worker state, signaling, logs, or telemetry.
+
+Both paths resolve the root-scope Worker registration installed by Prefetch.
+Resolve its exact `/` scope, not the longest scope matching the current page
+or a registration identified only by script URL. A stale `/ccdp/v1/`
+registration may use the same script URL and must not replace the root choice.
+This lets the popup package preserve a MessagePort internally while the same
+Worker's asset flights and caches remain available to the final Prover.
+Before connection readiness the entrypoint performs no proving or CCDP
+delivery. It registers its handlers and awaits readiness before emitting
+`ProverReady`. Isolation, shared memory, and worker support are required;
+there is no single-threaded or unisolated proving mode.
+
+Successful DIP isolation avoids an extra navigation. Otherwise the package
+uses the COOP/COEP response without another user action, second window, or
+concurrent Prover. Neither path repairs an opener already severed by an OAuth
+Platform; that remains the popup connection's independent fallback-carrier
+case.
+
+DIP adoption can eventually remove the replacement: track the
+[Chromium documentation](https://developer.chrome.com/blog/document-isolation-policy),
+[Mozilla position](https://github.com/mozilla/standards-positions/issues/1074),
+[Firefox implementation](https://bugzilla.mozilla.org/show_bug.cgi?id=2063367),
+and [WebKit position](https://github.com/WebKit/standards-positions/issues/399).
+Embedded proving is a separate possible evolution, not part of this top-level
+Prover contract.
+
+### Proving assets
+
+`GET /ccdp/assets/*` is the Distribution's static proving-resource namespace,
+not a CCDP API or versioned protocol route. Locally served proving resources
+other than the versioned protocol resources resolve there; Aztec CRS requests
+retain their upstream URLs. CCDP
+assigns no structure to the suffix: versioned code pins each exact path, while
+protocol code neither enumerates nor parses the namespace.
+
+Each asset response:
+
+- has a canonical path with no query, fragment, mutable alias, or redirect;
+- serves one immutable byte sequence with its exact media type and `nosniff`;
+- uses `Cross-Origin-Resource-Policy: same-origin`; and
+- uses `Cache-Control: public, max-age=31536000, immutable`.
+
+The ceremony build pins every platform/version circuit, shared notarization
+resource, Noir and bb.js dependency, worker, WASM, external CRS request, and SRS size.
+Requests, fragments, messages, and application inputs cannot add or replace
+them. The Distribution receives no asset-source configuration and exposes no
+catalog.
+
+The Distribution contains every local path referenced by its code. Browsers
+never list the asset tree or trigger server-side archive extraction or remote
+fetch. bb.js JavaScript is bundled into these artifacts, not imported from a
+CDN at runtime. Its supported `wasmPath` option selects the emitted WASM;
+the integration also always supplies `crsPath` from the resolved CRS resources.
+The current unpatched browser loader ignores it, so that declaration still
+selects native Aztec hosting. A patched dependency must pass the custom-path
+qualification before the build may distribute CRS locally. No source rewrite,
+global-fetch URL substitution, or server-side proxy is required.
+Prefetch uses the same resolved resources as execution in either mode.
+
+### Publication and compatibility
+
+Activation is asset-complete: every immutable resource referenced by an updated
+protocol resource or Worker is retrievable with its final bytes and response
+metadata before that update becomes reachable.
+The external Aztec request set is qualified before promotion; CDN availability
+cannot be made atomic with local deployment, and a later outage still fails
+proving if no usable cache is present.
+
+An unchanged asset retains its URL across compatible releases. Changed bytes or
+execution-relevant metadata receive a new immutable URL, and old URLs remain
+available while any live ceremony, supported CCDP implementation, platform
+profile, or compatibility window may reference them. Runtime content hashing is
+not required; release-qualified, content-addressed, and build-generated
+immutable paths all satisfy this contract.
+
+Asset revisions change `CCDPVersion` or `PlatformCeremonyVersion` only when
+their observable protocol or proof semantics change.
+
+## Static artifact build
+
+`@libid/ceremony` owns a platform-neutral artifact pipeline. It produces one
+graph of local public paths, response bodies, response profiles, and declared
+external asset requests, then
+materializes it as static files and a Static Web Server configuration. The
+graph has no separate serialized format or browser-visible manifest.
+
+### Source declarations
+
+Shared integrations such as `proving/bb` and `notarization` each define
+their resources once in a data-only `assets` module. The package's internal
+`assets` helper provides declarations and URL resolution; downloading,
+archive extraction, and wildcard matching run only in the artifact build.
+
+#### Archives
+
+```ts
+// notarization/assets.ts — illustrative release location
+import * as assets from '../assets.js'
+
+const tlsnRelease = assets.archive(
+  'https://releases.example/tlsn-wasm-0.2.0.tar.gz',
+  'tlsn/v0.2.0',
+)
+
+const headers = {
+  ...assets.headers.immutable,
+  ...assets.headers.javascript,
+}
+export const wasmJs = tlsnRelease.member('tlsn_wasm.js', headers)
+export const spawnJs = tlsnRelease.member(
+  'snippets/web-spawn-*/js/spawn.js',
+  { ...headers, ...assets.headers.executionWorker },
+)
+```
+
+`archive(source, mount)` declares a build-time archive source: an HTTPS URL
+or a local filesystem path. Relative local paths resolve from the ceremony
+package root; absolute local paths are accepted. The build reads the archive
+once and registers **all regular-file members** beneath
+`/ccdp/assets/<mount>/`, preserving their archive-relative paths. It does not
+flatten directories, strip release-directory prefixes, or rename members.
+Relative imports and worker references within the archive therefore continue
+to resolve. The source location is never a browser fetch URL.
+
+`member(path, headers)` selects one file and declares its HTTP **response**
+headers. Paths are relative to the archive root and may contain `*` within
+directory components; `*` does not cross `/`. The final filename is exact.
+The build requires exactly one regular-file match: zero or multiple matches
+fail instead of selecting the first. If the example matches
+`snippets/web-spawn-a1b2/js/spawn.js`, its resolved path is
+`/ccdp/assets/tlsn/v0.2.0/snippets/web-spawn-a1b2/js/spawn.js`, never the glob
+or an alias. Mounted members use the immutable asset response profile with
+their media type; member headers specialize that profile, including the
+execution-worker policy where needed, without weakening the HTTP contract.
+Conflicting declarations for the same public path fail the build.
+
+Mounts and member paths cannot escape their roots. Absolute archive paths,
+parent traversal, links, or duplicate entries that would overwrite files fail
+the build. A local source is still subject to immutable publication: changing
+its bytes requires a new public path, not overwriting an existing mount.
+
+`assets.resolve(asset)` synchronously returns the absolute runtime URL. For
+archive members the build supplies the exact matched public path, and runtime
+resolution uses the executing document or worker's CCDP origin, not the source
+URL or the JavaScript bundle's directory. Browser bundles contain only the
+resolved metadata and the small URL resolver: no archive library, filesystem
+access, wildcard lookup, runtime manifest request, or extraction step. Build
+plumbing is internal; callers neither copy generated filenames nor await URL
+resolution.
+
+Execution code imports the declared member and resolves its URL. The build
+imports the data-only declarations above without invoking `resolve()` or
+requiring a browser origin:
+
+```ts
+// notarization — execution code
+import * as assets from '../assets.js'
+import { wasmJs } from './assets.js'
+
+const wasmJsUrl = assets.resolve(wasmJs)
+// On https://lib.id: https://lib.id/ccdp/assets/tlsn/v0.2.0/tlsn_wasm.js
+```
+
+#### External requests
+
+```ts
+// proving/bb/assets.ts — data-only declaration
+import * as assets from '../../assets.js'
+
+export const g1 = assets.external(
+  'https://crs.aztec-cdn.foundation/g1_compressed.dat',
+  { range: `bytes=0-${SRS_SIZE * 32 - 1}` },
+)
+```
+
+Execution code uses the same resolver:
+
+```ts
+// proving/bb — execution code
+import * as assets from '../../assets.js'
+import { g1 } from './assets.js'
+
+assets.resolve(g1)
+// https://crs.aztec-cdn.foundation/g1_compressed.dat
+```
+
+`external(url, options?)` retains an absolute HTTPS URL and optional request
+parameters. `range` is an HTTP **request** `Range` value, not a response header
+or URL suffix; omitting it requests the full resource. The build validates the
+declaration but does not download, copy, extract, or emit a body, local route,
+or response profile for it. Generated CSP admits the declared fetch origin.
+`resolve()` returns the original URL unchanged and performs no fetch; the
+declaration retains the request parameters for Prefetch and the actual loader.
+Their requests use the same URL and range, including single-flight/cache keys.
+Different ranges cannot silently become the same resource because their URLs
+are equal. No separate runtime resolver or explicit `mode` argument is needed.
+
+External availability, readable CORS, range behavior, and the loader's real
+request set remain release-qualification checks, not ordinary build downloads.
+Current external resources are CRS data, not executable scripts or workers.
+Location is code-owned, not application input or a deployment override API.
+
+#### Header policy and generated metadata
+
+Headers have two owners; resource declarations supply only policy:
+
+| Kind | Examples | Owner |
+|---|---|---|
+| Declared policy | MIME (`Content-Type`), cache lifetime, CSP rules, isolation and framing headers | Code-owned, reusable header groups extended by the resource declaration. |
+| Generated response metadata | `ETag`, `Last-Modified`, `Content-Length`, `Content-Encoding`, `Content-Range` | Supplied by SWS from the build's emitted files and the selected response, never handwritten in a declaration. |
+
+The `assets` module exports shared policy groups as ordinary header records:
+
+| Group | Shared policy |
+|---|---|
+| `headers.immutable` | Immutable asset caching, `nosniff`, and same-origin CORP. |
+| `headers.javascript`, `headers.wasm`, `headers.json` | The corresponding exact MIME header. |
+| `headers.document` | Common document CSP, framing, referrer, and `nosniff` rules. |
+| `headers.executionWorker` | The common execution-worker CSP and JavaScript policy. |
+| `headers.dip`, `headers.isolated` | The distinct DIP and COOP/COEP isolation policies from the HTTP contract. |
+
+Resource declarations and protocol response profiles reuse these groups, then
+extend them with ordinary object spread and explicit fields:
+
+```ts
+const wasm = tlsnRelease.member('tlsn_wasm_bg.wasm', {
+  ...assets.headers.immutable,
+  ...assets.headers.wasm,
+})
+```
+
+An explicit field replaces that header; there is no implicit concatenation or
+deep-merge policy language. The build checks the final policy against the HTTP
+contract. It rejects conflicting case-insensitive header names and any
+handwritten generated-response metadata. Members not selected
+with `member()` receive the shared immutable policy and MIME for their file
+type; execution-worker exceptions must be declared explicitly.
+
+CSP remains declared policy even though its executable hashes and concrete
+resource origins are filled from the emitted code and resource graph. There
+is one source for these rules, not a second copy in deployment templates.
+
+The build produces the original and optional Brotli/gzip bodies; SWS derives their
+HTTP metadata when serving them. Length and encoding must match the selected
+body, including range responses. Do not emit fixed metadata overrides into
+path-policy rules or add a custom serving layer to reproduce SWS's behavior.
+There is no checked-in checksum list or new runtime integrity check.
+
+#### Profile composition
+
+Platform/version asset leaves import shared declarations and add their own
+requirements, for example:
+
+```ts
+// platforms/x/1/assets.ts
+import { resources as bb } from '../../../proving/bb/assets'
+import { resources as notarization } from '../../../notarization/assets'
+import { circuit } from './circuit'
+
+export const resources = [...bb, ...notarization, circuit]
+```
+
+Other shared toolchain dependencies compose the same way. A circuit shared by
+multiple platforms likewise has one declaration, not a copy in each platform.
+`platforms/assets` maps supported platform/version pairs to these composed
+sets. It contains resource metadata only, not client or prover implementation
+imports. Prefetch consumes that catalog, not the build table containing the
+document entrypoints. The build collects shared references once while
+preserving membership in every profile that needs them. Both Prefetch and
+actual dependency loaders receive the same resolved resources; neither keeps
+another filename or URL list. The catalog is bundled metadata, not a fetched
+manifest or an independent platform-support registry.
+Mounting an archive makes every member servable; it does not prefetch them all.
+Each selected profile includes the members it actually loads, including nested
+scripts/workers. Shared declarations and overlapping profiles reuse the same
+mounted files and URL/range-keyed fetches.
+
+The build resolves `crsPath` to the common base of the CRS entries, currently
+`https://crs.aztec-cdn.foundation`. Remaining CRS requests and any native
+fallback requests belong to the bb integration's declarations; their exact
+paths, ranges, and sizes are defined in PROVING.md rather than duplicated here.
+
+Local and external declarations participate in the same selected-profile
+prefetch graph. Changing where an asset is served must not change its logical
+role, bytes, or proving semantics. For distributed
+CRS, all members retain the loader's filenames under one immutable base
+directory so the same `crsPath` option selects the set.
+
+### Protocol resources and response profiles
+
+The build's resource table collects protocol entrypoints and the owner-defined
+platform asset sets; it does not redeclare their resources. Protocol entries
+have a stable public route, source entrypoint, and response profile:
+
+```ts
+import { assetsByPlatform } from './platforms/assets'
+
+const resources = {
+  callback: {
+    route: '/ccdp/callback.html',
+    entry: callbackEntry,
+    profile: 'callback',
+  },
+  prefetch: {
+    route: `/ccdp/v${version}/prefetch`,
+    entry: prefetchEntry,
+    profile: 'prefetch',
+  },
+  prover: {
+    route: `/ccdp/v${version}/prover`,
+    entry: proverEntry,
+    profile: 'prover',
+  },
+  proverFallback: {
+    route: `/ccdp/v${version}/prover/fallback`,
+    entry: proverEntry,
+    profile: 'proverFallback',
+  },
+  worker: {
+    route: `/ccdp/v${version}/worker.js`,
+    entry: prefetchEntry,
+    profile: 'worker',
+  },
+  assets: assetsByPlatform,
+} as const
+```
+
+The entrypoints are build-tool inputs, not output filenames. First-party
+execution dependencies use ordinary imports; the build reads their emitted
+graph and filenames from the compiler/bundler. It augments each profile's
+resource declarations with its emitted dependency scripts for prefetch, without
+importing that execution code into Prefetch or its Worker. External dependency
+requests are checked against the real loaders. Renaming an internal output
+requires no manual mapping change; renaming an external release member changes
+only its owner-defined pin. No generated-source scrape or deployment template
+maintains another copy.
+
+One response-profile table is the executable source for the policies under
+[HTTP contract](distribution.md#http-contract):
+
+```ts
+const responseProfiles = {
+  callback: callbackResponseProfile,
+  prefetch: prefetchResponseProfile,
+  prover: proverResponseProfile,
+  proverFallback: proverFallbackResponseProfile,
+  worker: workerResponseProfile,
+  asset: immutableAssetResponseProfile,
+  executionWorker: immutableExecutionWorkerResponseProfile,
+} as const
+```
+
+The Callback entry bundles the closed implementation set once across supported
+CCDP versions, sharing dependencies where possible. The same build selection
+drives the bundled dispatch table and corresponding versioned resources. All
+implementations share the unversioned deployment-input contract; the Bridge
+maintains no CCDP version table. Retiring a version after its compatibility
+window removes its implementation, not the generic
+local unsupported-version screen, and retains no transport just to report that
+retirement. Its configuration marker is a build-owned constant shared with
+the bridge composition contract, not a generated filename or per-version
+script URL. Callback dependencies must be inlined, even where other documents
+can use immutable chunks. A missing implementation or split Callback entry
+dependency fails artifact generation.
+
+Profiles compose the shared [declared header policy](#header-policy-and-generated-metadata),
+with no generated filenames or representation metadata. The build fills CSP
+hashes, generated resource URLs, and external asset origins. The shared Prover
+and TLSNotary-worker policies declare their required network scheme sources;
+no client-specific notary setting participates in the build. It does not parse
+this Markdown or ask SWS to reconstruct policy.
+
+### Generation
+
+Across the supported CCDP versions, the pipeline:
+
+1. gives the declared entrypoints to the compiler/bundler;
+2. reads emitted filenames and dependency edges from its output API;
+3. materializes local dependencies, mounting complete archives and resolving
+   each member selector to its exact path and response headers; gzip-packed
+   `.wasm` bodies are decoded before publication. External declarations retain
+   their URLs and request parameters without a download;
+4. resolves each platform/version's prefetch and loader locations from those
+   declarations and emitted dependencies, then renders versioned protocol bodies
+   and the aggregate Callback artifact using the paths and response profiles;
+5. emits Brotli and gzip sidecars for each unencoded public body, each only
+   when smaller, using standard compression implementations; and
+6. validates local graph completeness and the declared external request set
+   before replacing the generated output.
+
+The pipeline rejects a missing body, unindexed dependency, malformed external
+pin, mutable asset path, sidecar which does not decode to the original, or
+partial graph. Pinned source releases are cached by immutable identity rather
+than fetched on every build. The [dependency upgrade checks](proving.md#dependency-asset-resolution)
+detect changed upstream loader requests; live CDN qualification runs before
+release, not on every local build.
+
+## Portable distribution
+
+[Static Web Server v3](https://static-web-server.net/v3/) (SWS) is the sole
+serving dependency. It is an open-source static file server with a
+[TOML configuration](https://static-web-server.net/v3/configuration/file),
+[path-matched response
+headers](https://static-web-server.net/v3/features/custom-http-headers), ETags,
+range requests, and [rootless multi-architecture container
+images](https://static-web-server.net/v3/features/docker). No CCDP-specific
+server or SWS plugin exists.
+
+### Serving ownership
+
+The build produces files and configuration, not an HTTP server. SWS owns file
+streaming, GET/HEAD handling, conditional requests, range responses, generated
+response metadata, and configured static error pages. No TypeScript middleware
+or preview server reimplements those semantics. The build retains resource
+selection, safe extraction, bundling, declared security/cache policy, and
+publication checks.
+
+SWS's native [ETags and conditional requests](https://static-web-server.net/v3/features/etag)
+remain enabled independently of automatic cache-policy defaults. Its weak
+validator uses file modification time and size, not a content hash. Changed
+bytes at a stable protocol URL must therefore receive changed file metadata,
+including when the byte length is unchanged. Preserve that distinction through
+container assembly; normalizing different releases to one fixed timestamp can
+otherwise preserve a stale validator. Qualification checks the served result,
+not a custom ETag algorithm.
+
+The build creates `.br` and `.gz` sidecars using standard compression tooling; SWS's
+[pre-compressed-file serving](https://static-web-server.net/v3/features/compression-static)
+owns negotiation, `Vary`, and representation selection. This does not enable
+request-time compression or move archive extraction into the server. Gzip
+provides a compressed response when the browser does not advertise Brotli,
+including WebKit on localhost HTTP. Prefetch and execution use the same
+unencoded resource URL and cache the decoded body. Sidecar paths may not
+collide with retained immutable resources.
+
+### Static layout and configuration
+
+Build the portable distribution with:
+
+```sh
+pnpm --filter @libid/ceremony build:ccdp-artifacts -- --out-dir <directory>
+```
+
+It replaces the output directory only after validating the complete graph.
+A typical output is:
+
+```text
+<directory>/
+├── public/
+│   ├── ccdp/callback.html
+│   ├── ccdp/v{CCDPVersion}/prefetch.html
+│   ├── ccdp/v{CCDPVersion}/prover.html
+│   ├── ccdp/v{CCDPVersion}/prover-fallback.html
+│   ├── ccdp/v{CCDPVersion}/worker.js
+│   ├── ccdp/assets/...
+│   └── 404.html
+└── sws.toml
+```
+
+`public/` contains only the validated public graph. `sws.toml` remains outside
+that root and is the only deployment manifest. It is generated rather than
+operator-edited and starts from this fixed baseline:
+
+```toml
+[general]
+host = "::"
+# Port is selected by deployment CLI/env; SWS defaults to 8787.
+root = "/home/sws/public"
+page404 = "/home/sws/public/404.html"
+cache-control-headers = false
+etag = true
+compression = false
+compression-static = true
+security-headers = false
+directory-listing = false
+redirect-trailing-slash = false
+health = false
+text-charset = false
+```
+
+No SPA fallback is configured. Exact SWS
+[internal rewrites](https://static-web-server.net/v3/features/url-rewrites)
+map protocol routes to their emitted files, without `redirect`, a Location
+header, or another browser request. For example, the build generates:
+
+```toml
+[[advanced.rewrites]]
+source = "/ccdp/v1/prefetch"
+destination = "/ccdp/v1/prefetch.html"
+
+[[advanced.rewrites]]
+source = "/ccdp/v1/prover"
+destination = "/ccdp/v1/prover.html"
+
+[[advanced.rewrites]]
+source = "/ccdp/v1/prover/fallback"
+destination = "/ccdp/v1/prover-fallback.html"
+```
+
+The filenames above are illustrative build outputs, not new protocol routes
+or a second hand-maintained mapping. The resource graph supplies the rewrite
+destinations. Versioned documents reject direct navigation to their emitted
+`.html` paths during bootstrap; only the CCDP entry paths execute the protocol.
+Callback, Worker, and asset paths already matching their files need no rewrite.
+Unknown routes do not match a catch-all rewrite.
+
+The generator emits ordered `advanced.headers` rules from the shared policy
+groups: common defaults first, resource-specific overrides afterwards. SWS's
+last matching value wins for each header. Intentional overlap is allowed; no
+algorithm partitions the asset tree into disjoint header patterns. An override
+replaces a complete header value, including CSP, rather than appending another
+policy header.
+
+SWS evaluates these rules after rewriting. Generate matches from the same
+route-to-file graph, accounting for the pinned SWS version's path matching,
+and qualify the effective response at the public URL. Every resource must
+receive its declared media, cache, isolation, framing, CORS, CSP, and
+`Service-Worker-Allowed` policy. In particular, generic asset rules must not
+erase execution-worker policy, and the two Prover responses must retain their
+distinct isolation headers. Reject missing or incorrect effective policy,
+unrepresented files, or configuration weakening the [HTTP contract](#http-contract),
+not overlapping rules merely because they overlap.
+
+### Container and qualification
+
+The checked-in container recipe is fixed apart from the SWS image digest:
+
+```dockerfile
+FROM ghcr.io/static-web-server/static-web-server@sha256:<pinned-v3-alpine-digest>
+COPY --chown=sws:sws public/ /home/sws/public/
+COPY --chown=sws:sws sws.toml /etc/sws.toml
+ENV SERVER_CONFIG_FILE=/etc/sws.toml
+```
+
+Release automation pins one qualified SWS v3 image by digest, builds this image from the
+generated directory, and verifies the served route, header, cache, method, and
+404 contracts before publication. The container serves HTTP internally; its
+deployment terminates public HTTPS at an ordinary container ingress, load
+balancer, or CDN without rewriting paths, bodies, or security headers.
+
+The resulting OCI image is the portable release artifact. A deployment may run
+it on any container platform and may place a transparent CDN in front of it.
+Promotion switches to the complete image atomically; the image already contains
+every old protocol resource and immutable asset required by the supported
+compatibility window. No startup download, mounted source directory,
+request-time templating, or platform-specific manifest is required.
+
+Local preview and browser integration tests run the same pinned SWS binary and
+generated configuration as deployment, directly or through the same image.
+Unit tests may use fakes for build logic, but HTTP qualification does not use a
+TypeScript imitation of SWS. For example:
+
+```sh
+docker build --file <ccdp.Dockerfile> --tag libid-ccdp <directory>
+docker run --rm --publish 8787:8787 libid-ccdp
+```
+
+Rebuilding it for development changes no browser protocol or response policy.

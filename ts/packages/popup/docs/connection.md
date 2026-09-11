@@ -1,5 +1,10 @@
 # Popup connection
 
+Development exception: wherever this document requires HTTPS, canonical HTTP on
+exactly `localhost` or `127.0.0.1` is also accepted. This covers allowlists (including
+`*`), navigation, and same-origin isolation fallback. All authentication, continuity
+and isolation checks still apply; other HTTP hosts remain invalid.
+
 This document defines the popup connection architecture. A `PopupWindow`
 owns one popup from creation through closure. A `PopupConnection` composes over it,
 establishes a bidirectional channel to an application page, moves caller-defined

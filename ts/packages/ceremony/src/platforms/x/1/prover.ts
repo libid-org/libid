@@ -1,0 +1,162 @@
+import { resolve as resolveAsset } from '../../../assets.js'
+import { oauthState } from '../../../ccdp/navigation.js'
+import { CeremonyError } from '../../../errors.js'
+import { isRecord } from '../../../primitives.js'
+import {
+  buildBearerLinkWitness,
+  validateBearerLinkPublicInputs,
+} from '../../../proving/bb/circuits/bearer_link/inputs.js'
+import type { ProverContext } from '../../context.js'
+import { PROOF_ENGINE_SPANS, ProofEngine } from '../../../proving/bb/engine.js'
+import { responseJson } from '../../../notarization/http.js'
+import { bearerOpening } from '../../../notarization/notarize.js'
+import { Notarization } from '../../../notarization/session.js'
+import { Progress } from '../../../progress.js'
+import { isFormClientId } from '../../authorization.js'
+import { parseCodeOAuthReturn } from '../../codeReturn.js'
+import type { Identity } from '../../types.js'
+import { circuit, verificationKey } from './assets.js'
+import {
+  buildIdentityRequest,
+  buildTokenRequest,
+  identityFromReveals,
+  selectIdentityReveals,
+  selectTokenReveals,
+} from './transcript.js'
+import type { XProofV1 } from './types.js'
+
+const spans = [
+  { code: 'token-session', label: 'Exchanging authorization code', weight: 20 },
+  { code: 'identity-session', label: 'Fetching identity', weight: 20 },
+  { code: 'attestations', label: 'Completing identity evidence', weight: 5 },
+  ...PROOF_ENGINE_SPANS,
+]
+export async function prove(
+  context: ProverContext,
+): Promise<{ identity: Identity<'x'>; proof: XProofV1 } | null> {
+  const { request, onProgress } = context
+  context.signal.throwIfAborted()
+  if (!isFormClientId(request.clientId)) throw new Error('Invalid profile client identifier')
+  const returned = parseCodeOAuthReturn(context.oauthReturn)
+  if (
+    !returned ||
+    returned.state !== oauthState(context.ceremonyId) ||
+    request.codeVerifier === null
+  )
+    throw new CeremonyError('oauth-return', { cause: new Error('Invalid X return') })
+  if (returned.outcome === 'denied') return null
+  if (returned.outcome !== 'accepted')
+    throw new CeremonyError('oauth-return', { cause: new Error('X authorization failed') })
+  context.onStage('code-exchange')
+  const controller = new AbortController(),
+    abort = () => controller.abort(context.signal.reason)
+  context.signal.addEventListener('abort', abort, { once: true })
+  const progress = new Progress(spans, (step) =>
+    onProgress(step, performance.timeOrigin + performance.now()),
+  )
+  const engine = new ProofEngine({
+    circuitUrl: resolveAsset(circuit),
+    verificationKeyUrl: resolveAsset(verificationKey),
+    onProgress: (step) => {
+      if (step.status === 'started') progress.start(step.code)
+      else if (step.status === 'completed') progress.complete(step.code)
+      else progress.fail(step.code)
+    },
+  })
+  // Observe every provisional branch immediately; any failure retires sibling work.
+  const observe = <T>(p: Promise<T>) => {
+    void p.catch((error) => controller.abort(error))
+    return p
+  }
+  try {
+    const input = {
+      clientId: request.clientId,
+      code: returned.code,
+      redirectUri: request.redirectUri,
+      codeVerifier: request.codeVerifier,
+    }
+    const notary = new Notarization(request.notaryAddress!, controller.signal)
+    const tokenRequest = buildTokenRequest(input)
+    const tokenSession = observe(notary.prepare(tokenRequest.url))
+    const identitySession = observe(notary.prepare('https://api.x.com/2/users/me'))
+    const session = await tokenSession
+    const transcript = await progress.step('token-session', () => session.send(tokenRequest))
+    const body = responseJson(transcript)
+    const selection = selectTokenReveals(
+      { sent: transcript.sent, recv: transcript.received },
+      input,
+    )
+    if (!isRecord(body) || body.access_token !== selection.accessToken)
+      throw new Error('Invalid token response')
+    const bearer = selection.accessToken
+    const tokenReveal = observe(
+      session
+        .reveal({ sent: selection.ranges.sent, received: selection.ranges.recv })
+        .then((value) => {
+          observe(value.attestation)
+          return value
+        }),
+    )
+    context.onStage('identity-fetch')
+    const identity = await identitySession
+    const identityTranscript = await progress.step('identity-session', () =>
+      identity.send(buildIdentityRequest(bearer)),
+    )
+    const identityBody = responseJson(identityTranscript),
+      ranges = selectIdentityReveals(
+        { sent: identityTranscript.sent, recv: identityTranscript.received },
+        bearer,
+      )
+    const extracted = identityFromReveals(
+      ranges.recv.map((r) => identityTranscript.received.slice(r.start, r.end)),
+    )
+    if (
+      !isRecord(identityBody) ||
+      !isRecord(identityBody.data) ||
+      identityBody.data.id !== extracted.userId ||
+      identityBody.data.username !== extracted.handle
+    )
+      throw new Error('Invalid identity response')
+    const [first, second] = await Promise.all([
+      tokenReveal,
+      observe(identity.reveal({ sent: ranges.sent, received: ranges.recv })),
+    ])
+    const final = observe(Promise.all([first.attestation, second.attestation]))
+    context.onStage('proof-preparation')
+    const inputs = buildBearerLinkWitness(
+      bearer,
+      bearerOpening(first.openings, 'received', selection.bearerRange, bearer),
+      bearerOpening(
+        second.openings,
+        'sent',
+        { start: ranges.sent[0].end, end: ranges.sent[1].start },
+        bearer,
+      ),
+    )
+    const proof = observe(engine.prove(inputs, controller.signal))
+    const [raw, [tokenAttestation, identityAttestation]] = await Promise.all([
+      proof,
+      progress.step('attestations', () => final),
+    ])
+    if (!validateBearerLinkPublicInputs(raw.publicInputs, inputs))
+      throw new Error('Bearer public input mismatch')
+    return {
+      identity: {
+        platformId: 'x',
+        oauthClientId: request.clientId,
+        userId: extracted.userId,
+        userName: extracted.handle,
+      },
+      proof: {
+        bearerLinkProof: raw.proof,
+        tokenAttestation,
+        identityAttestation,
+      },
+    }
+  } finally {
+    context.signal.removeEventListener('abort', abort)
+    controller.abort()
+    engine.destroy()
+    progress.failActive()
+  }
+}
