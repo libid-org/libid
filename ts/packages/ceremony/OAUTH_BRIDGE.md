@@ -18,8 +18,7 @@ The OAuth bridge owns:
 - OAuth application registrations, public client IDs, and confidential client
   credentials;
 - the public ceremony configuration;
-- callback ingress, its configured path, response policy, and deployment
-  inputs; and
+- callback ingress, response policy, and deployment inputs; and
 - GitHub's confidential token exchange and token attestation when GitHub is
   enabled.
 
@@ -41,13 +40,17 @@ One bridge deployment has these inputs. Every origin follows the
 
 | Input | Contract |
 |---|---|
-| Bridge origin | Canonical origin used by every bridge route and the configured OAuth redirect URI |
+| Bridge origin | Canonical origin used by every bridge route and the derived OAuth redirect URI |
 | `allowedAppOrigins` | Nonempty, duplicate-free set of canonical application origins admitted by the bridge |
 | CCDP origin | One canonical origin selected by the operator; defaults to `https://lib.id` when omitted |
-| Callback path | Developer-configurable fixed path whose default is `/auth/callback`; registered as every enabled platform's OAuth `redirect_uri` |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback inputs | One unversioned list `[allowedOrigins, ccdpOrigin]` derived from the values above, plus deployment-policy sources required by the [artifact contract](CCDP_DISTRIBUTION.md#configuration-insertion); no separate input configuration or CCDP version list |
-| GitHub settings | Client secret, redirect URI, and token endpoint settings when GitHub is enabled |
+| GitHub settings | Client secret and token endpoint settings when GitHub is enabled |
+
+Every enabled platform's OAuth registration uses
+`{bridgeOrigin}/auth/callback` as its `redirect_uri`. The path is fixed, not a
+deployment option. The Bridge uses this same derived URL for its confidential
+token exchange; no separate redirect URI is configured.
 
 `allowedAppOrigins` has no protocol maximum. A duplicate or invalid member is a
 deployment error rather than something the bridge normalizes. After resolving
@@ -72,7 +75,7 @@ Distribution.
 An all-HTTP local setup can use Application `http://localhost:3000`, Bridge
 `http://localhost:3001`, and CCDP `http://localhost:8787`. The Bridge configures
 the Application in `allowedAppOrigins`, adds the CCDP origin to `allowedOrigins`,
-publishes `http://localhost:3001/auth/callback` as `redirectUri`, and retrieves
+serves Callback at `http://localhost:3001/auth/callback`, and retrieves
 `http://localhost:8787/ccdp/callback.html` without requiring a local certificate.
 Callback receives that same HTTP allowlist and CCDP origin; the client,
 Callback, Prover, and their popup connections must not reject them solely for
@@ -99,7 +102,7 @@ The bridge exposes only:
 | Method | Route | Availability | Purpose | Origin enforcement |
 |---|---|---|---|---|
 | `GET` | `/api/v1/ceremony/config` | always | public platform and CCDP configuration | exact `Origin` in `allowedOrigins`; absent `Origin` accepted only by the same-origin rule below |
-| `GET` | configured callback path, default `/auth/callback` | always | complete OAuth Callback document | none at HTTP ingress; callback authenticates its popup connection after clearing its input |
+| `GET` | `/auth/callback` | always | complete OAuth Callback document | none at HTTP ingress; callback authenticates its popup connection after clearing its input |
 | `OPTIONS`, `POST` | `/api/v1/ceremony/github-token` | only when GitHub is enabled | confidential GitHub token exchange and token attestation | exact request `Origin` in `allowedOrigins`, checked on every request; exact noncredentialed CORS |
 
 Top-level navigation may omit `Origin`, and an OAuth-platform callback may
@@ -115,7 +118,7 @@ Except for the OAuth-platform-mandated callback query and the GitHub JSON
 request, bridge routes accept no query or request body.
 
 The `v1` in `/api/v1/ceremony/...` versions the bridge's JSON API.
-The configured callback path is a browser protocol document; its embedded code
+`/auth/callback` is a browser protocol document; its embedded code
 selects `CCDPVersion` from OAuth `state`.
 `PlatformCeremonyVersion` independently versions one platform ceremony. There
 is no request-time version negotiation.
@@ -133,7 +136,6 @@ interface PlatformConfig {
 }
 
 interface CeremonyConfig {
-  redirectUri: string
   ccdpOrigin: string
   platforms: Readonly<Record<string, PlatformConfig>>
 }
@@ -142,18 +144,16 @@ interface CeremonyConfig {
 The response rules are:
 
 - `PlatformCeremonyVersion` is an unsigned 16-bit integer.
-- `redirectUri` is the canonical registered URL on the bridge origin under the
-  [origin policy](CCDP.md#origin-policy). It contains no credentials, query, or
-  fragment.
-- `ccdpOrigin` is the configured canonical origin under that same policy, with
-  no credentials, path, query, or fragment. The client validator accepts the
-  localhost HTTP exception for both fields and for its `oauthBridge` input.
+- `ccdpOrigin` is the configured canonical origin under the
+  [origin policy](CCDP.md#origin-policy), with no credentials, path, query, or
+  fragment. The client validator accepts the
+  localhost HTTP exception for this field and for its `oauthBridge` input.
 - Each platform entry has one public client ID and a nonempty, duplicate-free
   list of supported ceremony versions. List order has no meaning.
 - Unknown fields, malformed URLs, and unsupported numeric representations are
   invalid. A platform absent from the client's closed local catalog is ignored;
   known entries remain exact-validated before use.
-- The record contains no secret, allowlist, artifact URL, CSP source,
+- The record contains no redirect URI, secret, allowlist, artifact URL, CSP source,
   notary setting, platform display metadata, or application-specific value.
 
 When present, `Origin` must exactly match an `allowedOrigins` member. A
@@ -172,15 +172,17 @@ the public record a secret from non-browser clients. Request values do not
 alter the response record.
 
 The application-scoped `CeremonyClient` fetches and validates this record once
-at creation using `credentials: 'omit'`. It freezes the selected client ID,
-redirect URI, CCDP origin, and mutually supported platform ceremony version
-in each live ceremony. CCDP browser [resources](CCDP.md#documents-and-routes)
+at creation using `credentials: 'omit'`. It derives `redirectUri` as
+`new URL('/auth/callback', oauthBridge).href` from its validated canonical
+OAuth Bridge origin, not from the response. It freezes the selected client ID,
+derived redirect URI, CCDP origin, and mutually supported platform ceremony
+version in each live ceremony. CCDP browser [resources](CCDP.md#documents-and-routes)
 never fetch bridge configuration; server-side Callback artifact retrieval is
 separate.
 
 ## Callback document
 
-The registered `redirect_uri` serves Callback on the bridge origin, without
+`GET /auth/callback` serves Callback on the bridge origin, without
 an HTTP redirect. Its [artifact contract](CCDP_DISTRIBUTION.md#callback-artifact)
 owns the HTML, configuration slot, response policy, browser startup, version
 selection, and failure UI. The bridge only:
@@ -293,8 +295,9 @@ The endpoint contract is:
 - successful preflight admits only `POST` and `Content-Type`, uses no
   credentials, and returns no ceremony data;
 - malformed UTF-8, JSON, or fields fail before token exchange;
-- client ID, client secret, redirect URI, and the GitHub TLS/request target
-  come only from bridge configuration; only the notary destination comes from
+- client ID, client secret, and the GitHub TLS/request target come only from
+  bridge configuration; `redirect_uri` is derived from the configured Bridge
+  origin and fixed `/auth/callback` path. Only the notary destination comes from
   the validated request above;
 - redirects are rejected and request duration and response size are bounded;
 - success is status `200` with exact noncredentialed CORS,

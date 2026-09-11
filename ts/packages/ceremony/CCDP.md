@@ -82,7 +82,7 @@ Worker. Authorization is an external document, not a CCDP resource.
 
 | Property | Contract |
 |---|---|
-| Location and context | OAuth Bridge origin at its configured registered callback path, default `/auth/callback`; top-level, non-isolated document with complete bundled Callback code and bridge-owned deployment inputs |
+| Location and context | OAuth Bridge origin at the fixed registered callback path `/auth/callback`; top-level, non-isolated document with complete bundled Callback code and bridge-owned deployment inputs |
 | Role | Authenticates the Application during [Authorization to Callback](#2-authorization-to-callback), then privately carries the captured OAuth return in popup navigation to Prover during [Callback to Prover](#3-callback-to-prover). It installs no Service Worker, retains no state across navigation, and does not classify, prefetch, prove, verify, persist a checkpoint, or close the popup. |
 | Presentation and cleanup | Renders fixed transition and failure views with an inline libID logo and accepts no Application markup or renderer. Terminal cleanup clears retained OAuth-return bytes, removes listeners, and releases unneeded references. Failure before connection acceptance is rendered locally and cannot release the return; observable failure after acceptance uses `AbortCeremony`. |
 
@@ -282,8 +282,11 @@ interface AppStartProver {
 `platformId` and `platformCeremonyVersion` are the exact supported profile
 selected at launch and must match the active Prover. The message is valid only
 after `ProverReady`. The remaining fields are the frozen client identifier and
-redirect, derived code verifier, and resolved notary address. The
-OAuth return is already retained by Prover and is not repeated in the message.
+redirect, derived code verifier, and resolved notary address. `redirectUri` is
+the canonical OAuth Bridge origin with the fixed `/auth/callback` path and no
+query or fragment. The Application derives it before OAuth; public bridge
+configuration carries no redirect field. The OAuth return is already retained
+by Prover and is not repeated in the message.
 Starting Prover initiates OAuth validation; it does not assert acceptance or
 mean that proof generation has
 already begun.

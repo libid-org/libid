@@ -473,7 +473,7 @@ function activate(event: MouseEvent) {
   const popupWindow = PopupWindow.open(target)
   const connection = PopupConnection.connect<Message>(popupWindow, {
     connectionId: ceremonyId,
-    allowedPopupOrigins: [ccdpOrigin, new URL(redirectUri).origin],
+    allowedPopupOrigins: [ccdpOrigin, oauthBridge],
   })
   const ceremony = ceremonies.new(
     connection,
@@ -529,8 +529,11 @@ no-ceremony-recovery launch scope.
 ### OAuth Bridge configuration
 
 The client fetches and validates the origin-controlled
-[`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once, then freezes
-the chosen platform, version, client ID, redirect URI, and CCDP origin. CCDP
+[`CeremonyConfig`](OAUTH_BRIDGE.md#public-configuration) once. It derives
+`redirectUri` as `new URL('/auth/callback', oauthBridge).href` from its validated
+canonical OAuth Bridge origin; neither configuration nor ceremony arguments
+can override the path. It freezes that URL with the chosen platform, version,
+client ID, and CCDP origin. CCDP
 [resources](CCDP.md#documents-and-routes) never fetch it.
 The `oauthBridge` constructor input, configured origins, redirect URI, and
 connection allowlists follow the same [origin policy](CCDP.md#origin-policy),
