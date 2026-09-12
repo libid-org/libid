@@ -45,7 +45,7 @@ One bridge deployment has these inputs. Every origin follows the
 | CCDP origin | One canonical origin selected by the operator; defaults to `https://lib.id` when omitted |
 | Platform profiles | Public OAuth client ID and supported ceremony versions for each enabled platform |
 | Callback inputs | One unversioned list `[allowedOrigins, ccdpOrigin]` derived from the values above, plus deployment-policy sources required by the [artifact contract](CCDP_DISTRIBUTION.md#configuration-insertion); no separate input configuration or CCDP version list |
-| GitHub settings | Client secret and token endpoint settings when GitHub is enabled |
+| GitHub settings | Client secret, token endpoint settings, and the notary's native MPC-TLS listener port when GitHub is enabled; the notary host remains request-selected |
 
 Every enabled platform's OAuth registration uses
 `{bridgeOrigin}/auth/callback` as its `redirect_uri`. The path is fixed, not a
@@ -207,9 +207,9 @@ platform-mandated callback queries are not forwarded to the Distribution.
 ## GitHub token endpoint
 
 When GitHub is enabled, `POST /api/v1/ceremony/github-token` performs the
-confidential OAuth token exchange and token TLSNotary session synchronously. It
+confidential OAuth token exchange and token MPC-TLS session synchronously. It
 retains no state. The prover derives this fixed route from the origin of the
-Ceremony Client's frozen `redirectUri` in `AppStartProver`; the prover document
+Ceremony Client's frozen `redirectUri` in `ProveIdentity`; the prover document
 does not embed it.
 
 The ceremony's browser caller is Prover on `ccdpOrigin`, but this route uses the
@@ -248,15 +248,25 @@ most 1,024 bytes. `codeVerifier` matches `[A-Za-z0-9_-]{43}`. The bridge does
 not normalize either value.
 
 `notaryAddress` follows the canonical origin rules in
-[`AppStartProver`](CCDP.md#appstartprover), including its localhost HTTP exception;
+[`ProveIdentity`](CCDP.md#proveidentity), including its localhost HTTP exception;
 credentials, paths, queries, and fragments remain forbidden. Prover forwards
 the address [snapshotted by CeremonyClient](ARCHITECTURE.md#notary-selection) from the
-supplied ledger, and uses that same address for identity notarization. The Bridge
-derives the fixed `/notarize-proxy` WebSocket endpoint, mapping HTTPS to WSS or
-permitted local HTTP to WS while preserving host and effective port; it neither
-classifies ledgers nor maintains a notary mapping or override.
-Failure never selects a different notary. Callback configuration and public
-`CeremonyConfig` carry no notary selection.
+supplied ledger, and uses that same address for identity notarization. Both
+sessions select the same Notary Service, but use different transports:
+
+- The Bridge uses native MPC-TLS over a TCP connection to the supplied host and
+  the configured MPC listener port. It opens the pinned GitHub platform socket
+  itself and performs the confidential token exchange jointly with the notary.
+- The browser uses Proxy mode over the selected service's `/notarize-proxy`
+  WebSocket for `/user`, preserving the supplied origin's scheme and effective
+  port under the browser adapter's HTTPS-to-WSS or local HTTP-to-WS mapping.
+
+The origin's scheme and HTTP port describe the browser-facing service, not the
+native MPC listener. The Bridge does not derive a Proxy WebSocket or interpret
+that HTTP port as its MPC port. Listener configuration selects only the native
+port, not a replacement notary host or ledger profile. Failure never switches
+notary or mode. Callback configuration and public `CeremonyConfig` carry no
+notary selection.
 
 This server-side destination is request-controlled. Origin/CORS checks do not
 authenticate non-browser callers or replace egress controls. The Bridge must

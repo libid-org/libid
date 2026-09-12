@@ -375,7 +375,8 @@ Launch fixes X's `/2/oauth2/token` and `/2/users/me` sessions and GitHub's
   required transport. The Prover MUST reject duplicate, mixed, additional
   authoritative, and malformed fields. The single accepted `code` is the code
   consumed at redirect ingress that REQ-PLAT-29 and REQ-PLAT-46 compare
-  against.
+  against. GitHub's required `iss` under REQ-PLAT-34A is a profile field, not
+  an additional authoritative field to reject.
 - REQ-PLAT-28A (upholds SP-DELIVERY-01):
   The Prover MUST match the redirect's `state` to its bound live ceremony and
   accept that return only once before starting the token request. No
@@ -652,6 +653,34 @@ that session. It produces an attestation, not a proof.
   The Canonical Runtime MUST request exactly `read:user`. Necessity: GitHub
   inherits previously granted scopes for the same OAuth application, so an
   omitted scope does not yield a known grant.
+
+### 6.1a Authorization return
+
+GitHub returns the authorization response in the redirect query. In addition
+to `state` and exactly one of `code` or `error`, the response carries `iss`, the
+authorization-server issuer identifier defined by [RFC9207]. This profile pins
+`https://github.com/login/oauth`, matching
+[GitHub's authorization-server metadata](https://github.com/.well-known/oauth-authorization-server/login/oauth).
+The expected value is a profile constant, not discovered from the response or
+the configured redirect URI.
+
+- REQ-PLAT-34A (upholds SP-DELIVERY-01):
+  The Prover MUST accept a GitHub success, denial, or other OAuth error response
+  only when its query contains exactly one `iss` whose value, decoded once as
+  `application/x-www-form-urlencoded`, equals
+  `https://github.com/login/oauth` by exact string comparison. Necessity:
+  matching the response issuer to the selected authorization server prevents
+  OAuth authorization-server mix-ups before credentials are used.
+
+Missing, duplicate, malformed, or mismatched issuer values are browser
+rejections before token exchange, not valid denials. Equivalent form-encoding
+spellings are accepted, but URL normalization, case folding, trailing-slash
+removal, and default-port removal do not repair a different decoded value.
+This check precedes success/denial/error classification; a matching issuer
+does not waive the state or remaining return checks. `iss` identifies the
+authorization server, not the user or OAuth client, and is not itself signed
+evidence. It adds no proof input or browser-protocol message field and does
+not replace downstream verification.
 
 ### 6.2 Token exchange
 
@@ -1104,6 +1133,14 @@ rejection are distinct outcomes; proof generation is not ledger acceptance.
   accepted one returns those exact bytes as the client identifier; and the
   configured secret contains neither `&` nor `=`. Verification: inspection of
   the configured credential for the secret rule.
+- TEST-PLAT-12A (exercises REQ-PLAT-28, REQ-PLAT-28A, REQ-PLAT-34A):
+  For otherwise valid GitHub success, `access_denied`, and other OAuth error
+  returns, the browser Prover accepts the exact issuer in literal or equivalent
+  form-encoded spelling. It rejects missing or duplicate `iss`, malformed
+  encoding, a foreign issuer, changed case, an added default port, or a trailing
+  slash before token exchange; an invalid issuer never resolves denied.
+  Correct `iss` with wrong state remains rejected. X acquires no GitHub issuer
+  prerequisite, and no proof or browser-protocol record gains an issuer field.
 - TEST-PLAT-13 (exercises REQ-PLAT-37, REQ-PLAT-38, REQ-PLAT-39, REQ-PLAT-40):
   Each over-limit, malformed, duplicate, and missing field on both token-exchange
   interfaces is rejected.
@@ -1262,6 +1299,8 @@ untrusted modulus, even if browser proof generation completes.
 ## 10. References
 
 Normative: [RFC6749], [RFC7636], [RFC7515], [RFC7517], [RFC7518], [RFC7519],
-[RFC8017], [OIDC], [RFC8446].
+[RFC8017], [OIDC], [RFC8446], [RFC9207].
 
 Informative: [RFC9700], [TLSNotary-Proxy].
+
+[RFC9207]: https://www.rfc-editor.org/rfc/rfc9207.html

@@ -306,10 +306,11 @@ verified attestations and submitted authorization fields.
 
 `platforms/github/1/prover` first sends the captured code, derived verifier,
 and resolved `notaryAddress` to the fixed OAuth bridge token-exchange route.
-The Bridge and browser identity session use that exact address supplied by the
-ledger; the Bridge performs no network classification.
-The bridge uses its confidential client secret, performs the token-exchange
-TLSNotary session, and returns the bounded access token, token attestation,
+The Bridge and browser identity session select the same Notary Service from
+that ledger-supplied address. The Bridge uses native MPC-TLS over TCP for the
+token exchange; the browser uses Proxy over WebSocket for `/user`. The Bridge
+opens the pinned GitHub connection itself, uses its confidential client secret,
+and returns the bounded access token, token attestation,
 and `bearerOpening`: the
 canonical unpadded base64url encoding of the token session's exact 16-byte
 TLSNotary blinder. The

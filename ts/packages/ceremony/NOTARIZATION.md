@@ -31,12 +31,14 @@ its deterministic sibling `tlsn_wasm_bg.wasm`.
 
 The adapter receives the canonical `notaryAddress` read from the ledger and
 frozen by [CeremonyClient](ARCHITECTURE.md#notary-selection), through
-[`AppStartProver`](CCDP.md#appstartprover), including its localhost HTTP exception.
+[`ProveIdentity`](CCDP.md#proveidentity), including its localhost HTTP exception.
 It owns no profile defaults, ledger classification, or environment override.
 X uses that address for both browser sessions. GitHub passes it unchanged in
-its Bridge token request and uses it locally for identity notarization. Neither
-Prover nor Bridge remaps the address, and failure never selects a different
-notary. Google supplies null and never invokes this adapter.
+its Bridge token request and uses it locally for identity notarization. Both
+select the same Notary Service, not the same socket endpoint: the Bridge uses
+native MPC-TLS over TCP as defined by its token-endpoint contract; this browser
+adapter uses Proxy over WebSocket. Neither selects a different notary on
+failure. Google supplies null and never invokes this adapter.
 
 The address is only network routing, not a caller-selected platform request,
 disclosure layout, or Notary Service behavior. Ledger Verifier governance
@@ -253,6 +255,9 @@ The decoded values and every malformed variant are asserted by the
 ## Session lifecycle
 
 ### Network transport
+
+These rules apply only to the browser-owned X sessions and GitHub identity
+session, not the Bridge's native MPC-TLS token session.
 
 The adapter validates the already resolved [notary address](#notary-address),
 maps `https` to `wss` or the permitted localhost `http` to `ws`, and opens the
