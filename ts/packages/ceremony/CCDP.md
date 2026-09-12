@@ -9,7 +9,9 @@ platform-proof, and final-proof semantics are defined by the normative
 
 An authenticated, ordered, bidirectional popup connection carries CCDP
 messages unchanged. CCDP requires that connection but does not prescribe its
-implementation. [CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md) defines the static
+implementation. Connection authentication exposes the authenticated peer origin
+to its local participant, including when a fallback carrier is selected.
+[CCDP_DISTRIBUTION.md](CCDP_DISTRIBUTION.md) defines the static
 distribution and HTTP contract for the CCDP origin.
 
 ## Actors and origins
@@ -90,7 +92,7 @@ Worker. Authorization is an external document, not a CCDP resource.
 
 | Property | Contract |
 |---|---|
-| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#oauthQuery</code></td><td><code>#oauthFragment</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>captured OAuth query, including leading <code>?</code> when nonempty</td><td>captured OAuth fragment, including leading <code>#</code> when nonempty</td></tr></table> |
+| Parameters | <table><tr><th>Name</th><td><code>#ceremonyId</code></td><td><code>#applicationOrigin</code></td><td><code>#oauthQuery</code></td><td><code>#oauthFragment</code></td></tr><tr><th>Values</th><td>lowercase UUIDv4</td><td>exact Application origin authenticated by Callback</td><td>captured OAuth query, including leading <code>?</code> when nonempty</td><td>captured OAuth fragment, including leading <code>#</code> when nonempty</td></tr></table> |
 | Location and context | CCDP origin; versioned, top-level ceremony-popup participant; cross-origin isolated before protocol readiness |
 | Role | Accepts the logical Application connection during [Callback to Prover](#3-callback-to-prover), then validates the retained OAuth return under the Application-selected profile and runs [Prover execution](#4-prover-execution). [PROVING.md](PROVING.md) defines proof-generation pipelines, asset use, notarization, and caching. |
 | Presentation and cleanup | Renders a persistent inline libID logo and accessible progress from the same local event stream it forwards to Application. User-facing stages, labels, and bar calculations are implementation-owned projections, not CCDP fields. Local proof delivery does not assert Application acceptance. Prover accepts no Application markup or renderer and clears inputs, workers, timers, and listeners without closing or navigating the popup. |
@@ -204,17 +206,32 @@ admission never accepts an opaque or `null` origin. The exception does not
 relax OAuth-platform TLS rules, pinned external-asset URLs, or browser
 secure-context and Prover-isolation requirements.
 
-Because one CCDP Distribution serves Applications admitted by any number of
-independent OAuth Bridges, Prefetch and Prover use
-`allowedApplicationOrigins: '*'`. They accept any browser-observed Application
-origin satisfying the rule above and pin that exact origin and source for each
-carrier, while the Application exact-authenticates the configured CCDP origin.
-Open admission
-grants only public asset prefetch, carrier continuity, and processing of the
-connecting Application's own proof request. Prover receives the captured return
-from Callback, not directly from the platform. Callback exact-authenticates the
-Application against its containing OAuth Bridge's explicit deployment
-allowlist before navigating with that return to the configured CCDP origin.
+One CCDP Distribution serves Applications admitted by any number of independent
+OAuth Bridges without a Distribution-wide allowlist. Prefetch uses
+`allowedApplicationOrigins: '*'` for public asset fetching and authenticates
+the exact Application peer. The Application exact-authenticates the configured
+CCDP origin.
+
+Callback exact-authenticates the Application against its containing OAuth
+Bridge's explicit deployment allowlist before navigating with the captured
+return to the configured CCDP origin. It sets `applicationOrigin` in the Prover
+fragment from that connection's authenticated peer origin, never from OAuth
+parameters, request headers, or an Application-supplied value. Prover requires
+that field to satisfy the canonical origin rule above and accepts only
+`allowedApplicationOrigins: [applicationOrigin]`. Its connection authenticates
+the peer against that exact origin before readiness or proof requests, including
+after an isolation replacement or fallback-carrier selection. Missing or invalid
+origin input, an unavailable authenticated peer origin, or an origin mismatch
+fails locally before protocol readiness; it never falls back to open admission.
+
+This is defense in depth against the opener navigating to another origin
+between Callback authentication and Prover's fresh handshake: a retained window
+reference alone does not preserve its document's origin. The fragment carries
+Callback's restriction, not proof of the peer's origin; connection authentication
+still establishes that. No additional handshake or configuration fetch is needed.
+This check does not protect against compromised code on an already trusted origin
+or change downstream proof verification.
+
 The public Callback artifact contains no Bridge policy; the serving Bridge
 inserts its trusted configuration. Server-side artifact retrieval does not
 replace Callback's credential-release check. Asset caching and popup-connection
@@ -587,12 +604,14 @@ before the Prover transition.
 
 The popup-side [Callback](#callback-get-redirecturi) endpoint asks its connection
 to navigate to the frozen [Prover](#prover-get-prover) location, supplying the
-ceremony ID and captured query/fragment as that route's structured fragment.
+ceremony ID, authenticated Application origin, and captured query/fragment as
+that route's structured fragment.
 Callback owns this transition to keep the return private from Application and
 because the OAuth Platform may have severed Application's direct popup handle.
 
 Prover captures and clears the fragment, then accepts the same logical
-Application connection. It sends [`Event(prover, started)`](#event) only after
+Application connection restricted to the carried origin under the
+[origin policy](#origin-policy). It sends [`Event(prover, started)`](#event) only after
 cross-origin isolation is established and its CCDP handlers are installed.
 Connection establishment and any internal isolation transition are below CCDP:
 neither introduces another participant, message type, or phase. On the
