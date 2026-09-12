@@ -31,8 +31,9 @@ The Prover entrypoint maps those outcomes to `CancelCeremony` or
 
 For accepted OAuth, the leaf joins the selected asset fetches, constructs its
 witness, generates its proof, and returns bounded platform steps followed by
-one platform proof or a sanitized technical failure. Platform and proving logic
-see no popup connection, navigation, carrier, or continuity mechanism.
+one platform proof or a technical failure under
+[CCDP's Abort boundary](CCDP.md#abort). Platform and proving logic see no popup
+connection, navigation, carrier, or continuity mechanism.
 
 Before OAuth, the Prefetch implementation asks the shared Worker to start the
 same selected-profile asset single flights. OAuth navigation destroys that

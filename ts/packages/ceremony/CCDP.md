@@ -173,8 +173,10 @@ Callback constructs this fragment locally for the frozen CCDP-origin Prover;
 the Application receives neither the return nor the navigation target.
 The Prover captures and clears it before use. Any internal isolation
 replacement preserves the captured fragment and clears it again on arrival.
-No return enters a request query, connection notification, signaling record,
-Worker record, telemetry, or error. Proofs and other proving inputs never enter
+No participant deliberately includes the captured return in a request query,
+connection notification, signaling record, Worker record, telemetry, or error.
+Opaque dependency error text follows the [Abort boundary](#abort), which does
+not promise automatic redaction. Proofs and other proving inputs never enter
 navigation fragments. The OAuth-platform-mandated query on `redirectUri`
 remains the sole credential-bearing HTTP-request URL.
 
@@ -351,13 +353,18 @@ acceptance from whichever of Prefetch, Callback, or Prover is active. `event`
 is the nonempty, bounded, code-owned name of the failing core or
 implementation-defined operation; it is not a UI
 stage and need not have an earlier notification when failure preceded emission.
-`message` is bounded, sanitized error text without credentials or raw exception
-data. There is no required code, reason enum, or code-to-text mapping. The
-Application rejects the live ceremony.
+`message` is bounded, opaque display text. Producers may preserve a caught
+error's message or a thrown string, removing control characters and bounding
+its length. They do not serialize exception objects, stacks, nested causes, or
+arbitrary objects. There is no required code, reason enum, code-to-text mapping,
+or automatic credential-redaction guarantee: dependency error text may contain
+sensitive details. Recipients render it as text, never markup or control data,
+and exclude it from telemetry exports. The Application rejects the live ceremony.
 
-Failure before connection acceptance has no CCDP path. It is rendered locally
-where possible and recorded through a sanitized local log or diagnostics sink.
-Reporting failure neither releases inputs nor changes the ceremony outcome.
+Failure before connection acceptance has no CCDP path. Its display text may be
+rendered locally; an undeliverable report records a fixed local diagnostic,
+not the opaque error text. Reporting failure changes neither cleanup nor the
+ceremony outcome.
 
 ### Event
 
@@ -507,9 +514,10 @@ can reactivate an earlier phase.
   message never selects an origin, implementation, or navigation destination.
 - Raw OAuth returns pass only from the cleared Callback capture to Prover's
   private fragment, including any isolation replacement. Every arrival clears
-  its URL before use; no intermediate store, notification, or diagnostic
-  receives those values. The platform-mandated callback query is the sole
-  HTTP-request ingress exception.
+  its URL before use; participants do not deliberately copy the return into an
+  intermediate store, notification, or diagnostic. Opaque error text has the
+  separate [Abort boundary](#abort). The platform-mandated callback query is the
+  sole HTTP-request ingress exception.
 - Callback carries the return onward only after authenticating the Application.
   Prover validates it against the authenticated ceremony and selected profile
   before any credential-bearing request. Application receives only protocol
