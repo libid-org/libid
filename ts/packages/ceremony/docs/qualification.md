@@ -18,7 +18,7 @@ orchestration tests is not cryptographic, live-OAuth, or physical-device evidenc
 | HTTP framing | Spec PR #31 at `860075a4bf288dc7fee20866ed3536dc260f4574` |
 
 The [normative browser contracts](https://github.com/libid-org/libid/blob/docs/ceremony-browser-architecture/specs/ccdp.md) are maintained separately.
-The two implementation differences below are explicit, not competing contracts.
+The implementation differences below are explicit, not competing contracts.
 
 ## Pending contract updates
 
@@ -36,6 +36,14 @@ The two implementation differences below are explicit, not competing contracts.
    fallback/replacement. This needs authenticated-peer-origin access from popup
    and a coordinated navigation-codec/document/test update. Do not claim the
    restriction is implemented or that a retained window reference establishes it.
+3. **One-way denial and local-only cancellation.**
+   Current code uses bidirectional `Cancel` and emits `status: 'cancelled'`.
+   The contract uses `Denied` (`type: 'denied'`) only from Prover to Application
+   for valid OAuth denial. Client `cancel()` retires the local run without
+   sending a CCDP message or event/status update; the composition navigates or
+   closes the popup separately. Update wire codecs, Client/document handlers,
+   event and stage types, UI, and cancellation/race tests together. Existing
+   cancellation tests do not qualify this changed contract.
 
 ## Evidence obtained
 
